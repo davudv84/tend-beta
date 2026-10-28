@@ -2,7 +2,8 @@
 // from the environment or, failing that, from .env.local. Only those two names are looked at, and nothing is printed. Agents never import this.
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { parseEnv } from "node:util";
+import * as nodeUtil from "node:util";
+const parseEnv = (text) => nodeUtil.parseEnv(text); // a namespace import: a named one would crash at load time on an old Node, before the version check can explain it
 
 export function serverPaths(root, env = process.env) {
   let local = {};

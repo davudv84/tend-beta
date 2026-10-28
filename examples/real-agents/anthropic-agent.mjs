@@ -7,7 +7,7 @@
 //
 // Needs ANTHROPIC_API_KEY and TEND_ANTHROPIC_AGENT_KEY (or TEND_AGENT_KEY); see docs/manual-testing.md.
 // A manual tool-use loop on purpose: the loop is ours so that every tool_use block goes to TEND and nothing runs in-process.
-import "../../scripts/node-check.mjs";
+import "./node-check.mjs";
 import Anthropic from "@anthropic-ai/sdk";
 import { keyPrefix, loadAgentEnvDetailed, need, resolveAgent } from "./env.mjs";
 import { MAX_TURNS, PROMPTS, SYSTEM, TOOL_DEFS, jsonSchema, printPending, startSession, summarize, tendHttp } from "./toolbox.mjs";

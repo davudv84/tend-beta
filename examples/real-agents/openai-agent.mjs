@@ -8,7 +8,7 @@
 // Needs OPENAI_API_KEY and TEND_OPENAI_AGENT_KEY (or TEND_AGENT_KEY); see docs/manual-testing.md.
 // TEND, not this SDK, decides what runs: the SDK's own `needsApproval` is deliberately unused, because an approval that lives
 // inside the agent process is one the agent could skip. Each tool's `execute` only forwards to TEND (toolbox.mjs).
-import "../../scripts/node-check.mjs";
+import "./node-check.mjs";
 import { Agent, OpenAIProvider, Runner, run, setTracingDisabled, tool } from "@openai/agents";
 import { z } from "zod";
 import { keyPrefix, loadAgentEnvDetailed, need, resolveAgent } from "./env.mjs";

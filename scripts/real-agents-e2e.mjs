@@ -21,7 +21,8 @@ import { randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { parseEnv } from "node:util";
+import * as nodeUtil from "node:util";
+const parseEnv = (text) => nodeUtil.parseEnv(text); // a namespace import: a named one would crash at load time on an old Node, before the version check can explain it
 
 const root = path.resolve(import.meta.dirname, "..");
 const readEnv = (f) => {
@@ -287,7 +288,7 @@ async function setupFlow() {
   const { chmodSync, cpSync, mkdirSync: mk, symlinkSync } = await import("node:fs");
   const work = realpathSync(mkdtempSync(path.join(tmpdir(), "tend-setup-e2e-"))); // real path: the CLIs compare it with import.meta.url
   mk(path.join(work, "scripts"), { recursive: true });
-  for (const f of ["real-agent-setup.mjs", "real-agent-setup-lib.mjs", "suggested-policy.mjs"]) cpSync(path.join(root, "scripts", f), path.join(work, "scripts", f));
+  for (const f of ["real-agent-setup.mjs", "real-agent-setup-lib.mjs", "suggested-policy.mjs", "node-check.mjs"]) cpSync(path.join(root, "scripts", f), path.join(work, "scripts", f));
   cpSync(path.join(root, "examples"), path.join(work, "examples"), { recursive: true });
   cpSync(path.join(root, "package.json"), path.join(work, "package.json"));
   symlinkSync(path.join(root, "node_modules"), path.join(work, "node_modules"));
@@ -398,7 +399,7 @@ async function tryFlow() {
   const { cpSync, mkdirSync: mk, symlinkSync } = await import("node:fs");
   const work = realpathSync(mkdtempSync(path.join(tmpdir(), "tend-try-e2e-")));
   mk(path.join(work, "scripts"), { recursive: true });
-  for (const f of ["agents-try.mjs", "fake-models.mjs", "confine.mjs", "suggested-policy.mjs", "isolated-server.mjs"]) cpSync(path.join(root, "scripts", f), path.join(work, "scripts", f));
+  for (const f of ["agents-try.mjs", "fake-models.mjs", "confine.mjs", "suggested-policy.mjs", "isolated-server.mjs", "node-check.mjs"]) cpSync(path.join(root, "scripts", f), path.join(work, "scripts", f));
   cpSync(path.join(root, "examples"), path.join(work, "examples"), { recursive: true });
   cpSync(path.join(root, "package.json"), path.join(work, "package.json"));
   symlinkSync(path.join(root, "node_modules"), path.join(work, "node_modules"));

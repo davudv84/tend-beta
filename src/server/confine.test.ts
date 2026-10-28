@@ -147,7 +147,7 @@ test("the agents:confined wrapper starts the example agent confined, with a rebu
   try {
     for (const d of ["scripts", "examples"]) mkdirSync(path.join(base, d), { recursive: true });
     const { cpSync, symlinkSync } = await import("node:fs");
-    for (const f of ["agents-confined.mjs", "confine.mjs", "server-paths.mjs"]) cpSync(path.join(repo, "scripts", f), path.join(base, "scripts", f));
+    for (const f of ["agents-confined.mjs", "confine.mjs", "server-paths.mjs", "node-check.mjs"]) cpSync(path.join(repo, "scripts", f), path.join(base, "scripts", f));
     cpSync(path.join(repo, "examples/real-agents"), path.join(base, "examples/real-agents"), { recursive: true });
     cpSync(path.join(repo, "examples/claude-agent"), path.join(base, "examples/claude-agent"), { recursive: true });
     cpSync(path.join(repo, "package.json"), path.join(base, "package.json"));

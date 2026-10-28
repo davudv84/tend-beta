@@ -45,7 +45,7 @@ if (!out.executed) return `Not done: ${out.outcome}. ${out.detail ?? ""}`;   // 
 
 - `tool` and `action` are names you choose. `resource` is an identifier of what is touched (1 to 64 letters, digits or `_ . : -`; no `@` or spaces). `detail` is the sentence the person will read before deciding (up to 200 characters). What you pass is exactly what is approved.
 - A tool with no rule is refused. You write the rules once: `npm run tester:agent -- "My agent" --rule send_email:send:approve --rule read_ticket:read:allow --rule delete_record:delete:deny` (`approve` = a person decides, `allow` = automatic, `deny` = never). This also registers the agent and saves its key to `.env.agent` (never printed).
-- A complete, working Claude agent (about 90 lines, most of it comments and error messages), with the loop that hands Claude each result: `examples/claude-quickstart/agent.mjs`. Run it against your own TEND with
+- A complete, working Claude agent (about 80 lines, much of it comments and error messages), with the loop that hands Claude each result: `examples/claude-quickstart/agent.mjs`. Run it against your own TEND with
   `node --env-file=.env.agent examples/claude-quickstart/agent.mjs "Send a demo email to team-1 saying hello"` (after `npm run tester:agent -- "Claude demo" --rule read_demo_note:read:allow --rule send_demo_email:send:approve --rule delete_demo_record:delete:deny`).
 
 ## Run your own TEND with a dashboard

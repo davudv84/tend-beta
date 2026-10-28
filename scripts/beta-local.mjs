@@ -16,7 +16,8 @@ import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseEnv } from "node:util";
+import * as nodeUtil from "node:util";
+const parseEnv = (text) => nodeUtil.parseEnv(text); // a namespace import: a named one would crash at load time on an old Node, before the version check can explain it
 import { adminTokenProblem } from "../src/server/config.ts";
 import { canConfine } from "./confine.mjs";
 import { startIsolatedServer } from "./isolated-server.mjs";
