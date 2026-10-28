@@ -80,7 +80,7 @@ if (!out.executed) return `Not done: ${out.outcome}`; // tell the model; it must
 
 `tool` and `action` are names you choose; `resource` is an identifier of what is touched (1 to 64 letters, digits, `_ . : -`, so no `@` or spaces); `detail` is the human-readable text you will read and approve. Whatever you pass is what the approval is bound to.
 
-Run your agent with `node --env-file=.env.agent your-agent.mjs`. The request appears under **Approvals**; approve it once and your function runs exactly once. Then try **Don't allow**, and pause or revoke the agent from the dashboard while it runs.
+Run your agent with `node --env-file=.env.agent your-agent.mjs`. The request appears under **Approvals** (open <http://localhost:3000/oversight> after signing in). Your own tool names are not built into TEND, so it labels them "a kind of action Tend doesn't recognise" and asks you to confirm twice: **Allow once**, then **Yes, allow once**. That is expected. Your function then runs exactly once. Then try **Don't allow**, and pause or revoke the agent from the dashboard while it runs.
 
 Using our OpenAI or Claude example agents instead? Put your provider key in `.env.agent` (`OPENAI_API_KEY=…` or `ANTHROPIC_API_KEY=…`), run `npm run agents:setup`, then `npm run agents:openai` or `npm run agents:anthropic`.
 
