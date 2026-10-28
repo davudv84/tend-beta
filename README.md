@@ -48,6 +48,11 @@ if (!out.executed) return `Not done: ${out.outcome}. ${out.detail ?? ""}`;   // 
 - A complete, working Claude agent (about 80 lines, much of it comments and error messages), with the loop that hands Claude each result: `examples/claude-quickstart/agent.mjs`. Run it against your own TEND with
   `node --env-file=.env.agent examples/claude-quickstart/agent.mjs "Send a demo email to team-1 saying hello"` (after `npm run tester:agent -- "Claude demo" --rule read_demo_note:read:allow --rule send_demo_email:send:approve --rule delete_demo_record:delete:deny`).
 
+## One policy for several agents (Claude and OpenAI)
+
+`npm run demo:cross` shows two independent agents, a Claude one and an OpenAI one, each with its own key, controlled by one policy. Change the policy once and both change, without touching or restarting either agent. Both appear in one audit history, and revoking one leaves the other working.
+A provider whose key is set (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) runs a real model; the other is played by a scripted stand-in, and the demo says which is which. The operator call behind it is `POST /api/v1/policy` with `{ "agents": [id, id], "rules": [...] }`: it validates once and applies to all the listed agents or none. Each agent still keeps its own stored policy copy, so a later change to just one agent makes them differ (the audit log shows it).
+
 ## Run your own TEND with a dashboard
 
 For when you want to click instead of typing `y`:

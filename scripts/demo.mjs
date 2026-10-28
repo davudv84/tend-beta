@@ -10,9 +10,8 @@
 //   npm run demo -- --auto     no questions: approves the first, rejects the second (also used when there is no terminal)
 //   npm run demo -- --scripted use the scripted stand-in even if a key is set
 import "./node-check.mjs";
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import readline from "node:readline/promises";
@@ -20,6 +19,7 @@ import { runClaude } from "../examples/claude-quickstart/agent.mjs";
 import { SCENARIOS, scriptedClaude } from "../examples/claude-quickstart/scenarios.mjs";
 import { connectTend } from "../examples/claude-quickstart/tend-client.mjs";
 import { POLICY, createWorld } from "../examples/claude-quickstart/tools.mjs";
+import { ensureBuilt } from "./ensure-built.mjs";
 import { startIsolatedServer } from "./isolated-server.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -41,17 +41,6 @@ const cleanup = async () => {
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
 };
 process.on("SIGINT", async () => { await cleanup(); process.exit(130); });
-
-/** The production build the isolated server runs. First run only. */
-async function ensureBuilt() {
-  if (existsSync(path.join(root, ".next/BUILD_ID"))) return;
-  const next = path.join(root, "node_modules/next/dist/bin/next");
-  if (!existsSync(next)) throw new Error("The dependencies are not installed yet. Run:  npm ci   and then  npm run demo");
-  say("Preparing TEND (a one-time build, about 15 seconds) ...");
-  let log = "";
-  const code = await new Promise((r) => { const c = spawn(process.execPath, [next, "build"], { cwd: root, env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" } }); c.stdout.on("data", (d) => (log += d)); c.stderr.on("data", (d) => (log += d)); c.on("close", r); });
-  if (code !== 0) throw new Error(`The one-time build failed. The last lines:\n${log.split("\n").slice(-12).join("\n")}\nFix that (often a missing "npm ci"), then run this again.`);
-}
 
 let cookie = "", URL_ = "";
 async function op(method, p, body) {

@@ -86,6 +86,17 @@ test("an unsupported Node version stops the command-line tools with one clear se
   for (const v of ["20.12.0", "20.19.5", "22.1.0", "24.0.0"]) assert.equal(run(v).status, 0, v);
 });
 
+test("npm test explains up front that the suite needs Node 22.18 or newer, while the demo still works on Node 20.12", () => {
+  const run = (v, ...a) => spawnSync(process.execPath, [path.join(repo, "scripts/node-check.mjs"), ...a], { env: { ...process.env, TEND_NODE_VERSION_FOR_TEST: v }, encoding: "utf8" });
+  for (const v of ["20.19.0", "22.17.1", "23.5.0"]) {
+    const r = run(v, "--tests");
+    assert.equal(r.status, 2, v);
+    assert.match(r.stderr, /needs Node 22\.18 or newer[\s\S]*demo and the integration still work on Node 20\.12/);
+    assert.equal(run(v).status === 0, Number(v.split(".")[0]) >= 20, "the plain check is the looser one");
+  }
+  for (const v of ["22.18.0", "23.6.0", "24.0.0"]) assert.equal(run(v, "--tests").status, 0, v);
+});
+
 const built = existsSync(path.join(repo, ".next/BUILD_ID")) ? false : "needs `npm run build`";
 test("npm run demo (scripted, no key): all four behaviours, and no secret in the output", { skip: built, timeout: 120_000 }, () => {
   const env = { ...process.env };

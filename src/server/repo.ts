@@ -394,23 +394,55 @@ export async function control(db: DB, agentId: string, action: "pause" | "resume
 }
 
 /** Replaces an agent's policy (and optionally its enforcement mode). A policy that doesn't validate is refused whole, never half applied. */
-export async function setPolicy(db: DB, agentId: string, rules: unknown, enforcement?: unknown, by?: string, expectedVersion?: unknown) {
+/** The checks every policy change goes through, whether for one agent or several. Throws; returns the parsed rules. */
+function checkedPolicy(rules: unknown, enforcement?: unknown, expectedVersion?: unknown) {
   const parsed = parsePolicy(rules);
   if (!parsed.ok) throw new HttpError(422, "invalid_policy", parsed.error);
   const problem = policyProblem(parsed.rules);
   if (problem) throw new HttpError(422, "spend_requires_approval", problem);
   if (expectedVersion !== undefined && !Number.isInteger(expectedVersion)) throw new HttpError(422, "invalid_version", "expectedVersion must be an integer.");
   if (enforcement !== undefined && enforcement !== "monitor" && enforcement !== "enforce") throw new HttpError(422, "invalid_enforcement", "enforcement must be monitor or enforce.");
+  return parsed.rules;
+}
+
+/** Writes the rules, bumps the version and records the change. Caller holds the events lock and the agent row lock. */
+async function applyPolicy(q: Q, agentId: string, rules: ReturnType<typeof checkedPolicy>, enforcement: unknown, by?: string, central?: number) {
+  await q.run("UPDATE agents SET policy = ? WHERE id = ?", JSON.stringify(rules), agentId);
+  if (enforcement) await q.run("UPDATE agents SET enforcement = ? WHERE id = ?", enforcement as string, agentId);
+  // `policy` is the full rule set that took effect, so what was allowed at any moment can be read back from the log.
+  return insertEvent(q, { agentId, type: "policy.updated", actor: "human", data: { version: await bump(q, agentId), rules: rules.length, policy: rules, ...(enforcement ? { enforcement } : {}), ...(by ? { by } : {}), ...(central ? { central } : {}) } });
+}
+
+export async function setPolicy(db: DB, agentId: string, rules: unknown, enforcement?: unknown, by?: string, expectedVersion?: unknown) {
+  const checked = checkedPolicy(rules, enforcement, expectedVersion);
   return db.tx(async (q) => {
     await q.lockEvents();
     const current = await mustAgent(q, agentId);
     // The caller edited a view of version N; if the rules moved on since, saving would silently undo someone else's change.
     if (expectedVersion !== undefined && current.configVersion !== expectedVersion)
       throw new HttpError(409, "policy_changed", "This agent’s rules changed since you opened them. Reload and try again.", { version: current.configVersion });
-    await q.run("UPDATE agents SET policy = ? WHERE id = ?", JSON.stringify(parsed.rules), agentId);
-    if (enforcement) await q.run("UPDATE agents SET enforcement = ? WHERE id = ?", enforcement, agentId);
-    // `policy` is the full rule set that took effect, so what was allowed at any moment can be read back from the log.
-    return insertEvent(q, { agentId, type: "policy.updated", actor: "human", data: { version: await bump(q, agentId), rules: parsed.rules.length, policy: parsed.rules, ...(enforcement && { enforcement }), ...(by && { by }) } });
+    return applyPolicy(q, agentId, checked, enforcement, by);
+  });
+}
+
+/**
+ * One central policy for several agents: the same rules, validated once, applied to every listed agent in a single transaction (all or none).
+ * Each agent keeps its own stored policy and its own key, so enforcement is exactly what it was; each gets its own `policy.updated` event,
+ * marked `central: <how many agents>`, so one audit history shows the change landing on all of them. Operator only (the route checks).
+ */
+export async function setPolicyMany(db: DB, agentIds: unknown, rules: unknown, enforcement?: unknown, by?: string) {
+  if (!Array.isArray(agentIds) || agentIds.length < 1 || agentIds.length > 50 || agentIds.some((x) => typeof x !== "string") || new Set(agentIds).size !== agentIds.length)
+    throw new HttpError(422, "invalid_agents", "agents must be a list of 1 to 50 distinct agent ids.");
+  const checked = checkedPolicy(rules, enforcement);
+  const ids = [...(agentIds as string[])].sort(); // a fixed lock order, so two central changes cannot deadlock
+  return db.tx(async (q) => {
+    await q.lockEvents();
+    const events = [];
+    for (const id of ids) {
+      await mustAgent(q, id); // an unknown id fails the whole change
+      events.push(await applyPolicy(q, id, checked, enforcement, by, ids.length));
+    }
+    return events;
   });
 }
 
