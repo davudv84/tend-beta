@@ -4,7 +4,7 @@ TEND sits between an AI agent and a sensitive action. Your agent asks TEND first
 action and works once), or refuses it, and keeps a record. You run everything **on your own computer**: nothing is hosted, nobody else can see your data, and
 your provider keys never leave your machine. This page is all you need.
 
-**What you need:** Node 24 (`node -v` says v24.x), git, a terminal. For step 6 only: the AI provider key you already use (OpenAI or Anthropic), a few cents of usage.
+**What you need:** Node 24 (`node -v` says v24.x; Node 22 also worked in our test, with an "Unsupported engine" warning you can ignore), git, a terminal. For step 6 only: the AI provider key you already use (OpenAI or Anthropic), a few cents of usage.
 
 ## 1. Get it (about 3 minutes)
 
