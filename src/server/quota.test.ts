@@ -1,6 +1,6 @@
 // Regression tests for audit F-02 / risk R-01: one agent key must not be able to fill the database or bury real approvals.
 // Before the fix, 130 batches of 50 review requests stored 6,001 events and 6,000 pending reviews from one key, inside the
-// existing rate limits (reproduced; see docs/security-risk-register.md). Each test here fails on that code.
+// existing rate limits (reproduced in an earlier security review). Each test here fails on that code.
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { PROTOCOL } from "../lib/contract.ts";

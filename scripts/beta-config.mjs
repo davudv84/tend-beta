@@ -119,7 +119,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     try {
       const made = provision(root, names);
       console.log(`Created beta-envs/${made.join(", beta-envs/")} (each vercel.env is mode 600; fresh admin token and payments key; DATABASE_URL left empty).`);
-      console.log("Next: create one Neon project and one Vercel project per name (docs/beta-deployment.md), paste the pooled connection string, then npm run beta:check.");
+      console.log("Next: create one Neon project and one Vercel project per name, paste the pooled connection string, then npm run beta:check.");
     } catch (e) {
       console.error(e.message);
       process.exit(1);
