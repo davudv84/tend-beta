@@ -41,9 +41,9 @@ test("an assistant that asks unusually often is flagged, so a flood can't hide t
   assert.equal(homeQueue([agent("noisy")], many.slice(1), NOW).floods.length, 0);
 });
 
-test("a spending or unrecognised request needs a second confirmation; known harmless ones don't; the table matches the gateway", () => {
+test("only a spending request needs a second confirmation (an unrecognised one is decided once, with a warning); the table matches the gateway", () => {
   for (const [tool, kind] of [["pay_invoice", "spend"], ["write_note", "write"], ["read_note", "read"], ["list_notes", "read"], ["test_ping", "test"], ["send_email", "unknown"]] as const) assert.equal(requestKind(tool), kind, tool);
-  assert.deepEqual(["spend", "unknown", "write", "read", "test"].map((k) => needsConfirmation(k as never)), [true, true, false, false, false]);
+  assert.deepEqual(["spend", "unknown", "write", "read", "test"].map((k) => needsConfirmation(k as never)), [true, false, false, false, false]);
   assert.deepEqual(["write", "spend", "unknown", "read", "test"].map((k) => showsContent(k as never)), [true, true, true, false, false]);
   // Whatever the gateway can run is classified the way the gateway classifies it: a new tool can't silently become "unknown".
   for (const t of toolCatalog()) assert.equal(requestKind(t.tool), t.risk, `${t.tool}: the screen and the gateway disagree`);

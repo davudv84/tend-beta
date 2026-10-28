@@ -6,6 +6,7 @@
 // A rule is tool:action:effect[:resourcePrefix]; effect is allow, approve (a person decides) or deny. Anything without a rule is denied.
 // Saves the agent's key to .env.agent as TEND_AGENT_KEY (mode 600) the moment it exists, together with TEND_URL. Never prints a key or token.
 // Run it again to change the rules: the working key is kept. Operator tool: it needs TEND_ADMIN_TOKEN from .env.local.
+import "./node-check.mjs";
 import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";

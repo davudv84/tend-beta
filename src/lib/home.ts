@@ -16,8 +16,12 @@ export type RequestKind = "read" | "write" | "spend" | "test" | "unknown";
 const KINDS: Record<string, RequestKind> = { list_notes: "read", read_note: "read", write_note: "write", read_test_file: "read", write_test_file: "write", delete_test_file: "write", pay_invoice: "spend", test_ping: "test" };
 export const requestKind = (tool: string): RequestKind => KINDS[tool] ?? "unknown";
 
-/** Spending, and anything Tend does not recognise, needs a second explicit confirmation. Unknown fails closed. */
-export const needsConfirmation = (kind: RequestKind) => kind === "spend" || kind === "unknown";
+/**
+ * Spending needs a second explicit confirmation. An action Tend does not recognise does not: it is shown with its exact content and a
+ * warning right above the buttons, so the person decides once, with the warning in front of them (a developer's own tool would otherwise
+ * always cost two clicks). Nothing server-side changes: it still waits for a person, and spending can never be allowed without one.
+ */
+export const needsConfirmation = (kind: RequestKind) => kind === "spend";
 
 /** Whether the exact content of the request is shown as a quotation (what would be written, what would be paid). */
 export const showsContent = (kind: RequestKind) => kind === "write" || kind === "spend" || kind === "unknown";

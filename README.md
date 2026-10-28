@@ -1,99 +1,84 @@
-# TEND tester guide: connect your own agent in under 15 minutes
+# TEND: a checkpoint between your AI agent and what it is able to do
 
-TEND sits between an AI agent and a sensitive action. Your agent asks TEND first. TEND allows it, holds it for **you** to approve (the approval covers exactly that
-action and works once), or refuses it, and keeps a record. You run everything **on your own computer**: nothing is hosted, nobody else can see your data, and
-your provider keys never leave your machine. This page is all you need.
+An AI agent that can send emails, change records or spend money is only as safe as the last thing it decided to do. TEND sits in front of those actions. Before a tool
+runs, your agent asks TEND. TEND answers in one of three ways: **allow** (your rule says this is fine), **ask me** (a person sees the exact action and decides, and the
+approval works once, for that action only), or **never**. Everything is written to a log. You run it on your own computer; nothing is hosted, and your API keys never reach TEND.
 
-**What you need:** Node 24 (`node -v` says v24.x; Node 22 also worked in our test, with an "Unsupported engine" warning you can ignore), git, a terminal. For step 6 only: the AI provider key you already use (OpenAI or Anthropic), a few cents of usage.
+## Your first controlled action in 5 minutes
 
-## 1. Get it (about 3 minutes)
+You need Node 20.12 or newer (Node 22 or 24 is best), git and a terminal. No account, no API key, no file to edit.
 
 ```bash
 git clone <the repository address you were sent> tend
 cd tend
 npm ci
+npm run demo
 ```
 
-## 2. Your own settings (30 seconds)
+`npm run demo` starts a throwaway TEND (it exists only while the command runs), puts a Claude agent in front of it with three harmless tools, and shows you:
+one action **allowed** by your rule, one **denied** by your rule, and two that **wait for you**. You answer `y` or `n` right in the terminal; try `n` on the second one.
+It ends by printing what TEND recorded. The first time it also builds TEND (about 15 seconds). Its sign-in token stays in memory and is never printed.
+
+**With a real Claude model** (a cent or two of API usage): paste your key without it appearing anywhere, then run the demo again.
 
 ```bash
-npm run tester:init -- yourname
+read -rs ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY    # paste the key, press Enter; nothing is shown
+npm run demo
 ```
 
-This creates `.env.local` (private to you, never shared or committed) with a random sign-in token. Nothing is printed: open `.env.local` and copy the value after `TEND_ADMIN_TOKEN=`.
-Each tester has their own copy, their own token and their own data folder. Do not send your token to anyone, including us.
+Without a key a scripted stand-in plays Claude and the demo says so; TEND itself is real either way. The key stays in your shell. TEND never sees it, and the demo never prints it.
 
-## 3. Check your setup without any key (about 4 minutes)
+## Put TEND in front of your own agent
 
-```bash
-npm run build
-npm run agents:try -- --auto
-```
-
-This starts a throwaway TEND, runs a scripted OpenAI-style and Claude-style agent against it, and ends with `All checks passed`. It proves your machine works before you touch your own agent.
-
-## 4. Start your TEND (leave this terminal open)
-
-```bash
-npm run dev
-```
-
-Open <http://localhost:3000/operator> and paste the token. (Port 3000 busy? `PORT=3100 npm run dev`, and put `TEND_URL=http://localhost:3100` in front of the commands below.)
-
-## 5. Register your agent and say what needs you (1 minute)
-
-Think of one action your agent can do that you would not want it to do unattended (send an email, issue a refund, change a record, run a command). Give each tool a name:
-
-```bash
-npm run tester:agent -- "My agent" \
-  --rule send_email:send:approve \
-  --rule read_ticket:read:allow \
-  --rule delete_record:delete:deny
-```
-
-`tool:action:effect`. **approve** = you decide each time, **allow** = automatic, **deny** = never. Anything without a rule is refused. The agent's key is saved in `.env.agent` (private; never printed).
-
-## 6. Put one line around your tool (5 minutes)
-
-Copy `examples/claude-agent/gate.mjs` into your project (it has no dependencies), then wrap the function that does the real thing:
+Copy `examples/claude-quickstart/tend-client.mjs` and `examples/claude-agent/gate.mjs` next to your agent (change the one import in `tend-client.mjs` to `./gate.mjs`). Then wrap the function that does the real thing:
 
 ```js
-import { createGate } from "./gate.mjs";
+import { connectTend } from "./tend-client.mjs";
+const gate = connectTend();                    // reads TEND_URL and TEND_AGENT_KEY from the environment
 
-const URL = process.env.TEND_URL ?? "http://localhost:3000";
-const KEY = process.env.TEND_AGENT_KEY; // from .env.agent
-const tend = async (p, body, headers = {}) => {
-  const r = await fetch(URL + p, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${KEY}`, ...(body && { "content-type": "application/json" }), ...headers }, body: body && JSON.stringify(body) });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(`TEND ${r.status} ${data.error}`), { status: r.status, code: data.error, body: data });
-  return data;
-};
-const gate = createGate({ tend, onPending: () => console.log("Waiting for your approval at http://localhost:3000/operator → Approvals …") });
-
-// in your tool:
 const out = await gate.run(
   { tool: "send_email", action: "send", resource: "client-1042", detail: "Email to client 1042, subject: Invoice 42" }, // exactly what will be done
-  () => sendEmail(/* your real code */),
+  () => sendEmail(/* your real code */),         // runs only if TEND said yes, and then exactly once
 );
-if (!out.executed) return `Not done: ${out.outcome}`; // tell the model; it must not retry around it
+if (!out.executed) return `Not done: ${out.outcome}. ${out.detail ?? ""}`;   // tell the model, so it can tell the user
 ```
 
-`tool` and `action` are names you choose; `resource` is an identifier of what is touched (1 to 64 letters, digits, `_ . : -`, so no `@` or spaces); `detail` is the human-readable text you will read and approve. Whatever you pass is what the approval is bound to.
+- `tool` and `action` are names you choose. `resource` is an identifier of what is touched (1 to 64 letters, digits or `_ . : -`; no `@` or spaces). `detail` is the sentence the person will read before deciding (up to 200 characters). What you pass is exactly what is approved.
+- A tool with no rule is refused. You write the rules once: `npm run tester:agent -- "My agent" --rule send_email:send:approve --rule read_ticket:read:allow --rule delete_record:delete:deny` (`approve` = a person decides, `allow` = automatic, `deny` = never). This also registers the agent and saves its key to `.env.agent` (never printed).
+- A complete, working Claude agent (about 90 lines, most of it comments and error messages), with the loop that hands Claude each result: `examples/claude-quickstart/agent.mjs`. Run it against your own TEND with
+  `node --env-file=.env.agent examples/claude-quickstart/agent.mjs "Send a demo email to team-1 saying hello"` (after `npm run tester:agent -- "Claude demo" --rule read_demo_note:read:allow --rule send_demo_email:send:approve --rule delete_demo_record:delete:deny`).
 
-Run your agent with `node --env-file=.env.agent your-agent.mjs`. The request appears under **Approvals** (open <http://localhost:3000/oversight> after signing in). Your own tool names are not built into TEND, so it labels them "a kind of action Tend doesn't recognise" and asks you to confirm twice: **Allow once**, then **Yes, allow once**. That is expected. Your function then runs exactly once. Then try **Don't allow**, and pause or revoke the agent from the dashboard while it runs.
+## Run your own TEND with a dashboard
 
-Using our OpenAI or Claude example agents instead? Put your provider key in `.env.agent` (`OPENAI_API_KEY=…` or `ANTHROPIC_API_KEY=…`), run `npm run agents:setup`, then `npm run agents:openai` or `npm run agents:anthropic`.
+For when you want to click instead of typing `y`:
 
-## What to tell us (this is the point of the test)
+```bash
+npm run tester:init -- yourname     # writes .env.local with your own random sign-in token (mode 600; not printed)
+npm run dev                         # leave this running
+```
 
-Time from step 1 to your first approved action. Anything that failed or confused you, with the exact message. And three questions: what would you have used instead? Would you miss it if it disappeared? Who else
-building agents needs this? Short answers are fine.
+Open <http://localhost:3000/operator> and paste the value after `TEND_ADMIN_TOKEN=` from `.env.local`. Requests that need you appear under **Approvals** (<http://localhost:3000/oversight>) with the exact action.
+Your own tools show a warning (TEND has no built-in knowledge of them) and need one click, **Allow once**. Spending always asks twice.
+
+## If something goes wrong
+
+| You see | It means | Do this |
+|---|---|---|
+| `TEND needs Node 20.12 or newer` | your Node is too old | install Node 22 or 24 (nodejs.org, or `nvm install 24`) |
+| `TEND is not reachable at ...` | nothing is listening there | `npm run dev` (or `npm run demo` for a throwaway one); another port: set `TEND_URL` |
+| `TEND does not accept this agent key` | revoked, or issued by a different TEND | run `npm run tester:agent` again, restart your agent |
+| `TEND_AGENT_KEY is not set` | the agent has no identity yet | run `npm run tester:agent`, then `node --env-file=.env.agent your-agent.mjs` |
+| `ANTHROPIC_API_KEY is not set` / `Anthropic rejected the API key (401)` | no key, or a wrong one | the `read -rs` command above |
+| `resource must be 1-64 characters ...` | `resource` has a character TEND does not accept | use letters, digits and `_ . : -` only |
+| anything else odd | | `npm run agents:doctor` checks file permissions, saved keys and the address |
+
+## What to tell us
+
+Time from `git clone` to your first controlled action. Anything that failed or confused you, with the exact message. And three questions: what would you have used instead? Would you miss it if it went away? Who else building agents needs this? Short answers are fine.
 
 ## Honest limits
 
-- This is **cooperative**: TEND stops only code that asks it. An agent that skips the wrapper, or holds the real credentials itself, can bypass it. Use fake or low-risk actions for the test.
-- Use fictional data. TEND records tool names, resources, the exact text you approve, and your decisions, in `.data/` on your machine.
-- One sign-in token, no accounts or teams, no notifications. The dashboard must be open to approve. It is a prototype and has had no independent security review.
-
-Stuck for more than five minutes? Tell us instead of struggling: that is a finding. `npm run agents:doctor` checks the common problems (file permissions, saved keys, address).
-Remove everything: delete the folder.
+- **TEND stops only code that asks it.** An agent that skips the wrapper, or holds the real credentials itself, can bypass it. Use fake or low-risk actions in this test.
+- Use fictional data. TEND records tool names, resources, the exact text you approve and your decisions, on your machine only (`.data/`).
+- One sign-in token, no accounts or teams, no notifications; the dashboard must be open to approve. This is a prototype for controlled testing, not for production, and it has had no independent security review.
+- More detail: `docs/gateway.md`, `docs/enforcement.md`, `docs/audit.md`, and the test report `docs/real-claude-test.md`.

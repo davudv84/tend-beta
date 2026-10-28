@@ -16,7 +16,7 @@ export type Answer = "allowed" | "denied";
 /**
  * One request that needs a person, and nothing else on it competing for attention. It always shows who is asking, what for,
  * and the exact content to be decided (what would be written, what would be paid); it never answers more than this one request.
- * Spending, and anything Tend does not recognise, needs a second explicit confirmation.
+ * Spending needs a second explicit confirmation. An action Tend does not recognise is decided once, with a warning shown above the buttons.
  */
 export function RequestCard({ request, now, onAnswered }: { request: HomeRequest; now: number; onAnswered: (id: string, answer: Answer, sentence: string) => void }) {
   const t = useT();
@@ -56,6 +56,8 @@ export function RequestCard({ request, now, onAnswered }: { request: HomeRequest
       {showsContent(kind) && auth.detail && (
         <blockquote className="mt-6 rounded-2xl bg-sunken px-5 py-4 text-body break-words whitespace-pre-wrap">{auth.detail}</blockquote>
       )}
+
+      {kind === "unknown" && step === "ask" && <p role="note" className="mt-4 text-small font-medium text-foreground">{h.confirmUnknown}</p>}
 
       {step === "confirm" ? (
         <div role="group" aria-label={h.confirmTitle} className="mt-6 rounded-2xl border border-border p-5">

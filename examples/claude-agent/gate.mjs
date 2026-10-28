@@ -2,7 +2,7 @@
 // has authorized exactly this action: authorize → (wait for a human) → claim a token → consume it → act.
 //
 //   const out = await gate.run({ tool: "send_payment", action: "execute", resource: "INV-1", detail: "EUR 5.00 to X" }, () => pay());
-//   out.executed === true only if Tend said yes. Every other outcome means nothing was done.
+//   out.executed === true only if Tend said yes. Every other outcome means nothing was done; `out.detail`, when present, says why in words.
 //
 // Fail closed: a timeout, a network error, a 4xx/5xx, a malformed answer or an unexpected body all end in
 // "do not act". Creating a request is retried (it is idempotent); consuming never is. Nothing here prints a
@@ -15,6 +15,8 @@ import { randomUUID } from "node:crypto";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const transient = (e) => !e.status || e.status >= 500;
 const same = (a, b) => (a ?? null) === (b ?? null);
+/** Why a call to TEND failed, in words: a hint from the client, else TEND's own validation errors or message. */
+const why = (e) => e.hint ?? (e.body?.errors?.join?.("; ") || e.body?.message || undefined);
 
 export function createGate({ tend, approvalTimeoutMs = 120_000, pollMs = 2_000, retries = 2, retryMs = 500, onPending, log = () => {} }) {
   /**
@@ -54,7 +56,7 @@ export function createGate({ tend, approvalTimeoutMs = 120_000, pollMs = 2_000, 
           await sleep(retryMs);
           continue;
         }
-        return stop(transient(e) ? "unavailable" : "refused", e.code);
+        return { ...(await stop(transient(e) ? "unavailable" : "refused", e.code)), ...(why(e) && { detail: why(e) }) };
       }
     }
     authorizationId = created?.id;
@@ -98,7 +100,7 @@ export function createGate({ tend, approvalTimeoutMs = 120_000, pollMs = 2_000, 
     try {
       used = await tend(`/api/v1/authorizations/${authorizationId}/consume`, { token, ...req });
     } catch (e) {
-      return stop(transient(e) ? "unavailable" : "refused", e.code);
+      return { ...(await stop(transient(e) ? "unavailable" : "refused", e.code)), ...(why(e) && { detail: why(e) }) };
     } finally {
       token = undefined;
     }

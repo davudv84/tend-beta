@@ -10,6 +10,7 @@
 //   npm run agents:try -- --auto --reject           the operator rejects the write; nothing is created
 //   npm run agents:try -- --provider anthropic      openai | anthropic | both (default both)
 //   npm run agents:try -- --confined                run the agent under OS confinement (macOS), see docs/manual-testing.md
+import "./node-check.mjs";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

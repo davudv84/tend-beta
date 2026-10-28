@@ -2,6 +2,7 @@
 // `npm run agents:doctor`: how exposed is this machine to a same-user bypass of the gateway? It looks at file permissions and
 // configuration (never file contents, never a secret value) and says what to fix. It cannot see other users' processes, containers or
 // what an agent was started with; it checks the setup, not the running agents.
+import "./node-check.mjs";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

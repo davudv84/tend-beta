@@ -15,6 +15,7 @@
 //   5. creates the sandbox folder with one disposable file, and tells you whether the server has the sandbox switched on,
 //   6. authenticates with what it saved, read back from disk, and fails if TEND refuses it.
 // It never prints a key or token.
+import "./node-check.mjs";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";

@@ -2,6 +2,7 @@
 // Per-tester local configuration. Run once, on the tester's OWN machine:  npm run tester:init -- <your-name>
 // Writes .env.local (mode 600, git-ignored) with a fresh random sign-in token that never leaves this machine, a private
 // sandbox folder, and nothing else: no database address, no keys. Refuses to overwrite an existing file.
+import "./node-check.mjs";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";

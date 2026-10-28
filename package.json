@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "node --no-warnings --test src/lib/*.test.ts src/server/*.test.ts src/sanctuary/*.test.ts src/i18n/*.test.ts src/ui/*.test.ts examples/claude-agent/*.test.mjs",
+    "test": "node --no-warnings --test src/lib/*.test.ts src/server/*.test.ts src/sanctuary/*.test.ts src/i18n/*.test.ts src/ui/*.test.ts examples/claude-agent/*.test.mjs examples/claude-quickstart/*.test.mjs",
     "test:postgres": "sh scripts/test-postgres.sh",
     "e2e:authz": "node scripts/authz-e2e.mjs",
     "e2e:gateway": "node scripts/gateway-e2e.mjs",
@@ -23,6 +23,7 @@
     "agents:anthropic": "node examples/real-agents/anthropic-agent.mjs",
     "e2e:real-agents": "node scripts/real-agents-e2e.mjs",
     "e2e:real-claude": "node scripts/real-claude-e2e.mjs",
+    "demo": "node scripts/demo.mjs",
     "agents:try": "node scripts/agents-try.mjs",
     "agents:confined": "node scripts/agents-confined.mjs",
     "agents:doctor": "node scripts/agents-doctor.mjs",
@@ -70,6 +71,6 @@
     "zod": "^4.6.7"
   },
   "engines": {
-    "node": "24.x"
+    "node": ">=20.12.0"
   }
 }
