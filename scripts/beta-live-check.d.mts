@@ -1,0 +1,1 @@
+export function liveCheck(o: { instances: { name: string; url: string; token?: string; bypass?: string }[]; allowHttp?: boolean; expectStorage?: "postgres" | "embedded" }): Promise<{ instance: string; ok: boolean; text: string }[]>;

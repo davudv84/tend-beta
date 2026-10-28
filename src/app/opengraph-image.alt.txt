@@ -1,0 +1,1 @@
+Tend, a research prototype: a pixel-art Japanese garden where each small figure is an AI agent, placed by what it reports. Text reads: What if we listened? Only humans decide.

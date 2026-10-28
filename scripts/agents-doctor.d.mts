@@ -1,0 +1,1 @@
+export function diagnose(o: { root: string; env?: Record<string, string | undefined>; platform?: string; confinement?: boolean }): { level: "ok" | "warn" | "fail" | "info"; text: string; fix?: string }[];
