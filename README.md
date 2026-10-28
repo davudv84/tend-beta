@@ -72,6 +72,8 @@ Your own tools show a warning (TEND has no built-in knowledge of them) and need 
 | `resource must be 1-64 characters ...` | `resource` has a character TEND does not accept | use letters, digits and `_ . : -` only |
 | anything else odd | | `npm run agents:doctor` checks file permissions, saved keys and the address |
 
+The demo and the integration work on Node 20.12 or newer. The project's own test suite (`npm test`) runs TypeScript directly and needs Node 22.18 or newer (24 is what it is tested on). On Node 20 you may also see a few "Unsupported engine" warnings from dependencies during `npm ci`; they are harmless.
+
 ## What to tell us
 
 Time from `git clone` to your first controlled action. Anything that failed or confused you, with the exact message. And three questions: what would you have used instead? Would you miss it if it went away? Who else building agents needs this? Short answers are fine.
