@@ -22,6 +22,7 @@
     "agents:openai": "node examples/real-agents/openai-agent.mjs",
     "agents:anthropic": "node examples/real-agents/anthropic-agent.mjs",
     "e2e:real-agents": "node scripts/real-agents-e2e.mjs",
+    "e2e:real-claude": "node scripts/real-claude-e2e.mjs",
     "agents:try": "node scripts/agents-try.mjs",
     "agents:confined": "node scripts/agents-confined.mjs",
     "agents:doctor": "node scripts/agents-doctor.mjs",
