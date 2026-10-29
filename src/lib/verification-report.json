@@ -1,6 +1,6 @@
 {
   "suite": "npm run verify:integrations",
-  "generatedAt": "2026-10-29T20:59:26.866Z",
+  "generatedAt": "2026-10-29T22:57:36.851Z",
   "integrations": {
     "claude": {
       "status": "verified",
@@ -44,8 +44,8 @@
         }
       ],
       "usd": 0.0129,
-      "lastRunAt": "2026-10-29T20:59:28.868Z",
-      "verifiedAt": "2026-10-29T20:59:28.868Z"
+      "lastRunAt": "2026-10-29T22:57:39.413Z",
+      "verifiedAt": "2026-10-29T22:57:39.413Z"
     },
     "openaiCompatible": {
       "status": "verified",
@@ -89,8 +89,8 @@
         }
       ],
       "usd": 0.0129,
-      "lastRunAt": "2026-10-29T20:01:04.220Z",
-      "verifiedAt": "2026-10-29T20:01:04.220Z"
+      "lastRunAt": "2026-10-29T22:58:24.639Z",
+      "verifiedAt": "2026-10-29T22:58:24.639Z"
     },
     "openai": {
       "status": "verified",
@@ -134,8 +134,8 @@
         }
       ],
       "usd": 0.0132,
-      "lastRunAt": "2026-10-29T20:01:19.065Z",
-      "verifiedAt": "2026-10-29T20:01:19.065Z"
+      "lastRunAt": "2026-10-29T22:58:35.626Z",
+      "verifiedAt": "2026-10-29T22:58:35.626Z"
     },
     "claudeCode": {
       "status": "verified",
@@ -178,9 +178,9 @@
           "failed": []
         }
       ],
-      "usd": 0.0209,
-      "lastRunAt": "2026-10-29T20:59:42.706Z",
-      "verifiedAt": "2026-10-29T20:59:42.706Z"
+      "usd": 0.0206,
+      "lastRunAt": "2026-10-29T22:58:47.287Z",
+      "verifiedAt": "2026-10-29T22:58:47.287Z"
     },
     "mcp": {
       "status": "verified",
@@ -223,9 +223,9 @@
           "failed": []
         }
       ],
-      "usd": 0.0209,
-      "lastRunAt": "2026-10-29T20:59:42.706Z",
-      "verifiedAt": "2026-10-29T20:59:42.706Z"
+      "usd": 0.0206,
+      "lastRunAt": "2026-10-29T22:58:47.287Z",
+      "verifiedAt": "2026-10-29T22:58:47.287Z"
     },
     "http": {
       "status": "verified",
@@ -269,8 +269,8 @@
         }
       ],
       "usd": 0.0121,
-      "lastRunAt": "2026-10-29T20:00:25.082Z",
-      "verifiedAt": "2026-10-29T20:00:25.082Z"
+      "lastRunAt": "2026-10-29T22:57:51.464Z",
+      "verifiedAt": "2026-10-29T22:57:51.464Z"
     },
     "ollama": {
       "status": "verified",
@@ -314,8 +314,8 @@
         }
       ],
       "usd": 0,
-      "lastRunAt": "2026-10-29T20:00:43.727Z",
-      "verifiedAt": "2026-10-29T20:00:43.727Z"
+      "lastRunAt": "2026-10-29T22:58:05.145Z",
+      "verifiedAt": "2026-10-29T22:58:05.145Z"
     },
     "langchain": {
       "status": "verified",
@@ -358,9 +358,9 @@
           "failed": []
         }
       ],
-      "usd": 0.0139,
-      "lastRunAt": "2026-10-29T20:02:14.457Z",
-      "verifiedAt": "2026-10-29T20:02:14.457Z"
+      "usd": 0.014,
+      "lastRunAt": "2026-10-29T22:59:24.466Z",
+      "verifiedAt": "2026-10-29T22:59:24.466Z"
     },
     "langgraph": {
       "status": "verified",
@@ -404,8 +404,8 @@
         }
       ],
       "usd": 0.0139,
-      "lastRunAt": "2026-10-29T20:02:32.735Z",
-      "verifiedAt": "2026-10-29T20:02:32.735Z"
+      "lastRunAt": "2026-10-29T22:59:40.612Z",
+      "verifiedAt": "2026-10-29T22:59:40.612Z"
     },
     "mastra": {
       "status": "verified",
@@ -448,9 +448,9 @@
           "failed": []
         }
       ],
-      "usd": 0.0138,
-      "lastRunAt": "2026-10-29T20:02:49.904Z",
-      "verifiedAt": "2026-10-29T20:02:49.904Z"
+      "usd": 0.0139,
+      "lastRunAt": "2026-10-29T22:59:57.932Z",
+      "verifiedAt": "2026-10-29T22:59:57.932Z"
     },
     "pydanticAi": {
       "status": "verified",
@@ -494,8 +494,8 @@
         }
       ],
       "usd": 0.0127,
-      "lastRunAt": "2026-10-29T20:03:07.725Z",
-      "verifiedAt": "2026-10-29T20:03:07.725Z"
+      "lastRunAt": "2026-10-29T23:00:13.974Z",
+      "verifiedAt": "2026-10-29T23:00:13.974Z"
     },
     "autogen": {
       "status": "verified",
@@ -539,8 +539,8 @@
         }
       ],
       "usd": 0.0131,
-      "lastRunAt": "2026-10-29T20:03:26.871Z",
-      "verifiedAt": "2026-10-29T20:03:26.871Z"
+      "lastRunAt": "2026-10-29T23:00:37.191Z",
+      "verifiedAt": "2026-10-29T23:00:37.191Z"
     },
     "crewai": {
       "status": "verified",
@@ -583,9 +583,9 @@
           "failed": []
         }
       ],
-      "usd": 0.0136,
-      "lastRunAt": "2026-10-29T20:03:44.214Z",
-      "verifiedAt": "2026-10-29T20:03:44.214Z"
+      "usd": 0.0135,
+      "lastRunAt": "2026-10-29T23:00:54.053Z",
+      "verifiedAt": "2026-10-29T23:00:54.053Z"
     },
     "openaiApi": {
       "status": "blocked",
@@ -593,7 +593,7 @@
       "missing": [
         "OPENAI_API_KEY (an API key for this provider, in the environment)"
       ],
-      "lastCheckedAt": "2026-10-29T20:00:43.726Z"
+      "lastCheckedAt": "2026-10-29T22:58:05.145Z"
     },
     "gemini": {
       "status": "blocked",
@@ -601,7 +601,7 @@
       "missing": [
         "GEMINI_API_KEY (an API key for this provider, in the environment)"
       ],
-      "lastCheckedAt": "2026-10-29T20:00:43.727Z"
+      "lastCheckedAt": "2026-10-29T22:58:05.145Z"
     },
     "mistral": {
       "status": "blocked",
@@ -609,7 +609,7 @@
       "missing": [
         "MISTRAL_API_KEY (an API key for this provider, in the environment)"
       ],
-      "lastCheckedAt": "2026-10-29T20:00:43.727Z"
+      "lastCheckedAt": "2026-10-29T22:58:05.145Z"
     },
     "groq": {
       "status": "blocked",
@@ -617,7 +617,7 @@
       "missing": [
         "GROQ_API_KEY (an API key for this provider, in the environment)"
       ],
-      "lastCheckedAt": "2026-10-29T20:00:43.727Z"
+      "lastCheckedAt": "2026-10-29T22:58:05.145Z"
     },
     "cursor": {
       "status": "blocked",
@@ -625,7 +625,7 @@
       "missing": [
         "Cursor's headless agent CLI (cursor-agent, from cursor.com/cli) signed in to a Cursor account; Cursor.app alone cannot be driven by a test"
       ],
-      "lastCheckedAt": "2026-10-29T20:02:14.426Z"
+      "lastCheckedAt": "2026-10-29T22:59:24.432Z"
     },
     "cline": {
       "status": "blocked",
@@ -633,7 +633,7 @@
       "missing": [
         "the Cline CLI (npm install -g cline) with a model provider configured"
       ],
-      "lastCheckedAt": "2026-10-29T20:02:14.437Z"
+      "lastCheckedAt": "2026-10-29T22:59:24.447Z"
     },
     "hermes": {
       "status": "blocked",
@@ -641,7 +641,7 @@
       "missing": [
         "Hermes Agent installed (its installer runs a remote script: needs your review and approval) with a model provider configured"
       ],
-      "lastCheckedAt": "2026-10-29T20:02:14.444Z"
+      "lastCheckedAt": "2026-10-29T22:59:24.454Z"
     },
     "openclaw": {
       "status": "blocked",
@@ -649,8 +649,8 @@
       "missing": [
         "OpenClaw installed and its gateway configured with a model provider (needs your review and approval)"
       ],
-      "lastCheckedAt": "2026-10-29T20:02:14.450Z"
+      "lastCheckedAt": "2026-10-29T22:59:24.460Z"
     }
   },
-  "usd": 0.0338
+  "usd": 0.1528
 }

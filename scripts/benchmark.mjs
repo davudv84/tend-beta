@@ -7,7 +7,7 @@
 //   npm run benchmark -- --quick                  without the reliability matrix
 // Results: docs/benchmark.json and docs/benchmark.md. No model and no key: tool bodies are no-ops, the "agent" is the SDK file TEND serves.
 import "./node-check.mjs";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, platform, release, tmpdir, totalmem } from "node:os";
@@ -122,6 +122,9 @@ async function main() {
 
     // ---- 4. under load: several agents at once, each with its own key ----------------------------------------------------------------
     const fleet = await Promise.all(Array.from({ length: N.agents }, (_, i) => agent(`Load ${i}`)));
+    const seqBefore = (await op("GET", "/api/v1/state")).body.seq;
+    const rss = () => server.pids().reduce((sum, pid) => { try { return sum + Number(execFileSync("ps", ["-o", "rss=", "-p", String(pid)]).toString().trim() || 0); } catch { return sum; } }, 0);
+    const rssBefore = rss();
     const tl = now();
     let errors = 0;
     await Promise.all(fleet.map(async (f) => {
@@ -129,8 +132,20 @@ async function main() {
       for (let i = 0; i < N.perAgent; i++) if ((await guardTool(g, "read_note", noop)({ id: `L-${i}` })) !== "ok") errors++;
     }));
     const loadMs = ms(tl);
-    out.load = { agents: N.agents, callsEach: N.perAgent, seconds: +(loadMs / 1000).toFixed(2), callsPerSecond: Math.round((N.agents * N.perAgent) / (loadMs / 1000)), errors };
+    const events = (await op("GET", "/api/v1/state")).body.seq - seqBefore;
+    out.load = { agents: N.agents, callsEach: N.perAgent, seconds: +(loadMs / 1000).toFixed(2), callsPerSecond: Math.round((N.agents * N.perAgent) / (loadMs / 1000)), errors,
+      databaseRowsPerCall: { authorizations: 1, events: +(events / (N.agents * N.perAgent)).toFixed(2) }, serverMemoryMb: { before: Math.round(rssBefore / 1024), afterLoad: Math.round(rss() / 1024) } };
     console.log(`load: ${N.agents} agents x ${N.perAgent} calls in ${out.load.seconds} s (${out.load.callsPerSecond}/s), ${errors} errors`);
+
+    // ---- 4b. failures: how long until a protected call is refused when TEND cannot be reached (it never runs) -----------------------------
+    const ranDown = { n: 0 };
+    const tDown = now();
+    const down = await guardTool(connectTend({ url: "http://127.0.0.1:9", key: a.key }), "read_note", async () => ranDown.n++)({ id: "down" });
+    const downDefault = ms(tDown);
+    const tDown0 = now();
+    await guardTool(connectTend({ url: "http://127.0.0.1:9", key: a.key, retries: 0 }), "read_note", async () => ranDown.n++)({ id: "down" });
+    out.failures = { tendUnreachableRefusedAfterMs: { defaultRetries: Math.round(downDefault), noRetries: Math.round(ms(tDown0)) }, ranWhileDown: ranDown.n, answer: down.slice(0, 80) };
+    console.log(`TEND unreachable: refused after ${out.failures.tendUnreachableRefusedAfterMs.defaultRetries} ms (default retries), ran: ${ranDown.n}`);
 
     // ---- 5. enforcement: a mixed run, checked against what must happen ---------------------------------------------------------------
     const e = await agent("Enforcement bench");
@@ -205,6 +220,13 @@ ${o.limits.setting}; this benchmark runs with it raised so the latency and load 
 ## Under load
 
 ${o.load.agents} agents at once, ${o.load.callsEach} allowed calls each: ${o.load.seconds} s, ${o.load.callsPerSecond} calls per second, ${o.load.errors} errors.
+Database writes per protected call: ${o.load.databaseRowsPerCall.authorizations} authorization row and ${o.load.databaseRowsPerCall.events} events (hash-chained). Server memory (RSS):
+${o.load.serverMemoryMb.before} MB before the load, ${o.load.serverMemoryMb.afterLoad} MB after.
+
+## When TEND is down
+
+A protected call is refused, never run, ${o.failures.tendUnreachableRefusedAfterMs.defaultRetries} ms after it starts with the default retries (${o.failures.tendUnreachableRefusedAfterMs.noRetries} ms with retries: 0).
+Calls that ran while TEND was unreachable: **${o.failures.ranWhileDown}**.
 
 ## Enforcement
 

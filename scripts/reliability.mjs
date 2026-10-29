@@ -41,6 +41,18 @@ export const CASES = [
     T("src/server/failure-modes.test.ts", "a database that goes away"),
     T("src/server/security.test.ts", "if the database fails while an approval is being spent", "if the rate-limit store fails, an agent is not let through"),
   ]],
+  ["Double execution", [
+    T("src/server/authz.test.ts", "concurrent consumption: of ten simultaneous attempts exactly one wins"),
+    T("examples/claude-agent/gate.test.mjs", "one round trip: a lost answer is never turned into a second execution", "one round trip: the same tool call (same idempotency key) delivered twice runs once"),
+    T("src/server/conditions.test.ts", "an authorization is bound to its arguments"),
+  ]],
+  ["Audit log integrity", [
+    T("src/server/audit-chain.test.ts", "normal use keeps the chain intact", "changing, removing or inserting an event is detected at that event", "the log stays append-only for ordinary statements"),
+  ]],
+  ["Argument-aware rules fail closed", [
+    T("src/server/conditions.test.ts", "block sending outside an approved domain", "conditions are validated strictly"),
+    T("examples/claude-agent/gate.test.mjs", "one round trip: a spend is bound to the arguments"),
+  ]],
   ["Cross-tenant isolation", [
     T("src/server/tenancy.test.ts", "each account sees only its own workspace", "an id from another workspace is not found", "agent keys are a separate credential", "disabling an account also stops its agents"),
     T("src/server/routes.test.ts", "operator routes stay inside the caller's workspace"),

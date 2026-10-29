@@ -8,33 +8,40 @@ on another machine, or against a hosted TEND (network round trips, a hosted data
 
 | | Measured |
 |---|---|
-| From nothing to an enforced tool call (allowed, denied, approved), scripted | 284 ms, enforced correctly: true |
+| From nothing to an enforced tool call (allowed, denied, approved), scripted | 360 ms, enforced correctly: true |
 | A person in the browser, sign-in to verified test action (measured once, 2026-10-29) | 89 s |
 | Steps for a developer | 6: create the agent (name, model) and copy its key; set three rules; download one file (curl); set TEND_URL and TEND_AGENT_KEY; wrap each tool with guardTool; approve the held call |
 | Lines of integration code | Anthropic SDK 3, LangChain 4, OpenAI Agents SDK 7, OpenAI-compatible 4, Python 6; an MCP host: configuration only (one JSON entry) |
-| Dependencies the agent must install | 0 (one 21 KB file from the TEND server) |
+| Dependencies the agent must install | 0 (one 28 KB file from the TEND server) |
 
 ## Added latency (milliseconds, p50 / p95 / p99)
 
 | Call | Latency |
 |---|---|
-| A no-op tool, called directly | 0 / 0 / 0 |
-| The same tool through TEND, until it starts running | 12.3 / 26.84 / 55.87 |
-| The same call including the audit report afterwards | 16.66 / 47.73 / 65.63 |
-| MCP tools/call to a stdio server, directly | 0.03 / 0.09 / 0.29 |
-| MCP tools/call through TEND's proxy | 15.99 / 18.33 / 22.33 |
+| A no-op tool, called directly | 0 / 0 / 0.01 |
+| The same tool through TEND, until it starts running | 4.42 / 5.73 / 15.22 |
+| The same call including the audit report afterwards | 8.26 / 10.57 / 24.74 |
+| MCP tools/call to a stdio server, directly | 0.02 / 0.09 / 0.27 |
+| MCP tools/call through TEND's proxy | 7.49 / 8.86 / 11.73 |
 
 300 calls each (100 for MCP), allowed by policy, sequential. allowed by policy: request, single-use token, consume, then the tool; the audit report follows the tool. Loopback and an embedded database: a hosted TEND adds the network round trips.
 
 ## Limits
 
-One protected call makes 4 authenticated requests (counted on the wire). Each agent may make 120 a minute by default,
-so about **30 protected calls per agent per minute**; past that, calls are refused (never let through). Raise it with
+One protected call makes 2 authenticated requests (counted on the wire). Each agent may make 120 a minute by default,
+so about **60 protected calls per agent per minute**; past that, calls are refused (never let through). Raise it with
 TEND_AGENT_RPM (10–10000); this benchmark runs with it raised so the latency and load figures are not cut off by it.
 
 ## Under load
 
-10 agents at once, 30 allowed calls each: 4.05 s, 74 calls per second, 0 errors.
+10 agents at once, 30 allowed calls each: 1.93 s, 155 calls per second, 0 errors.
+Database writes per protected call: 1 authorization row and 3 events (hash-chained). Server memory (RSS):
+482 MB before the load, 520 MB after.
+
+## When TEND is down
+
+A protected call is refused, never run, 1009 ms after it starts with the default retries (1 ms with retries: 0).
+Calls that ran while TEND was unreachable: **0**.
 
 ## Enforcement
 

@@ -8,9 +8,9 @@
     "database": "embedded",
     "network": "loopback"
   },
-  "at": "2026-10-29T21:51:13.846Z",
+  "at": "2026-10-29T22:50:49.991Z",
   "setup": {
-    "ms": 284,
+    "ms": 360,
     "enforced": true,
     "developerSteps": [
       "create the agent (name, model) and copy its key",
@@ -29,13 +29,13 @@
       "mcpHost": "configuration only (one JSON entry)"
     },
     "dependencies": 0,
-    "sdkBytes": 21412,
+    "sdkBytes": 28406,
     "note": "Machine time for the scripted path. The person's time, measured once in a browser on 2026-10-29: 89 s from sign-in to a verified test action."
   },
   "limits": {
-    "requestsPerProtectedCall": 4,
+    "requestsPerProtectedCall": 2,
     "defaultAgentRequestsPerMinute": 120,
-    "defaultProtectedCallsPerMinute": 30,
+    "defaultProtectedCallsPerMinute": 60,
     "setting": "TEND_AGENT_RPM (10–10000)"
   },
   "latency": {
@@ -44,46 +44,62 @@
       "mean": 0,
       "p50": 0,
       "p95": 0,
-      "p99": 0
+      "p99": 0.01
     },
     "untilToolRuns": {
       "n": 300,
-      "mean": 14.95,
-      "p50": 12.3,
-      "p95": 26.84,
-      "p99": 55.87
+      "mean": 4.72,
+      "p50": 4.42,
+      "p95": 5.73,
+      "p99": 15.22
     },
     "wholeCallIncludingAuditReport": {
       "n": 300,
-      "mean": 20.13,
-      "p50": 16.66,
-      "p95": 47.73,
-      "p99": 65.63
+      "mean": 8.91,
+      "p50": 8.26,
+      "p95": 10.57,
+      "p99": 24.74
     },
     "note": "allowed by policy: request, single-use token, consume, then the tool; the audit report follows the tool. Loopback and an embedded database: a hosted TEND adds the network round trips."
   },
   "mcp": {
     "direct": {
       "n": 100,
-      "mean": 0.67,
-      "p50": 0.03,
+      "mean": 0.34,
+      "p50": 0.02,
       "p95": 0.09,
-      "p99": 0.29
+      "p99": 0.27
     },
     "throughTend": {
       "n": 100,
-      "mean": 16.28,
-      "p50": 15.99,
-      "p95": 18.33,
-      "p99": 22.33
+      "mean": 7.95,
+      "p50": 7.49,
+      "p95": 8.86,
+      "p99": 11.73
     }
   },
   "load": {
     "agents": 10,
     "callsEach": 30,
-    "seconds": 4.05,
-    "callsPerSecond": 74,
-    "errors": 0
+    "seconds": 1.93,
+    "callsPerSecond": 155,
+    "errors": 0,
+    "databaseRowsPerCall": {
+      "authorizations": 1,
+      "events": 3
+    },
+    "serverMemoryMb": {
+      "before": 482,
+      "afterLoad": 520
+    }
+  },
+  "failures": {
+    "tendUnreachableRefusedAfterMs": {
+      "defaultRetries": 1009,
+      "noRetries": 1
+    },
+    "ranWhileDown": 0,
+    "answer": "Not done: TEND did not allow this tool call (unavailable: unreachable; TEND is n"
   },
   "enforcement": {
     "requests": 60,
