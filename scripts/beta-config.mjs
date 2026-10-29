@@ -26,6 +26,11 @@ export function newConfig() {
     TEND_DEMO: "0",
     DATABASE_URL: "", // paste this tester's Neon POOLED connection string here
     TEND_GATEWAY_PAYMENTS_KEY: randomBytes(24).toString("base64url"), // the fake payments tool's key; distinct per instance
+    // E-mail accounts (sign-up, verification, reset, approval). All three or none: without them only the admin token can sign in.
+    RESEND_API_KEY: "", // from resend.com, for a domain verified there
+    TEND_EMAIL_FROM: "", // e.g. TEND <beta@your-domain.com>, on that verified domain
+    TEND_APP_URL: "", // the instance's public https address, e.g. https://tend-beta.vercel.app
+    TEND_ADMIN_EMAIL: "", // optional: who is mailed when someone waits for approval
   };
 }
 
@@ -87,11 +92,22 @@ export function check(instances) {
         dup("db", name, `${u.hostname}/${u.pathname}`, "the database");
       }
     }
+    const mail = ["RESEND_API_KEY", "TEND_EMAIL_FROM", "TEND_APP_URL"].filter((k) => env[k]);
+    if (!mail.length) add(name, "ok", "accounts are off (no mail settings): only the admin token can sign in.");
+    else if (mail.length < 3) add(name, "fail", `e-mail accounts need RESEND_API_KEY, TEND_EMAIL_FROM and TEND_APP_URL together; missing ${["RESEND_API_KEY", "TEND_EMAIL_FROM", "TEND_APP_URL"].filter((k) => !env[k]).join(", ")}.`);
+    else {
+      if (!/^re_[A-Za-z0-9_]{16,}$/.test(env.RESEND_API_KEY)) add(name, "fail", "RESEND_API_KEY does not look like a Resend API key (re_…).");
+      if (!/@[^\s@>]+\.[a-z]{2,}>?$/i.test(env.TEND_EMAIL_FROM)) add(name, "fail", "TEND_EMAIL_FROM is not an e-mail address (\"TEND <beta@your-domain.com>\").");
+      else if (/@resend\.dev>?$/i.test(env.TEND_EMAIL_FROM)) add(name, "fail", "TEND_EMAIL_FROM uses resend.dev, which only delivers to the Resend account's own address: testers would get no mail. Verify your own domain in Resend.");
+      if (!/^https:\/\/[^\s/]+$/.test(env.TEND_APP_URL)) add(name, "fail", "TEND_APP_URL must be the instance's https:// address with no path.");
+      if (env.TEND_ADMIN_EMAIL && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(env.TEND_ADMIN_EMAIL)) add(name, "fail", "TEND_ADMIN_EMAIL is not an e-mail address.");
+      if (!out.some((r) => r.instance === name && r.level === "fail" && /RESEND|EMAIL|APP_URL/.test(r.text))) add(name, "ok", "e-mail accounts are configured (sign-up, verification, reset and approval mails).");
+    }
     if (env.TEND_PUBLIC !== "0") add(name, "fail", "TEND_PUBLIC must be 0: the instance is private.");
     if (env.TEND_DEMO !== "0") add(name, "fail", "TEND_DEMO must be 0: no simulated agents in a beta.");
     for (const forbidden of ["TEND_LOCAL_HTTP", "TEND_TRUSTED_PROXY", "TEND_DATA_DIR", "VERCEL", "NODE_ENV"]) if (env[forbidden] !== undefined) add(name, "fail", `${forbidden} must not be set (Vercel sets what it needs; local-only settings do not belong in a hosted instance).`);
   }
-  if (Object.keys(instances).length < 2) add("-", "warn", "only one instance found: nothing to compare for isolation.");
+  if (Object.keys(instances).length < 2) add("-", "ok", "one instance: testers are kept apart by their own accounts and workspaces on it.");
   return out;
 }
 

@@ -68,3 +68,14 @@ test("the checker never echoes a secret", () => {
   const out = JSON.stringify(check({ alice: a, bob: { ...good("b"), TEND_ADMIN_TOKEN: a.TEND_ADMIN_TOKEN, DATABASE_URL: a.DATABASE_URL } }));
   for (const secret of [a.TEND_ADMIN_TOKEN, a.TEND_GATEWAY_PAYMENTS_KEY, new URL(a.DATABASE_URL).password]) assert.equal(out.includes(secret), false);
 });
+
+test("e-mail accounts: none of the mail settings (accounts off) or all three, valid; resend.dev and a non-https address are refused", () => {
+  const key = `re_${randomBytes(16).toString("hex")}`;
+  const mail = { RESEND_API_KEY: key, TEND_EMAIL_FROM: "TEND <beta@tend.example.com>", TEND_APP_URL: "https://tend-beta.vercel.app" };
+  assert.deepEqual(fails(check({ one: good("a") })), [], "no mail settings: accounts off, still a valid instance");
+  assert.deepEqual(fails(check({ one: { ...good("a"), ...mail, TEND_ADMIN_EMAIL: "me@example.com" } })), []);
+  assert.match(fails(check({ one: { ...good("a"), RESEND_API_KEY: key } })).join(" "), /need RESEND_API_KEY, TEND_EMAIL_FROM and TEND_APP_URL together/);
+  assert.match(fails(check({ one: { ...good("a"), ...mail, TEND_EMAIL_FROM: "onboarding@resend.dev" } })).join(" "), /resend\.dev/);
+  assert.match(fails(check({ one: { ...good("a"), ...mail, TEND_APP_URL: "http://tend-beta.vercel.app" } })).join(" "), /https/);
+  assert.match(fails(check({ one: { ...good("a"), ...mail, RESEND_API_KEY: "sk_live_x" } })).join(" "), /Resend API key/);
+});

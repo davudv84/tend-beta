@@ -1,6 +1,6 @@
 {
   "suite": "npm run verify:integrations",
-  "generatedAt": "2026-10-29T20:00:09.033Z",
+  "generatedAt": "2026-10-29T20:59:26.866Z",
   "integrations": {
     "claude": {
       "status": "verified",
@@ -43,9 +43,9 @@
           "failed": []
         }
       ],
-      "usd": 0.0128,
-      "lastRunAt": "2026-10-29T20:00:11.044Z",
-      "verifiedAt": "2026-10-29T20:00:11.044Z"
+      "usd": 0.0129,
+      "lastRunAt": "2026-10-29T20:59:28.868Z",
+      "verifiedAt": "2026-10-29T20:59:28.868Z"
     },
     "openaiCompatible": {
       "status": "verified",
@@ -178,9 +178,9 @@
           "failed": []
         }
       ],
-      "usd": 0.02,
-      "lastRunAt": "2026-10-29T20:01:32.919Z",
-      "verifiedAt": "2026-10-29T20:01:32.919Z"
+      "usd": 0.0209,
+      "lastRunAt": "2026-10-29T20:59:42.706Z",
+      "verifiedAt": "2026-10-29T20:59:42.706Z"
     },
     "mcp": {
       "status": "verified",
@@ -223,9 +223,9 @@
           "failed": []
         }
       ],
-      "usd": 0.02,
-      "lastRunAt": "2026-10-29T20:01:32.919Z",
-      "verifiedAt": "2026-10-29T20:01:32.919Z"
+      "usd": 0.0209,
+      "lastRunAt": "2026-10-29T20:59:42.706Z",
+      "verifiedAt": "2026-10-29T20:59:42.706Z"
     },
     "http": {
       "status": "verified",
@@ -652,5 +652,5 @@
       "lastCheckedAt": "2026-10-29T20:02:14.450Z"
     }
   },
-  "usd": 0.1519
+  "usd": 0.0338
 }

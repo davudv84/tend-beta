@@ -26,3 +26,16 @@ Copy this, fill in what you can, and send it back. Short answers are fine; exact
 
 ## Security
 - Anything that looked like a way around TEND or a leak of a key or a decision? (Please also report it privately; see docs/security-limitations.md.)
+
+## Bugs
+
+One mail per bug, subject `TEND bug: <one line>`:
+
+- What you did, step by step:
+- What you expected:
+- What happened (the error text on screen, or terminal output **with any `tend_sk_…` key removed**):
+- When (date, time, time zone) and the page address:
+- A screenshot, if you can.
+
+Never send an API key or a password. Security problems: subject `TEND security`, and please don't post them elsewhere.
+

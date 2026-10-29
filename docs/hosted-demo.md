@@ -1,5 +1,8 @@
 # Hosted demo for testers without GitHub
 
+> **Now recommended instead:** one shared instance with an account and an isolated workspace per tester, approved by you: `docs/private-beta.md`.
+> The three-instance setup below still works (an instance without mail settings has no accounts).
+
 Each tester gets **their own private TEND** at its own address, with its own database, its own sign-in token and fictional data only. They use it
 in a browser: no GitHub account, no source code, no API key, nothing to install. Nothing is shared between testers, so nobody can see anyone
 else's data. In each instance the tester is the only operator.
