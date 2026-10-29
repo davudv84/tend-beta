@@ -49,7 +49,8 @@ test("the tester export drops internal files and the scan finds keys, remote dat
   for (const ok of ["postgres://u:p@localhost:5432/x", "postgres://nobody:nopass@127.0.0.1:1/none", "tend_sk_" + "F".repeat(32), "user@example.com"]) assert.deepEqual(scan(ok), [], ok);
 });
 
-test("everything the export would publish from this repository is clean", () => {
+const inGit = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: repo, encoding: "utf8" }).stdout.trim() === "true";
+test("everything the export would publish from this repository is clean", { skip: inGit ? false : "not a git checkout (a downloaded copy): nothing to export" }, () => {
   const files = exported(execFileSync("git", ["ls-files", "-z"], { cwd: repo, encoding: "utf8" }).split("\0").filter(Boolean));
   const bad: string[] = [];
   for (const f of files) {
