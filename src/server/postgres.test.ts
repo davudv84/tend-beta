@@ -20,7 +20,7 @@ import { resetDemo, seedDemo } from "./demo.ts";
 import { executeTool, requestExecution } from "./gateway.ts";
 import { integrationStatus } from "./integrations.ts";
 import { policyView } from "./permissions.ts";
-import { decide, getAgent, ingestEvents, QUOTA, registerAgent, revokeKey, setPolicy } from "./repo.ts";
+import { assignCentralPolicy, createCentralPolicy, decide, getAgent, ingestEvents, QUOTA, registerAgent, revokeKey, setPolicy, updateCentralPolicy } from "./repo.ts";
 import { latestVerification, runVerification } from "./verification.ts";
 import { isOperator, revokeAll, sessionCookieName, signOut } from "./session.ts";
 import { awayFromMinuteBoundary } from "./test-support.ts";
@@ -421,6 +421,39 @@ test("protection checks on PostgreSQL: the records are read in a read-only trans
     assert.equal(await sqlState(() => t.db.run("DELETE FROM verification_runs")), "42501");
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    await t.close();
+  }
+});
+
+test("central policy on a real pool: one change races live requests from two agents; each decision matches exactly one version, and the audit agrees", { skip }, async () => {
+  const t = await tempDb();
+  try {
+    const regs = [await registerAgent(t.db, { name: "Claude agent", model: "m", provider: "Anthropic" }), await registerAgent(t.db, { name: "OpenAI agent", model: "m", provider: "OpenAI" })];
+    const cp = await createCentralPolicy(t.db, { name: "Baseline", rules: [{ tool: "send_email", action: "send", effect: "allow" }] });
+    await assignCentralPolicy(t.db, cp.id, { assign: regs.map((r) => r.agent.id) });
+    const agents = await Promise.all(regs.map((r) => getAgent(t.db, r.agent.id)));
+    const ask = (i: number, k: number) => requestAuthorization(t.db, agents[i]!, { tool: "send_email", action: "send", resource: `m-${i}-${k}` }, null).then((r) => r.view);
+    // Ten requests per agent, launched together with one change from allow to deny, all overlapping on the pool.
+    const work = [...Array.from({ length: 10 }, (_, k) => ask(0, k)), ...Array.from({ length: 10 }, (_, k) => ask(1, k))];
+    const [changed, ...views] = await Promise.all([updateCentralPolicy(t.db, cp.id, { rules: [{ tool: "send_email", action: "send", effect: "deny" }] }), ...work]);
+    assert.equal(changed.version, 2);
+    const rows = await t.db.all<{ seq: number; agent_id: string; type: string; data: unknown }>(
+      "SELECT seq, agent_id, type, data FROM events WHERE type IN ('policy.central_updated', 'authorization.requested', 'authorization.denied') ORDER BY seq");
+    const data = (r: { data: unknown }) => (typeof r.data === "string" ? JSON.parse(r.data) : r.data) as Record<string, unknown>;
+    const change = rows.filter((r) => r.type === "policy.central_updated");
+    assert.equal(change.length, 2, "the change reached both agents");
+    assert.equal(change[1].seq - change[0].seq, 1, "and landed on both in one step: nothing in between");
+    for (const r of rows.filter((x) => x.type !== "policy.central_updated")) {
+      const d = data(r), before = r.seq < change[0].seq;
+      assert.equal(r.type, before ? "authorization.requested" : "authorization.denied", `${d.resource}: decided by the version in force at its turn`);
+      assert.equal(d.centralVersion, before ? 1 : 2, `${d.resource}: and says which version decided it`);
+    }
+    // Whatever was allowed before the change can no longer be used after it.
+    for (const v of views.filter((x) => x.status === "approved")) {
+      const agent = agents.find((a) => a!.id === (v as { agentId?: string }).agentId) ?? agents[Number(String(v.resource).split("-")[1])]!;
+      await assert.rejects(() => claimToken(t.db, agent, v.id), (e: { status?: number; code?: string }) => e.status === 403 && e.code === "not_permitted");
+    }
+  } finally {
     await t.close();
   }
 });
