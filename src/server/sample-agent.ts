@@ -8,6 +8,7 @@ import { claimToken, consumeAuthorization, requestAuthorization } from "./authz.
 import type { DB } from "./db.ts";
 import { HttpError } from "./http.ts";
 import { allAgents, getAgent, ingestEvents, registerAgent, setPolicy } from "./repo.ts";
+import { DEFAULT_WORKSPACE } from "./session.ts";
 
 export const SAMPLE_NAME = "Sample agent (simulated)";
 export const SAMPLE_RULES = [
@@ -24,10 +25,10 @@ const ASKS = [
 export type SampleStep = { id: string; tool: string; action: string; resource: string; result: "ran" | "approved" | "denied" | "waiting" | "rejected" | "expired" | "cancelled" | "not_permitted" };
 
 /** The sample agent, created on first use with the demo rules. Later runs keep whatever rules the operator gave it since. */
-async function sampleAgent(db: DB, by?: string): Promise<Agent> {
-  const found = (await allAgents(db)).find((a) => a.origin === "connected" && a.name === SAMPLE_NAME && a.model === "simulated");
+async function sampleAgent(db: DB, by: string | undefined, workspace: string): Promise<Agent> {
+  const found = (await allAgents(db, workspace)).find((a) => a.origin === "connected" && a.name === SAMPLE_NAME && a.model === "simulated");
   if (found) return found;
-  const { agent } = await registerAgent(db, { name: SAMPLE_NAME, model: "simulated", provider: "Custom", role: "Simulated: asks for harmless demo actions; nothing real happens" }, by);
+  const { agent } = await registerAgent(db, { name: SAMPLE_NAME, model: "simulated", provider: "Custom", role: "Simulated: asks for harmless demo actions; nothing real happens" }, by, workspace);
   await setPolicy(db, agent.id, SAMPLE_RULES, "enforce", by);
   return (await getAgent(db, agent.id))!;
 }
@@ -51,8 +52,8 @@ async function run(db: DB, agent: Agent, id: string, ask: { tool: string; action
 }
 
 /** Asks for the three demo actions. Allowed ones run at once; held ones wait for a person; refused ones never run. */
-export async function startSample(db: DB, by?: string): Promise<SampleStep[]> {
-  const agent = await sampleAgent(db, by);
+export async function startSample(db: DB, by?: string, workspace = DEFAULT_WORKSPACE): Promise<SampleStep[]> {
+  const agent = await sampleAgent(db, by, workspace);
   const steps: SampleStep[] = [];
   for (const ask of ASKS) {
     const { view } = await requestAuthorization(db, agent, ask, null);
@@ -67,9 +68,9 @@ export async function startSample(db: DB, by?: string): Promise<SampleStep[]> {
  * one does not; one still waiting stays waiting. With `act` false it only reports (the page uses that when it is opened again).
  * Only the sample agent's own requests are looked at, whatever ids are sent.
  */
-export async function continueSample(db: DB, ids: unknown, act = true): Promise<SampleStep[]> {
+export async function continueSample(db: DB, ids: unknown, act = true, workspace = DEFAULT_WORKSPACE): Promise<SampleStep[]> {
   if (!Array.isArray(ids) || ids.length > 10 || ids.some((x) => typeof x !== "string")) throw new HttpError(422, "invalid_ids", "ids must be a list of up to 10 request ids.");
-  const agent = (await allAgents(db)).find((a) => a.origin === "connected" && a.name === SAMPLE_NAME && a.model === "simulated");
+  const agent = (await allAgents(db, workspace)).find((a) => a.origin === "connected" && a.name === SAMPLE_NAME && a.model === "simulated");
   if (!agent) return [];
   const steps: SampleStep[] = [];
   for (const id of ids as string[]) {

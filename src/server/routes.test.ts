@@ -9,8 +9,12 @@ import { test } from "node:test";
 
 const ROOT = path.join(import.meta.dirname, "..", "app", "api");
 
-/** operator: a signed session and same-site origin. agent: an API key. viewer: visitor-or-operator reads, rate limited. public: no data of value. */
-const GUARD = { operator: "await requireOperator(", agent: "authAgent(", viewer: "await viewerOf(", public: "" } as const;
+/**
+ * operator: a signed session and same-site origin. admin: the admin-token session only. agent: an API key. viewer: visitor-or-operator reads,
+ * rate limited. account: no session yet (sign-up, sign-in, links from mails), so same-site only, with limits and uniform answers in accounts.ts.
+ * public: no data of value.
+ */
+const GUARD = { operator: "await requireOperator(", admin: "await requireAdmin(", agent: "authAgent(", viewer: "await viewerOf(", account: "requireSameSite(req)", public: "" } as const;
 const EXPECTED: Record<string, keyof typeof GUARD> = {
   "health:GET": "public",
   "operator/session:GET": "viewer",
@@ -47,8 +51,16 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "v1/central-policies/[id]/assignments:POST": "operator",
   "v1/reviews/[id]:POST": "operator",
   "v1/sample-agent:POST": "operator",
-  "v1/demo/reset:POST": "operator",
-  "v1/demo/check-ins:POST": "operator",
+  "v1/demo/reset:POST": "admin",
+  "v1/demo/check-ins:POST": "admin",
+  "account/register:POST": "account",
+  "account/verify:POST": "account",
+  "account/resend:POST": "account",
+  "account/sign-in:POST": "account",
+  "account/forgot:POST": "account",
+  "account/reset:POST": "account",
+  "admin/users:GET": "admin",
+  "admin/users/[id]:POST": "admin",
 };
 
 function handlers() {
@@ -86,5 +98,21 @@ test("operator routes never take an agent key as authority, and agent routes nev
     const cls = EXPECTED[h.key];
     if (cls === "operator") assert.equal(h.body.includes("authAgent("), false, `${h.key}: an operator route must not accept an agent key as authority`);
     if (cls === "agent") assert.equal(/requireOperator\(|isOperator\(|operatorSid\(/.test(h.body), false, `${h.key}: an agent route must not accept an operator session`);
+  }
+});
+
+test("operator routes stay inside the caller's workspace: an id in the path is checked first, and lists and new things use the workspace", () => {
+  for (const h of handlers()) {
+    if (EXPECTED[h.key] !== "operator") continue;
+    const path = h.key.split(":")[0];
+    if (/\/\[id\]/.test(path)) {
+      const check = path.startsWith("v1/agents/") ? "agentInWorkspace(" : path.startsWith("v1/reviews/") ? "reviewInWorkspace(" : path.startsWith("v1/central-policies/") ? "centralInWorkspace(" : "?";
+      const at = h.body.indexOf(check);
+      assert.ok(at > 0, `${h.key} must call ${check}`);
+      // Nothing that reads or changes the object may come before the check.
+      assert.ok(!/\b(control|setPolicy|policyView|rotateKey|revokeKey|requestCheckIn|runVerification|latestVerification|decide|updateCentralPolicy|assignCentralPolicy)\(/.test(h.body.slice(0, at)), `${h.key}: the workspace check must come first`);
+    }
+    for (const fn of ["registerAgent(", "listCentralPolicies(", "createCentralPolicy(", "startSample(", "continueSample(", "integrationStatus("])
+      for (const line of h.body.split("\n").filter((l) => l.includes(fn))) assert.match(line, /workspace\)/, `${h.key}: ${fn} must be given the caller's workspace`);
   }
 });

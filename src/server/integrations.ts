@@ -10,12 +10,13 @@ import { toolCatalog } from "./gateway.ts";
 import { policyView } from "./permissions.ts";
 import type { IntegrationAgent, IntegrationStatus, ProviderKey } from "../lib/integrations.ts";
 import { allAgents } from "./repo.ts";
+import { DEFAULT_WORKSPACE } from "./session.ts";
 
 /** The policy the guided examples set. Anything else is shown as "different", not as an error. */
 export const RECOMMENDED = { read_test_file: "allow", write_test_file: "approve", delete_test_file: "deny" } as const;
 const SEEN_WITHIN = 10 * 60_000;
 
-export async function integrationStatus(q: Q, now = Date.now()): Promise<IntegrationStatus> {
+export async function integrationStatus(q: Q, workspace = DEFAULT_WORKSPACE, now = Date.now()): Promise<IntegrationStatus> {
   const dir = process.env.TEND_GATEWAY_SANDBOX_DIR ?? "";
   const configured = path.isAbsolute(dir);
   let usable = false;
@@ -29,7 +30,7 @@ export async function integrationStatus(q: Q, now = Date.now()): Promise<Integra
   }
   const tools = toolCatalog().filter((t) => t.tool in RECOMMENDED).map((t) => ({ tool: t.tool, risk: t.risk, available: t.available }));
 
-  const connected = (await allAgents(q)).filter((a) => a.origin === "connected");
+  const connected = (await allAgents(q, workspace)).filter((a) => a.origin === "connected");
   const providers: Record<ProviderKey, IntegrationAgent[]> = { OpenAI: [], Anthropic: [] };
   for (const a of connected) {
     if (a.provider !== "OpenAI" && a.provider !== "Anthropic") continue;

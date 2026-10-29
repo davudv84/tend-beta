@@ -1,13 +1,15 @@
 import { getDb } from "@/server/db";
 import { json, readJson, requireOperator, route } from "@/server/http";
 import { policyView } from "@/server/permissions";
-import { setPolicy } from "@/server/repo";
+import { agentInWorkspace, setPolicy } from "@/server/repo";
 
 /** The saved policy as the server would apply it, with every gateway tool's current decision. Operators only: a policy is not for visitors. */
 export const GET = route(async (req, { params }: { params: Promise<{ id: string }> }) => {
-  await requireOperator(req, await getDb());
+  const db = await getDb();
+  const { workspace } = await requireOperator(req, db);
   const { id } = await params;
-  return json(await policyView(await getDb(), id));
+  await agentInWorkspace(db, workspace, id);
+  return json(await policyView(db, id));
 });
 
 /**
@@ -15,8 +17,10 @@ export const GET = route(async (req, { params }: { params: Promise<{ id: string 
  * whole, a policy that lets a spending tool run without approval is refused, and a stale expectedVersion is refused (409). Operators only.
  */
 export const POST = route(async (req, { params }: { params: Promise<{ id: string }> }) => {
-  const by = await requireOperator(req, await getDb());
+  const db = await getDb();
+  const { id: by, workspace } = await requireOperator(req, db);
   const { id } = await params;
+  await agentInWorkspace(db, workspace, id);
   const body = (await readJson(req)) as { rules?: unknown; enforcement?: unknown; expectedVersion?: unknown } | null;
-  return json({ event: await setPolicy(await getDb(), id, body?.rules, body?.enforcement, by, body?.expectedVersion) });
+  return json({ event: await setPolicy(db, id, body?.rules, body?.enforcement, by, body?.expectedVersion) });
 });

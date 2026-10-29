@@ -2,7 +2,7 @@
 // Lock rule: every write transaction takes the event lock (q.lockEvents) before touching any row,
 // so writers queue in one order and can't deadlock; the demo takes its own lock just before it.
 import { cleanText } from "../lib/clean.ts";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { needsReview, parseAdjustment, parseCheckIn } from "../lib/contract.ts";
 import type { Actor, EventType, WireEvent } from "../lib/projection.ts";
 import type { Agent, Provider, ToolOutcome } from "../lib/types";
@@ -11,6 +11,7 @@ import { hashKey, newKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError, spend } from "./http.ts";
 import { parsePolicy, policyProblem } from "./policy.ts";
+import { DEFAULT_WORKSPACE } from "./session.ts";
 
 /** Postgres BIGINT columns hold whole milliseconds. */
 const ms = (t: number) => Math.round(t);
@@ -25,6 +26,8 @@ interface AgentRow {
   enforcement: "monitor" | "enforce"; policy: string;
   /** The central policy this agent is assigned to, if any (central_policies.id). */
   central_policy_id: string | null;
+  /** Which workspace the agent belongs to (workspaces.id). Everything about the agent is visible only there. */
+  workspace_id: string;
 }
 
 export interface Profile { name: string; model: string; provider: Provider; role: string; description: string; cadenceHours: number }
@@ -43,18 +46,38 @@ export const getAgent = async (q: Q, id: string) => {
   const r = await agentRow(q, id);
   return r ? toAgent(r) : undefined;
 };
-export const allAgents = async (q: Q) => (await q.all<AgentRow>("SELECT * FROM agents ORDER BY origin DESC, created_at, id")).map(toAgent);
+/** Every agent, or with `workspace` only that workspace's. */
+export const allAgents = async (q: Q, workspace?: string) =>
+  (await q.all<AgentRow>(`SELECT * FROM agents ${workspace ? "WHERE workspace_id = ? " : ""}ORDER BY origin DESC, created_at, id`, ...(workspace ? [workspace] : []))).map(toAgent);
 
 export async function agentByKey(q: Q, key: string) {
   const r = await q.get<AgentRow>("SELECT * FROM agents WHERE key_hash = ?", hashKey(key));
   return r ? toAgent(r) : undefined;
 }
 
-export function insertAgent(q: Q, a: Agent, keyHash?: string, keyPrefix?: string) {
+export function insertAgent(q: Q, a: Agent, keyHash?: string, keyPrefix?: string, workspace = DEFAULT_WORKSPACE) {
   const profile: Profile = { name: a.name, model: a.model, provider: a.provider, role: a.role, description: a.description, cadenceHours: a.cadenceHours };
-  return q.run(`INSERT INTO agents (id, profile, origin, status, integration_enabled, permissions, public, key_hash, key_prefix, config_version, acked_version, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    a.id, JSON.stringify(profile), a.origin, a.status, a.integrationEnabled ? 1 : 0, JSON.stringify(a.permissions), a.public ? 1 : 0, keyHash ?? null, keyPrefix ?? null, a.configVersion, a.ackedVersion, ms(a.connectedAt));
+  return q.run(`INSERT INTO agents (id, profile, origin, status, integration_enabled, permissions, public, key_hash, key_prefix, config_version, acked_version, created_at, workspace_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    a.id, JSON.stringify(profile), a.origin, a.status, a.integrationEnabled ? 1 : 0, JSON.stringify(a.permissions), a.public ? 1 : 0, keyHash ?? null, keyPrefix ?? null, a.configVersion, a.ackedVersion, ms(a.connectedAt), workspace);
+}
+
+// ---- workspaces --------------------------------------------------------------------------------
+// A route that takes an id checks it belongs to the caller's workspace before doing anything. An id from another workspace gets the
+// same 404 as one that does not exist, so nothing about other workspaces can be learned by trying ids.
+
+export async function agentInWorkspace(q: Q, workspace: string, agentId: string) {
+  const r = await q.get<{ workspace_id: string }>("SELECT workspace_id FROM agents WHERE id = ?", agentId);
+  if (!r || r.workspace_id !== workspace) throw new HttpError(404, "agent_not_found", `No agent with id “${agentId}”.`);
+}
+/** A review or an authorization (approvals are decided by the same id). */
+export async function reviewInWorkspace(q: Q, workspace: string, id: string) {
+  const r = await q.get<{ workspace_id: string }>("SELECT a.workspace_id FROM agents a WHERE a.id = COALESCE((SELECT agent_id FROM reviews WHERE id = ?), (SELECT agent_id FROM authorizations WHERE id = ?))", id, id);
+  if (!r || r.workspace_id !== workspace) throw new HttpError(404, "review_not_found", "No review with that id.");
+}
+export async function centralInWorkspace(q: Q, workspace: string, id: string) {
+  const r = await q.get<{ workspace_id: string }>("SELECT workspace_id FROM central_policies WHERE id = ?", id);
+  if (!r || r.workspace_id !== workspace) throw new HttpError(404, "central_policy_not_found", `No central policy with id “${id}”.`);
 }
 
 // ---- events ----------------------------------------------------------------------------------
@@ -433,7 +456,7 @@ export async function setPolicy(db: DB, agentId: string, rules: unknown, enforce
 
 // ---- central policies ----------------------------------------------------------------------------------------------------------------
 
-interface CentralRow { id: string; name: string; policy: string; version: number; created_at: number; updated_at: number; updated_by: string | null }
+interface CentralRow { id: string; name: string; policy: string; version: number; created_at: number; updated_at: number; updated_by: string | null; workspace_id: string }
 const NAME = /^[^\u0000-\u001f\u007f]{1,64}$/;
 
 /** The central policy an agent is assigned to, read in the caller's transaction. `policy: null` (a dangling id) denies everything. */
@@ -459,20 +482,20 @@ const agentList = (v: unknown, field: string) => {
   return [...(v as string[])].sort(); // a fixed lock order, so two changes cannot deadlock
 };
 
-export async function listCentralPolicies(q: Q) {
-  return Promise.all((await q.all<CentralRow>("SELECT * FROM central_policies ORDER BY name")).map((c) => centralView(q, c)));
+export async function listCentralPolicies(q: Q, workspace = DEFAULT_WORKSPACE) {
+  return Promise.all((await q.all<CentralRow>("SELECT * FROM central_policies WHERE workspace_id = ? ORDER BY name", workspace)).map((c) => centralView(q, c)));
 }
 
 /** A new central policy, assigned to nobody yet. Same validation as an agent's own policy. Operator only (the route checks). */
-export async function createCentralPolicy(db: DB, body: unknown, by?: string) {
+export async function createCentralPolicy(db: DB, body: unknown, by?: string, workspace = DEFAULT_WORKSPACE) {
   const { name, rules } = (body ?? {}) as { name?: unknown; rules?: unknown };
   if (typeof name !== "string" || !NAME.test(name.trim())) throw new HttpError(422, "invalid_name", "name must be 1–64 printable characters.");
   const checked = checkedPolicy(rules);
   return db.tx(async (q) => {
     await q.lockEvents();
-    if (await q.get("SELECT 1 FROM central_policies WHERE name = ?", name.trim())) throw new HttpError(409, "name_taken", "A central policy with that name already exists.");
+    if (await q.get("SELECT 1 FROM central_policies WHERE name = ? AND workspace_id = ?", name.trim(), workspace)) throw new HttpError(409, "name_taken", "A central policy with that name already exists.");
     const id = `cp_${randomUUID().replaceAll("-", "").slice(0, 20)}`, now = Date.now();
-    await q.run("INSERT INTO central_policies (id, name, policy, version, created_at, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?, ?)", id, name.trim(), JSON.stringify(checked), now, now, by ?? null);
+    await q.run("INSERT INTO central_policies (id, name, policy, version, created_at, updated_at, updated_by, workspace_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?)", id, name.trim(), JSON.stringify(checked), now, now, by ?? null, workspace);
     return centralView(q, (await mustCentral(q, id))!);
   });
 }
@@ -512,14 +535,14 @@ export async function assignCentralPolicy(db: DB, id: string, body: unknown, by?
     const now = Date.now(), rules = JSON.parse(c.policy);
     for (const agentId of add) {
       const row = (await q.get<AgentRow>("SELECT * FROM agents WHERE id = ? FOR UPDATE", agentId));
-      if (!row) throw new HttpError(404, "agent_not_found", `No agent with id “${agentId}”.`);
+      if (!row || row.workspace_id !== c.workspace_id) throw new HttpError(404, "agent_not_found", `No agent with id “${agentId}”.`);
       if (row.central_policy_id === id) continue;
       await q.run("UPDATE agents SET central_policy_id = ? WHERE id = ?", id, agentId);
       await insertEvent(q, { agentId, type: "policy.central_assigned", actor: "human", at: now, data: { version: await bump(q, agentId), policyId: id, name: c.name, policyVersion: c.version, policy: rules, ...(row.central_policy_id ? { previous: row.central_policy_id } : {}), ...(by ? { by } : {}) } });
     }
     for (const agentId of remove) {
       const row = (await q.get<AgentRow>("SELECT * FROM agents WHERE id = ? FOR UPDATE", agentId));
-      if (!row) throw new HttpError(404, "agent_not_found", `No agent with id “${agentId}”.`);
+      if (!row || row.workspace_id !== c.workspace_id) throw new HttpError(404, "agent_not_found", `No agent with id “${agentId}”.`);
       if (row.central_policy_id !== id) throw new HttpError(409, "not_assigned", `Agent “${agentId}” is not assigned to this central policy.`);
       await q.run("UPDATE agents SET central_policy_id = NULL WHERE id = ?", agentId);
       await insertEvent(q, { agentId, type: "policy.central_unassigned", actor: "human", at: now, data: { version: await bump(q, agentId), policyId: id, name: c.name, ...(by ? { by } : {}) } });
@@ -576,7 +599,7 @@ export async function requestCheckIn(db: DB, agentId: string, by?: string) {
 
 const PROVIDERS: Provider[] = ["Anthropic", "OpenAI", "Google", "Custom"];
 
-export async function registerAgent(db: DB, input: unknown, by?: string) {
+export async function registerAgent(db: DB, input: unknown, by?: string, workspace = DEFAULT_WORKSPACE) {
   const o = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const name = S(o.name, 40), model = S(o.model, 60), provider = o.provider as Provider;
   const errors: string[] = [];
@@ -589,13 +612,14 @@ export async function registerAgent(db: DB, input: unknown, by?: string) {
   const now = Date.now();
   return db.tx(async (q) => {
     await q.lockEvents();
-    let id = base;
-    for (let i = 2; await agentRow(q, id); i++) id = `${base}-${i}`;
+    // Ids are global. In a user's workspace a random suffix keeps them from saying whether another workspace already has the name.
+    let id = workspace === DEFAULT_WORKSPACE ? base : `${base}-${randomBytes(3).toString("hex")}`;
+    for (let i = 2; await agentRow(q, id); i++) id = workspace === DEFAULT_WORKSPACE ? `${base}-${i}` : `${base}-${randomBytes(3).toString("hex")}`;
     const agent: Agent = {
       id, name, model, provider, role: S(o.role, 60) || "Connected agent", description: S(o.description, 300), status: "active",
       integrationEnabled: true, permissions: [], cadenceHours: 0, connectedAt: now, origin: "connected", configVersion: 1, ackedVersion: 0, public: o.public === true,
     };
-    await insertAgent(q, agent, k.hash, k.prefix);
+    await insertAgent(q, agent, k.hash, k.prefix, workspace);
     await insertEvent(q, { agentId: id, type: "agent.registered", actor: "human", at: now, data: { agent, ...(by && { by }) } });
     return { agent, apiKey: k.key };
   });
@@ -646,5 +670,5 @@ export async function revokeKey(db: DB, agentId: string, by?: string) {
   });
 }
 
-export const keyPrefixes = async (q: Q) =>
-  Object.fromEntries((await q.all<{ id: string; key_prefix: string }>("SELECT id, key_prefix FROM agents WHERE key_prefix IS NOT NULL")).map((r) => [r.id, r.key_prefix]));
+export const keyPrefixes = async (q: Q, workspace = DEFAULT_WORKSPACE) =>
+  Object.fromEntries((await q.all<{ id: string; key_prefix: string }>("SELECT id, key_prefix FROM agents WHERE key_prefix IS NOT NULL AND workspace_id = ?", workspace)).map((r) => [r.id, r.key_prefix]));

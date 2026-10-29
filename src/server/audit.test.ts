@@ -39,12 +39,12 @@ const events = async (db: DB, agentId: string, type?: string) =>
   (await db.all<{ type: string; data: string }>("SELECT type, data FROM events WHERE agent_id = ? ORDER BY seq", agentId))
     .filter((e) => !type || e.type === type).map((e) => ({ type: e.type, data: JSON.parse(e.data) as Record<string, unknown> }));
 
-test("requireOperator returns the session id and refuses everything else", async () => {
+test("requireOperator returns the session and refuses everything else", async () => {
   const db = await memoryDb();
   try {
     const me = await signedIn(db);
-    assert.equal(await requireOperator(me.request(), db), me.id);
-    assert.equal(await requireOperator(me.request({ origin: "http://tend.test" }), db), me.id);
+    assert.equal((await requireOperator(me.request(), db)).id, me.id);
+    assert.equal((await requireOperator(me.request({ origin: "http://tend.test" }), db)).id, me.id);
     assert.equal(await failure(() => requireOperator(req(), db)), "operator_required");
     assert.equal(await failure(() => requireOperator(req(`${Date.now() + 1000}.0123456789abcdef.forged`), db)), "operator_required");
     assert.equal(await failure(() => requireOperator(me.request({ origin: "http://evil.test" }), db)), "bad_origin", "a valid session from another site is refused");

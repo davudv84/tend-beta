@@ -14,6 +14,7 @@
     "e2e:authz": "node scripts/authz-e2e.mjs",
     "e2e:gateway": "node scripts/gateway-e2e.mjs",
     "e2e:connect": "node scripts/connect-e2e.mjs",
+    "e2e:accounts": "node scripts/accounts-e2e.mjs",
     "e2e:claude-notes": "node --env-file-if-exists=.env.local scripts/claude-notes-e2e.mjs",
     "e2e:claude-gateway": "node --env-file-if-exists=.env.local scripts/claude-gateway-e2e.mjs",
     "demo:claude-notes": "node --env-file-if-exists=.env.local scripts/claude-notes-demo.mjs",

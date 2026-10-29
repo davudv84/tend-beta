@@ -183,6 +183,48 @@ export const MIGRATIONS: string[] = [
    );
    ALTER TABLE agents ADD COLUMN central_policy_id TEXT REFERENCES central_policies(id);
    CREATE INDEX agents_central_policy ON agents(central_policy_id);`,
+  // Accounts and workspaces (accounts.ts). Every agent and central policy belongs to one workspace; everything else hangs off an agent.
+  // What existed before belongs to "default", the workspace of the admin-token operator. A user signs in with a password whose scrypt
+  // hash is stored, must verify the e-mail address and be approved by the admin before a session is issued. One-time tokens (verify,
+  // reset) are stored only as SHA-256 and are spent once. A session row gains the user it belongs to (NULL: an admin-token session).
+  `CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at BIGINT NOT NULL);
+   INSERT INTO workspaces (id, name, created_at) VALUES ('default', 'Default', 0);
+   CREATE TABLE users (
+     id TEXT PRIMARY KEY,
+     email TEXT NOT NULL UNIQUE CHECK (email = lower(email)),
+     password_hash TEXT NOT NULL,
+     workspace_id TEXT NOT NULL UNIQUE REFERENCES workspaces(id),
+     created_at BIGINT NOT NULL,
+     email_verified_at BIGINT,
+     approved_at BIGINT,
+     approved_by TEXT,
+     disabled_at BIGINT,
+     password_changed_at BIGINT NOT NULL
+   );
+   CREATE TABLE user_tokens (
+     hash TEXT PRIMARY KEY,
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     purpose TEXT NOT NULL CHECK (purpose IN ('verify', 'reset')),
+     created_at BIGINT NOT NULL,
+     expires_at BIGINT NOT NULL,
+     used_at BIGINT
+   );
+   CREATE INDEX user_tokens_user ON user_tokens(user_id, purpose);
+   ALTER TABLE operator_sessions ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
+   CREATE INDEX operator_sessions_user ON operator_sessions(user_id);
+   ALTER TABLE agents ADD COLUMN workspace_id TEXT REFERENCES workspaces(id);
+   UPDATE agents SET workspace_id = 'default';
+   ALTER TABLE agents ALTER COLUMN workspace_id SET NOT NULL;
+   CREATE INDEX agents_workspace ON agents(workspace_id);
+   ALTER TABLE central_policies ADD COLUMN workspace_id TEXT REFERENCES workspaces(id);
+   UPDATE central_policies SET workspace_id = 'default';
+   ALTER TABLE central_policies ALTER COLUMN workspace_id SET NOT NULL;
+   ALTER TABLE central_policies DROP CONSTRAINT central_policies_name_key;
+   ALTER TABLE central_policies ADD CONSTRAINT central_policies_workspace_name UNIQUE (workspace_id, name);
+   ALTER TABLE auth_events ADD COLUMN user_id TEXT;
+   ALTER TABLE auth_events DROP CONSTRAINT auth_events_type_check;
+   ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected',
+     'account.registered', 'account.verified', 'account.approved', 'account.disabled', 'account.reset_requested', 'account.password_reset'));`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */

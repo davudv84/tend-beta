@@ -1,5 +1,5 @@
 import { isIP } from "node:net";
-import { activeSession } from "./session.ts";
+import { currentSession, type Session } from "./session.ts";
 import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { spend } from "./limits.ts";
@@ -108,8 +108,8 @@ export function clientIp(req: Request): string {
   return (raw && normalize(raw)) || "unknown";
 }
 
-/** Operator-only mutation: valid session, and the request must come from this site (CSRF defence in depth). The session is looked up on the server on every call, so a revoked one stops working at once. Returns the session id, to be recorded with what the operator did. Always `await` it: an unawaited call checks nothing. */
-export async function requireOperator(req: Request, db: Q) {
+/** Refuses a request another site made the browser send (CSRF defence in depth). Typed or scripted requests carry no site and pass. */
+export function requireSameSite(req: Request) {
   const origin = req.headers.get("origin");
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   let from = "";
@@ -120,7 +120,23 @@ export async function requireOperator(req: Request, db: Q) {
   // Browsers say where a request came from; anything but this site (or no site at all, as when typed or scripted) is refused.
   const site = req.headers.get("sec-fetch-site");
   if (site && site !== "same-origin" && site !== "none") throw new HttpError(403, "bad_origin", "Cross-site requests are not allowed.");
-  const sid = await activeSession(db, req);
-  if (!sid) throw new HttpError(403, "operator_required", "Sign in as an operator to make changes. Visitors have read-only access.");
-  return sid;
+}
+
+/**
+ * Operator-only: a valid session, and the request must come from this site. The session is looked up on the server on every call, so a
+ * revoked one stops working at once. Returns the session: `id` is recorded with what the operator did, and `workspace` bounds what the
+ * route may read or change (an id from another workspace must be answered as not found). Always `await` it: an unawaited call checks nothing.
+ */
+export async function requireOperator(req: Request, db: Q): Promise<Session> {
+  requireSameSite(req);
+  const s = await currentSession(db, req);
+  if (!s) throw new HttpError(403, "operator_required", "Sign in to make changes. Visitors have read-only access.");
+  return s;
+}
+
+/** The admin token's session only: approving accounts, the demo. */
+export async function requireAdmin(req: Request, db: Q): Promise<Session> {
+  const s = await requireOperator(req, db);
+  if (!s.admin) throw new HttpError(403, "admin_required", "Only the admin can do this.");
+  return s;
 }

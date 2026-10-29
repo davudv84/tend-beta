@@ -54,4 +54,12 @@ export interface Viewer {
   public: boolean;
   operatorAvailable: boolean;
   demo: boolean;
+  /** The workspace this viewer sees: its own for a signed-in user, "default" for the admin and for public visitors. */
+  workspace?: string;
+  /** Signed in with the admin token: may approve accounts. */
+  admin?: boolean;
+  /** Whether e-mail accounts are enabled on this server (sign-up and sign-in pages). */
+  accounts?: boolean;
+  /** The signed-in user, when it is an account rather than the admin token. */
+  account?: { email: string };
 }

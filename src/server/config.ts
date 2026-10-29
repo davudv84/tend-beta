@@ -72,6 +72,32 @@ export const config = {
    * Ignored on Vercel, behind a trusted proxy and whenever a database URL is set (a hosted deployment always has one, the local test servers use
    * the embedded database), so a stray flag in production does nothing. Honoured per request only for a loopback address over http (see session.ts).
    */
+  /**
+   * E-mail accounts (accounts.ts). Off with TEND_ACCOUNTS=0. A production server needs a mail service and its own public address, or the
+   * links in verification and reset mails could not be trusted or delivered, so accounts stay off there until all three are set:
+   * RESEND_API_KEY, TEND_EMAIL_FROM and TEND_APP_URL. Development (and a local-only production build) without a key writes mails to a
+   * local outbox instead (email.ts).
+   */
+  get accounts() {
+    if (process.env.TEND_ACCOUNTS === "0") return false;
+    // A local-only server (localHttp: never on Vercel, never with a database URL) may use the local outbox like development does.
+    return process.env.NODE_ENV !== "production" || this.localHttp || (!!this.mailKey && !!this.mailFrom && !!this.appUrl);
+  },
+  get mailKey() {
+    return process.env.RESEND_API_KEY ?? "";
+  },
+  get mailFrom() {
+    return process.env.TEND_EMAIL_FROM ?? "";
+  },
+  /** Where people open TEND, for links in mails. Never taken from a request header, which a client controls. */
+  get appUrl() {
+    const v = (process.env.TEND_APP_URL ?? "").replace(/\/+$/, "");
+    return /^https?:\/\/[^\s/]+$/.test(v) ? v : "";
+  },
+  /** Who is told by mail that a new account waits for approval (optional). */
+  get adminEmail() {
+    return process.env.TEND_ADMIN_EMAIL ?? "";
+  },
   get localHttp() {
     return process.env.TEND_LOCAL_HTTP === "1" && !process.env.VERCEL && this.trustedProxy === 0 && !this.databaseUrl;
   },

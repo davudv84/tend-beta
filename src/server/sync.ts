@@ -7,6 +7,7 @@ import { advanceDemo } from "./demo.ts";
 import { HttpError } from "./http.ts";
 import { visibleTo } from "./redact.ts";
 import { allAgents, eventsAfter, keyPrefixes, lastSeq, recentEvents } from "./repo.ts";
+import { DEFAULT_WORKSPACE } from "./session.ts";
 
 const WINDOW = 31 * 24 * 60 * 60 * 1000;
 
@@ -14,9 +15,9 @@ export function assertCanView(v: Viewer) {
   if (v.role !== "operator" && !v.public) throw new HttpError(401, "sign_in_required", "This Tend instance is private. Sign in as an operator to view it.");
 }
 
-/** Visitors see demo agents and connected agents an operator marked public. Operators see everything. */
+/** Only the viewer's workspace: a user's own, or the default one for the admin and for public visitors. Visitors see demo agents and connected agents an operator marked public. */
 async function visible(db: DB, v: Viewer) {
-  const agents = await allAgents(db);
+  const agents = await allAgents(db, v.workspace ?? DEFAULT_WORKSPACE);
   return v.role === "operator" ? agents : agents.filter((a) => a.origin === "demo" || a.public);
 }
 
@@ -36,7 +37,7 @@ export async function snapshot(db: DB, v: Viewer, now = Date.now()) {
     now,
     projection: applyEvents(emptyProjection(agents), events),
     // Key prefixes help operators tell keys apart; the keys themselves are never stored.
-    ...(v.role === "operator" && { keys: await keyPrefixes(db) }),
+    ...(v.role === "operator" && { keys: await keyPrefixes(db, v.workspace ?? DEFAULT_WORKSPACE) }),
   };
 }
 

@@ -1,10 +1,10 @@
 import { getDb } from "@/server/db";
-import { HttpError, json, readJson, requireOperator, route } from "@/server/http";
+import { HttpError, json, readJson, requireAdmin, route } from "@/server/http";
 import { getAgent, ingestCheckIn } from "@/server/repo";
 
 /** Lets an operator compose a check-in for a demo agent. Connected agents always speak for themselves. */
 export const POST = route(async (req) => {
-  await requireOperator(req, await getDb());
+  await requireAdmin(req, await getDb());
   const db = await getDb();
   const body = (await readJson(req)) as { agentId?: string };
   const agent = await getAgent(db, String(body?.agentId ?? ""));
