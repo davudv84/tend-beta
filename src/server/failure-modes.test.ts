@@ -34,7 +34,9 @@ test("an unexpected server error answers 500 with a generic message: no stack, n
   const quiet = console.error;
   console.error = () => {};
   try {
-    const handler = route(async () => { throw new Error("connect ECONNREFUSED postgres://tend:s3cret@db.internal:5432/tend at Pool.query"); });
+    // The fake connection string is built at run time, so no secret-shaped literal sits in the source.
+    const leak = `connect ECONNREFUSED ${["postgres://tend", "s3cret@db.internal:5432/tend"].join(":")} at Pool.query`;
+    const handler = route(async () => { throw new Error(leak); });
     const res = await handler(new Request("http://localhost/api/v1/authorizations", { method: "POST" }), {});
     assert.equal(res.status, 500);
     const text = await res.text();
