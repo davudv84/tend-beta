@@ -72,6 +72,17 @@ npm run dev                         # leave this running
 Open <http://localhost:3000/operator> and paste the value after `TEND_ADMIN_TOKEN=` from `.env.local`. Requests that need you appear under **Approvals** (<http://localhost:3000/oversight>) with the exact action.
 Your own tools show a warning (TEND has no built-in knowledge of them) and need one click, **Allow once**. Spending always asks twice.
 
+Prefer the terminal? The same operator actions as a command line (signs in with the token in `.env.local`, never prints it):
+
+```bash
+npm run tend -- status                       # agents, central policies, what waits for you
+npm run tend -- pending                      # each waiting request with its exact text, then: npm run tend -- approve az_...  (or reject)
+npm run tend -- policy create "Baseline" --rule send_email:send:approve --assign "My agent"
+npm run tend -- audit --last 20              # what TEND recorded
+```
+
+Every call behind these, with `curl`: [docs/api-examples.md](docs/api-examples.md).
+
 ## If something goes wrong
 
 | You see | It means | Do this |
@@ -82,6 +93,9 @@ Your own tools show a warning (TEND has no built-in knowledge of them) and need 
 | `TEND_AGENT_KEY is not set` | the agent has no identity yet | run `npm run tester:agent`, then `node --env-file=.env.agent your-agent.mjs` |
 | `ANTHROPIC_API_KEY is not set` / `Anthropic rejected the API key (401)` | no key, or a wrong one | the `read -rs` command above |
 | `resource must be 1-64 characters ...` | `resource` has a character TEND does not accept | use letters, digits and `_ . : -` only |
+| `TEND refused: 409 policy_changed` | someone saved the central policy after you read it | run the command again (it reads the current version first) |
+| `No agent named "..."` / `No central policy named "..."` | a name that TEND doesn't know (names are exact) | `npm run tend -- status` lists the names |
+| `TEND refused: 403 operator_required` | an operator call without a valid sign-in | check `TEND_ADMIN_TOKEN` in `.env.local` matches the running TEND; restart `npm run dev` after changing it |
 | anything else odd | | `npm run agents:doctor` checks file permissions, saved keys and the address |
 
 The demo and the integration work on Node 20.12 or newer. The project's own test suite (`npm test`) runs TypeScript directly and needs Node 22.18 or newer (24 is what it is tested on). On Node 20 you may also see a few "Unsupported engine" warnings from dependencies during `npm ci`; they are harmless.
@@ -95,4 +109,5 @@ Time from `git clone` to your first controlled action. Anything that failed or c
 - **TEND stops only code that asks it.** An agent that skips the wrapper, or holds the real credentials itself, can bypass it. Use fake or low-risk actions in this test.
 - Use fictional data. TEND records tool names, resources, the exact text you approve and your decisions, on your machine only (`.data/`).
 - One sign-in token, no accounts or teams, no notifications; the dashboard must be open to approve. This is a prototype for controlled testing, not for production, and it has had no independent security review.
-- More detail: `docs/gateway.md`, `docs/enforcement.md`, `docs/audit.md`, and the test report `docs/real-claude-test.md`.
+- The full list, honestly: [docs/security-limitations.md](docs/security-limitations.md). More detail: `docs/gateway.md`, `docs/enforcement.md`, `docs/audit.md`, and the test report `docs/real-claude-test.md`.
+- Feedback form: [docs/feedback-template.md](docs/feedback-template.md).
