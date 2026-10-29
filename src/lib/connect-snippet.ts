@@ -2,6 +2,7 @@
 // a person, spends the single-use token and lets Tend run the action. It uses only the endpoints every agent uses
 // (inbox, gateway/requests, authorizations/{id}/token, gateway/execute). Nothing here is a second mechanism.
 // It prints no key and no token, and it stops on the first answer that is not exactly what it expects.
+import type { ConnectKind } from "./integrations-catalog";
 
 export const TEST_SCRIPT = `const url = process.env.TEND_URL, key = process.env.TEND_AGENT_KEY;
 if (!url || !key) { console.error("Set TEND_URL and TEND_AGENT_KEY."); process.exit(1); }
@@ -63,7 +64,7 @@ export const maskedCommand = (url: string) => connectCommand(url, `tend_sk_${"x"
  * How to wire a real agent, per kind of connection. The key is never embedded: the agent reads it from TEND_AGENT_KEY, which the person sets
  * where the agent runs. These are instructions to copy, not a claim that the agent is connected; only a real tool call shows that.
  */
-export function agentSnippet(kind: "claude" | "openai" | "mcp" | "http", url: string) {
+export function agentSnippet(kind: ConnectKind, url: string) {
   if (!URL_OK.test(url)) throw new Error("not a plain http(s) address");
   const env = `export TEND_URL=${url}\nexport TEND_AGENT_KEY=tend_sk_…   # the key above, where your agent runs`;
   if (kind === "claude") return `${env}\n\n// Copy examples/claude-quickstart/tend-client.mjs and examples/claude-agent/gate.mjs next to your agent
@@ -86,6 +87,31 @@ export const sendEmail = tool({
     return out.executed ? "sent" : \`Not done: \${out.outcome}\`;
   },
 });`;
+  if (kind === "chat") return `${env}\n\n// Any provider with the OpenAI-compatible Chat Completions API: OpenAI, Gemini, Mistral, Groq, Ollama, or your own server.
+// Copy examples/adapters (guard.mjs, openai-compatible.mjs), tend-client.mjs and gate.mjs next to your agent. Then:
+import { guardTool } from "./guard.mjs";
+import { runChatAgent } from "./openai-compatible.mjs";
+import { connectTend } from "./tend-client.mjs";
+const gate = connectTend();
+const tools = [{ name: "send_email", description: "Send an email", params: { to: "Recipient" }, run: guardTool(gate, "send_email", ({ to }) => realSend(to)) }];
+await runChatAgent({ provider: "groq", model: "llama-3.3-70b-versatile", tools, prompt: "Email the team" }); // or baseURL + apiKey for your own server
+// In TEND the tool is send_email with the action "call".`;
+  if (kind === "js") return `${env}\n\n// LangChain, LangGraph, Mastra or any JavaScript framework: wrap the tool's function, then define the tool as usual.
+// Copy examples/adapters/guard.mjs, tend-client.mjs and gate.mjs next to your agent.
+import { tool } from "langchain";              // or @langchain/core/tools, or createTool from @mastra/core/tools
+import { guardTool } from "./guard.mjs";
+import { connectTend } from "./tend-client.mjs";
+const gate = connectTend();
+export const sendEmail = tool(guardTool(gate, "send_email", ({ to }) => realSend(to)), { name: "send_email", description: "Send an email", schema });
+// The function returns the tool's result on TEND's yes, and a "Not done: ..." sentence otherwise. In TEND: send_email · call.`;
+  if (kind === "python") return `${env}\n\n# PydanticAI, AutoGen, CrewAI or any Python framework. Copy examples/python/tend_gate.py (standard library only).
+from tend_gate import Gate, guard_tool
+gate = Gate()
+_send = guard_tool(gate, "send_email", lambda to: real_send(to))
+def send_email(to: str) -> str:
+    """Send an email."""
+    return _send(to=to)          # runs only on TEND's yes; otherwise returns "Not done: ..."
+# Give send_email to your framework as a tool (Agent(tools=[send_email]), @tool, ...). In TEND: send_email · call.`;
   if (kind === "mcp") return `// In your MCP host's configuration, start the proxy instead of the server (examples/mcp-proxy):
 {
   "mcpServers": {

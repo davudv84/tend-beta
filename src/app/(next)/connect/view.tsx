@@ -16,7 +16,7 @@ import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
 import { TEST_SCRIPT, agentSnippet, connectCommand, maskedCommand } from "@/lib/connect-snippet";
 import { IntegrationLogo } from "@/components/integration-logo";
-import { INTEGRATIONS } from "@/lib/integrations-catalog";
+import { INTEGRATIONS, STATUS_ORDER, statusOf } from "@/lib/integrations-catalog";
 import { dateTime, timeAgo, useNow } from "@/lib/format";
 import { TEST_TOOL, testState } from "@/lib/onboarding";
 import type { PolicyView } from "@/lib/permissions";
@@ -26,8 +26,9 @@ import { cn } from "@/lib/utils";
 import { Disclosure } from "@/ui/disclosure";
 import { BackLink, Page, PageSkeleton } from "@/ui/page";
 
-const CONNECTABLE = INTEGRATIONS.filter((i) => i.connect && i.status !== "planned");
-const PLANNED = INTEGRATIONS.filter((i) => i.status === "planned");
+// Everything implemented can be connected, verified first; the status shown is the one the verification report earned.
+const CONNECTABLE = INTEGRATIONS.filter((i) => i.connect).map((i) => ({ ...i, status: statusOf(i) })).sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+const PLANNED = INTEGRATIONS.filter((i) => !i.connect);
 const SUGGEST = [TEST_TOOL];
 type Step = 1 | 2 | 3;
 
@@ -165,7 +166,7 @@ function Flow() {
         <div className="mt-12">
           {heading(c.pick.title)}
           {lead(c.pick.body)}
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {CONNECTABLE.map((i) => (
               <button key={i.id} type="button" onClick={() => choose(i.id)}
                 className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-primary">
