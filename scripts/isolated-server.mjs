@@ -2,7 +2,7 @@
 //
 // Why a temp project folder: `next start` loads .env.local (and .env) from the project directory it runs in. Run from the repository root, a
 // DATABASE_URL, TEND_* or other setting in YOUR .env.local silently reconfigures the "isolated" server (a DATABASE_URL makes it use that database
-// instead of the temp one). So the server runs in a throwaway directory that links only the build (.next), node_modules, package.json and
+// instead of the temp one). So the server runs in a throwaway directory that links only the build (.next), public/, node_modules, package.json and
 // next.config.ts, with no .env* file, and every setting TEND reads is also set explicitly (empty means off).
 //
 // It also checks what it started: the database must be the embedded one, and the process holding the port must be this server (not a stale
@@ -49,7 +49,7 @@ const BLANK = ["DATABASE_URL", "POSTGRES_URL", "VERCEL", "TEND_TRUSTED_PROXY", "
 export async function startIsolatedServer({ root, env, database = "embedded", port: wantedPort, confine, keepDir = false }) {
   if (!existsSync(path.join(root, ".next/BUILD_ID"))) throw new Error("There is no production build yet. Run `npm run build` first.");
   const dir = mkdtempSync(path.join(tmpdir(), "tend-isolated-"));
-  for (const name of [".next", "node_modules", "package.json", "next.config.ts"]) if (existsSync(path.join(root, name))) symlinkSync(path.join(root, name), path.join(dir, name));
+  for (const name of [".next", "node_modules", "package.json", "next.config.ts", "public"]) if (existsSync(path.join(root, name))) symlinkSync(path.join(root, name), path.join(dir, name));
   const port = wantedPort ?? (await freePort());
   const url = `http://127.0.0.1:${port}`;
   const nextArgs = ["start", "-p", String(port), "-H", "127.0.0.1"];

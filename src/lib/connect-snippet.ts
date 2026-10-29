@@ -67,62 +67,58 @@ export const maskedCommand = (url: string) => connectCommand(url, `tend_sk_${"x"
 export function agentSnippet(kind: ConnectKind, url: string) {
   if (!URL_OK.test(url)) throw new Error("not a plain http(s) address");
   const env = `export TEND_URL=${url}\nexport TEND_AGENT_KEY=tend_sk_…   # the key above, where your agent runs`;
-  if (kind === "claude") return `${env}\n\n// Copy examples/claude-quickstart/tend-client.mjs and examples/claude-agent/gate.mjs next to your agent
-// (in tend-client.mjs, change the gate import to "./gate.mjs"). Then, around each sensitive tool:
-import { connectTend } from "./tend-client.mjs";
+  // Every adapter comes from this TEND server (scripts/build-sdk.mjs builds /sdk/), so no access to TEND's repository is needed.
+  const get = `curl -fsSO ${url}/sdk/tend.mjs     # TEND's adapters: one file, no dependencies, Node 18+`;
+  const rule = "// In TEND (Policies, or the Permissions step) give the tool a rule: send_email · call → Allow, Ask me first or Never.";
+  if (kind === "claude") return `${env}\n${get}\n\n// Anthropic SDK: wrap each sensitive tool's function; call the wrapped one when Claude asks for the tool.
+import { connectTend, guardTool } from "./tend.mjs";
 const gate = connectTend();
-const out = await gate.run(
-  { tool: "send_email", action: "send", resource: "client-1042", detail: "Email to client 1042: Invoice 42" },
-  () => sendEmail(/* your real code */),
-);
-if (!out.executed) return \`Not done: \${out.outcome}\`; // tell Claude, so it can tell the user`;
-  if (kind === "openai") return `${env}\n\n// Same two files as for Claude; then wrap the tool's execute function (OpenAI Agents SDK):
+const sendEmail = guardTool(gate, "send_email", ({ to }) => realSend(to));   // your real code runs only on TEND's yes
+// in your tool loop:  const result = await sendEmail(toolUse.input);       // otherwise a "Not done: ..." sentence for Claude
+${rule}`;
+  if (kind === "openai") return `${env}\n${get}\n\n// OpenAI Agents SDK: the tool's execute function goes through TEND.
 import { tool } from "@openai/agents";
-import { connectTend } from "./tend-client.mjs";
+import { connectTend, guardTool } from "./tend.mjs";
 const gate = connectTend();
 export const sendEmail = tool({
   name: "send_email", description: "Send an email", parameters: { type: "object", properties: { to: { type: "string" } }, required: ["to"], additionalProperties: false },
-  execute: async ({ to }) => {
-    const out = await gate.run({ tool: "send_email", action: "send", resource: to, detail: \`Email to \${to}\` }, () => realSend(to));
-    return out.executed ? "sent" : \`Not done: \${out.outcome}\`;
-  },
-});`;
-  if (kind === "chat") return `${env}\n\n// Any provider with the OpenAI-compatible Chat Completions API: OpenAI, Gemini, Mistral, Groq, Ollama, or your own server.
-// Copy examples/adapters (guard.mjs, openai-compatible.mjs), tend-client.mjs and gate.mjs next to your agent. Then:
-import { guardTool } from "./guard.mjs";
-import { runChatAgent } from "./openai-compatible.mjs";
-import { connectTend } from "./tend-client.mjs";
+  execute: guardTool(gate, "send_email", ({ to }) => realSend(to)),
+});
+${rule}`;
+  if (kind === "chat") return `${env}\n${get}\n\n// Any provider with the OpenAI-compatible Chat Completions API: OpenAI, Gemini, Mistral, Groq, Ollama, or your own server.
+import { connectTend, guardTool, runChatAgent } from "./tend.mjs";
 const gate = connectTend();
 const tools = [{ name: "send_email", description: "Send an email", params: { to: "Recipient" }, run: guardTool(gate, "send_email", ({ to }) => realSend(to)) }];
 await runChatAgent({ provider: "groq", model: "llama-3.3-70b-versatile", tools, prompt: "Email the team" }); // or baseURL + apiKey for your own server
-// In TEND the tool is send_email with the action "call".`;
-  if (kind === "js") return `${env}\n\n// LangChain, LangGraph, Mastra or any JavaScript framework: wrap the tool's function, then define the tool as usual.
-// Copy examples/adapters/guard.mjs, tend-client.mjs and gate.mjs next to your agent.
+${rule}`;
+  if (kind === "js") return `${env}\n${get}\n\n// LangChain, LangGraph, Mastra or any JavaScript framework: wrap the tool's function, then define the tool as usual.
 import { tool } from "langchain";              // or @langchain/core/tools, or createTool from @mastra/core/tools
-import { guardTool } from "./guard.mjs";
-import { connectTend } from "./tend-client.mjs";
+import { connectTend, guardTool } from "./tend.mjs";
 const gate = connectTend();
 export const sendEmail = tool(guardTool(gate, "send_email", ({ to }) => realSend(to)), { name: "send_email", description: "Send an email", schema });
-// The function returns the tool's result on TEND's yes, and a "Not done: ..." sentence otherwise. In TEND: send_email · call.`;
-  if (kind === "python") return `${env}\n\n# PydanticAI, AutoGen, CrewAI or any Python framework. Copy examples/python/tend_gate.py (standard library only).
+${rule}`;
+  if (kind === "python") return `${env}\ncurl -fsSO ${url}/sdk/tend_gate.py   # TEND's Python client: one file, standard library only
+
+# PydanticAI, AutoGen, CrewAI or any Python framework.
 from tend_gate import Gate, guard_tool
 gate = Gate()
 _send = guard_tool(gate, "send_email", lambda to: real_send(to))
 def send_email(to: str) -> str:
     """Send an email."""
     return _send(to=to)          # runs only on TEND's yes; otherwise returns "Not done: ..."
-# Give send_email to your framework as a tool (Agent(tools=[send_email]), @tool, ...). In TEND: send_email · call.`;
-  if (kind === "mcp") return `// In your MCP host's configuration, start the proxy instead of the server (examples/mcp-proxy):
+# Give send_email to your framework as a tool (Agent(tools=[send_email]), @tool, ...).
+# In TEND give it a rule: send_email · call → Allow, Ask me first or Never.`;
+  if (kind === "mcp") return `${get}\n\n// In your MCP host's configuration (Claude Code, Cursor, Cline, Hermes Agent, OpenClaw...), start TEND in front of the server:
 {
   "mcpServers": {
     "files": {
       "command": "node",
-      "args": ["/path/to/tend/examples/mcp-proxy/tend-mcp-proxy.mjs", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/path/to/folder"],
+      "args": ["/absolute/path/to/tend.mjs", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/path/to/folder"],
       "env": { "TEND_URL": "${url}", "TEND_AGENT_KEY": "tend_sk_…" }
     }
   }
 }
-// In TEND each MCP tool is that tool's name with the action "call", e.g. read_file · call.`;
+// In TEND each MCP tool is its name with the action "call", e.g. read_file · call.`;
   return `${env}\n\n# 1. Ask before acting (the exact request is what a person approves)
 curl -s -H "authorization: Bearer $TEND_AGENT_KEY" -H 'content-type: application/json' \\
   -d '{"tool":"send_email","action":"send","resource":"client-1042","detail":"Email to client 1042"}' $TEND_URL/api/v1/authorizations
