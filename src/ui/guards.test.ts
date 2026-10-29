@@ -112,7 +112,8 @@ test("the whole application is one product: every screen sits in the one shell, 
   assert.deepEqual(outside, [], "every screen is in the redesigned group (the front page and the kept research prototype are the only others)");
   assert.equal(existsSync(path.join(root, "src/components/app-shell.tsx")), false, "the old navigation shell is gone");
   const shell = src("src/ui/shell.tsx");
-  for (const href of ["/home", "/agents", "/oversight", "/timeline", "/policies", "/verification", "/connect", "/settings"]) assert.ok(shell.includes(`"${href}"`), `the navigation reaches ${href}`);
+  for (const href of ["/home", "/agents", "/oversight", "/timeline", "/policies", "/verification", "/integrations", "/settings"]) assert.ok(shell.includes(`"${href}"`), `the navigation reaches ${href}`);
+  assert.match(src("src/app/(next)/integrations/view.tsx"), /href=\{`\/connect\?provider=/, "connecting an agent stays one click from Integrations");
   const settings = src("src/app/(next)/settings/view.tsx");
   for (const href of ["/developers", "/labs"]) assert.ok(settings.includes(`"${href}"`), `${href} stays reachable, from Settings`);
   assert.match(shell, /key: "monitor"[\s\S]*?item\("activity"[\s\S]*?key: "control"[\s\S]*?item\("approvals"[\s\S]*?item\("policies"[\s\S]*?key: "infrastructure"[\s\S]*?item\("verification"[\s\S]*?item\("integrations"/, "three groups, Monitor, Control and Infrastructure, with the agreed destinations in them");
@@ -137,11 +138,11 @@ test("the sidebar's gateway module only reports what the connection shows, and n
 
 test("every destination in the sidebar has a screen, and each private screen handles signed-out and loading itself", () => {
   const nav = src("src/ui/shell.tsx");
-  for (const href of ["/home", "/agents", "/timeline", "/oversight", "/policies", "/verification", "/connect", "/settings"]) {
+  for (const href of ["/home", "/agents", "/timeline", "/oversight", "/policies", "/verification", "/integrations", "/settings"]) {
     assert.ok(nav.includes(`"${href}"`), `${href} is in the sidebar`);
     assert.ok(existsSync(path.join(root, "src/app/(next)", href, "view.tsx")), `${href} has a screen`);
   }
-  for (const page of ["home", "agents", "policies", "verification", "settings"])
+  for (const page of ["home", "agents", "policies", "verification", "settings", "integrations"])
     assert.match(src(`src/app/(next)/${page}/view.tsx`), /status === "signin"/, `${page} shows sign-in instead of an empty page`);
 });
 
