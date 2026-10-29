@@ -12,6 +12,7 @@ import { evaluateEffective } from "./policy.ts";
 import { forViewer } from "./redact.ts";
 import { assignCentralPolicy, createCentralPolicy, decide, listCentralPolicies, registerAgent, revokeKey, setPolicy, updateCentralPolicy } from "./repo.ts";
 import { since } from "./sync.ts";
+import { runVerification } from "./verification.ts";
 
 const OPERATOR = { role: "operator" as const, canAct: true, public: false, operatorAvailable: true, demo: false };
 const VISITOR = { role: "visitor" as const, canAct: false, public: true, operatorAvailable: true, demo: false };
@@ -193,4 +194,14 @@ test("an unreadable central policy denies every request of its agents, governed 
     const v = await c.ask(c.claude, tool, action);
     assert.deepEqual([v.status, v.reason], ["denied", "invalid_policy"], tool);
   }
+});
+
+test("protection checks do not grade an agent that follows a central policy: they say not verified instead of overstating", async () => {
+  const c = await setup();
+  await setPolicy(c.db, c.claude.id, [], "enforce"); // its own rules mention nothing, so a copy of them alone would look like "everything refused"
+  await assignCentralPolicy(c.db, c.central.id, { assign: [c.claude.id] });
+  const run = await runVerification(c.db, c.claude.id, undefined, { notesDir: undefined });
+  const isolated = run.checks.filter((x) => x.group === "isolated");
+  assert.ok(isolated.length > 0);
+  for (const x of isolated) assert.deepEqual([x.status, x.why], ["not_verified", "central_policy_assigned"], x.id);
 });

@@ -848,6 +848,7 @@ export const de: Dict = {
       nothing_allowed: () => "Keine Aktion ist erlaubt, es gab also nichts auszuprobieren.",
       failed: (f) => `Etwas, das hätte abgewiesen oder zurückgehalten werden sollen, wurde es nicht: ${f.failed}.`,
       rules_unreadable: () => "Die Regeln dieses Agenten sind nicht lesbar, es konnte also nichts getestet werden.",
+      central_policy_assigned: () => "Dieser Agent folgt einer zentralen Richtlinie, die diese Prüfungen noch nicht testen können; sie wurden daher nicht ausgeführt.",
       rules_not_testable: () => "Diese Regeln ließen sich nicht in die private Kopie laden.",
       could_not_start: () => "Die private Kopie ließ sich nicht starten.",
       could_not_run: () => "Beim Test trat ein Fehler auf, er konnte nicht abgeschlossen werden.",

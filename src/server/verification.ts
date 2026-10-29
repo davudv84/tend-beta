@@ -57,7 +57,9 @@ export async function runVerification(db: DB, agentId: string, by?: string, opts
     });
     const live: CheckResult[] = [folder, alertIfOutside(row.enforcement), ...records];
     // Rules that cannot be read mean nothing can be tested: fail closed.
-    const isolated = parsed.ok ? await runIsolatedChecks({ rules: parsed.rules }, opts.api, { timeoutMs: opts.sandboxTimeoutMs }) : isolatedNotVerified("rules_unreadable");
+    // With a central policy assigned the private copy (which carries the agent's own rules only) would grade the wrong rules and could
+    // report a tool as refused that the central policy allows. Until the copy carries both, say "not verified" rather than guess.
+    const isolated = row.central_policy_id ? isolatedNotVerified("central_policy_assigned") : parsed.ok ? await runIsolatedChecks({ rules: parsed.rules }, opts.api, { timeoutMs: opts.sandboxTimeoutMs }) : isolatedNotVerified("rules_unreadable");
     const checks = [...live, ...isolated, agentIsolated()];
     const rules = parsed.ok ? parsed.rules : [];
     const run: VerificationRun = {

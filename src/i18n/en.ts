@@ -859,6 +859,7 @@ export const en = {
       nothing_allowed: () => "No action is allowed, so there was nothing to try.",
       failed: (f: Facts) => `Something that should have been refused or held wasn’t: ${f.failed}.`,
       rules_unreadable: () => "This agent’s rules can’t be read, so nothing could be tested.",
+      central_policy_assigned: () => "This agent follows a central policy, which these checks can’t test yet, so they were not run.",
       rules_not_testable: () => "These rules couldn’t be loaded into the private copy.",
       could_not_start: () => "The private copy couldn’t be started.",
       could_not_run: () => "The test hit an error and couldn’t finish.",
