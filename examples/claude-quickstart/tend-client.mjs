@@ -31,5 +31,9 @@ then start your agent with:  node --env-file=.env.agent your-agent.mjs`);
     }
     return data;
   };
-  return createGate({ tend, onPending, log, ...options });
+  // Every outcome is reported to TEND's audit log as a tool.called event (what ran, or why not), exactly as authorized. A failed report never
+  // changes the outcome: the authorization record already shows what TEND decided.
+  const report = (data) => tend("/api/v1/events", { type: "tool.called", data });
+  const gate = createGate({ tend, onPending, log, ...options });
+  return { ...gate, run: (request, execute, rep = report) => gate.run(request, execute, rep) };
 }
