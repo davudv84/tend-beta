@@ -6,9 +6,10 @@ import { LockIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
-import { applyChoices, choiceOf, type Choice, type Effect, type PolicyView } from "@/lib/permissions";
+import { applyChoices, choiceOf, type Choice, type Effect, type PolicyView, type RuleLike } from "@/lib/permissions";
 import { call, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Disclosure } from "@/ui/disclosure";
 
 const CHOICES: Choice[] = ["allow", "ask", "never"];
 
@@ -42,6 +43,7 @@ export function ToolPermissions({ agentId, suggest, onView }: {
   const [sim, setSim] = useState<Simulation | null>(null);
   const [extra, setExtra] = useState<string[]>([]); // own tools added here, not saved yet
   const [newTool, setNewTool] = useState("");
+  const [json, setJson] = useState<string | null>(null); // the advanced editor's text, once opened
   const first = useRef(true);
 
   /** Shows what the server answered: the policy, or why there is none. Returns the policy so a caller can compare it. */
@@ -76,7 +78,8 @@ export function ToolPermissions({ agentId, suggest, onView }: {
   if (!view) return <p className="text-small text-faint">{p.loading}</p>;
 
   // A custom rule is editable here when it is a plain rule (no resource prefix, no permission): one tool, one action, one effect.
-  const plainRule = (tool: string, action: string) => view.rules.some((r) => r.tool === tool && r.action === action && r.resourcePrefix === undefined && r.permission === undefined);
+  const plainRule = (tool: string, action: string) => view.rules.some((r) => r.tool === tool && r.action === action && r.resourcePrefix === undefined && r.permission === undefined && r.when === undefined)
+    && !view.rules.some((r) => r.tool === tool && r.when !== undefined); // a tool with conditional rules is edited through the API, not here
   const rows = [...view.tools, ...extra.filter((tool) => !view.tools.some((x) => x.tool === tool)).map((tool) => ({ tool, action: "call", risk: "write" as const, available: true, effect: "deny" as Effect, custom: true, added: true }))];
   const editable = (r: (typeof rows)[number]) => !r.custom || ("added" in r && r.added) || plainRule(r.tool, r.action);
   const current = (tool: string) => draft[tool] ?? choiceOf(rows.find((r) => r.tool === tool)!.effect);
@@ -101,6 +104,20 @@ export function ToolPermissions({ agentId, suggest, onView }: {
     setBusy(false);
     if (!r.ok) return toast.error(p.simFailed, { description: errorText(t, r) });
     setSim(r.data);
+  };
+
+  // The whole rule list as JSON: the only place conditions on arguments ("when") are edited. The server validates it like any other save.
+  const saveJson = async () => {
+    let rules: unknown;
+    try { rules = JSON.parse(json ?? ""); } catch { return toast.error(p.jsonInvalid); }
+    setBusy(true);
+    // Sent as typed: the server, not this page, decides whether the rules are valid.
+    const r = await savePolicy(agentId, { rules: rules as RuleLike[], expectedVersion: view.version });
+    const fresh = apply(await getPolicy(agentId));
+    setBusy(false);
+    if (!r.ok) return toast.error(errorText(t, r));
+    setJson(fresh ? JSON.stringify(fresh.rules, null, 2) : null);
+    setNotice(p.saved);
   };
 
   const save = async () => {
@@ -199,6 +216,14 @@ export function ToolPermissions({ agentId, suggest, onView }: {
         </section>
       )}
       <p role="status" className="text-small text-muted-foreground">{changes.length ? p.unsaved : (notice ?? "")}</p>
+      <Disclosure summary={p.jsonTitle}>
+        <div className="mt-2 grid gap-2">
+          <p className="text-caption text-faint">{p.jsonHint}</p>
+          <textarea aria-label={p.jsonTitle} spellCheck={false} rows={10} value={json ?? JSON.stringify(view.rules, null, 2)} onChange={(e) => setJson(e.target.value)}
+            className="w-full rounded-lg border border-border bg-background p-3 font-mono text-caption outline-none focus-visible:border-primary" />
+          <div><Button variant="outline" size="sm" disabled={busy || json === null} onClick={() => void saveJson()}>{p.jsonSave}</Button></div>
+        </div>
+      </Disclosure>
       <p className="text-caption text-faint">{p.enforcedNote}</p>
     </div>
   );
