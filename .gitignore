@@ -53,3 +53,7 @@ next-env.d.ts
 # Per-tester beta settings and secrets (scripts/beta-config.mjs)
 beta-envs/
 beta-data/
+
+# Integration verification: framework packages and Python environments (npm run verify:setup)
+/.verify/
+/scripts/verify/frameworks/node_modules/

@@ -1,0 +1,14 @@
+{
+  "name": "tend-verify-frameworks",
+  "private": true,
+  "description": "Only for npm run verify:integrations: the real agent frameworks, kept out of the app's dependencies. Installed with --ignore-scripts.",
+  "type": "module",
+  "dependencies": {
+    "@langchain/anthropic": "1.5.12",
+    "@langchain/core": "1.2.17",
+    "@langchain/langgraph": "1.5.0",
+    "@mastra/core": "1.77.0",
+    "langchain": "1.5.16",
+    "zod": "4.6.7"
+  }
+}
