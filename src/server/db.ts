@@ -170,6 +170,19 @@ export const MIGRATIONS: string[] = [
   // Rejected agent keys are recorded too (R-07).
   `ALTER TABLE auth_events DROP CONSTRAINT auth_events_type_check;
    ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected'));`,
+  // Central policies: one rule set kept once and assigned to many agents. An agent's own policy still applies, but for anything a central
+  // policy governs it can only be stricter (policy.ts evaluateEffective). Deleting a central policy is not supported, so the reference stays valid.
+  `CREATE TABLE central_policies (
+     id TEXT PRIMARY KEY,
+     name TEXT NOT NULL UNIQUE,
+     policy TEXT NOT NULL,
+     version INTEGER NOT NULL,
+     created_at BIGINT NOT NULL,
+     updated_at BIGINT NOT NULL,
+     updated_by TEXT
+   );
+   ALTER TABLE agents ADD COLUMN central_policy_id TEXT REFERENCES central_policies(id);
+   CREATE INDEX agents_central_policy ON agents(central_policy_id);`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */

@@ -3,8 +3,9 @@
 //
 // It starts a throwaway TEND, registers two independent agents (the shipped example agents: Anthropic SDK and OpenAI Agents SDK, each its
 // own process holding only its own TEND key), and then:
-//   round 1   one central policy (read: allow, write: ask, delete: never) is applied to both; each agent reads, writes (this script approves) and tries to delete
-//   round 2   the policy is changed ONCE (write: never); the same agents with the same keys and the same code now cannot write, and nobody is asked
+//   round 1   one central policy (read: allow, write: ask, delete: never) is created once and assigned to both; each agent reads, writes (this
+//             script approves) and tries to delete. The OpenAI agent also has a LOOSER rule of its own (write: allow): it does not win.
+//   round 2   the central policy is changed ONCE (write: never); the same agents with the same keys and code now cannot write, nobody is asked
 //   audit     both agents' actions and both policy changes, in the one log TEND keeps
 //   revoke    the Claude agent's key is revoked; its next run is refused; the OpenAI agent is unaffected and still obeys the policy
 // A provider with ANTHROPIC_API_KEY / OPENAI_API_KEY in the environment runs a REAL model (cents); a provider without one is played by a scripted
@@ -128,7 +129,7 @@ async function main() {
     secrets.push(agents[name].key);
   }
   // Policy is the operator's alone: no sign-in and an agent's own key are both refused.
-  const central = (headers) => fetch(`${URL_}/api/v1/policy`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ agents: Object.values(agents).map((a) => a.id), rules: [], enforcement: "enforce" }) }).then((r) => r.status);
+  const central = (headers) => fetch(`${URL_}/api/v1/central-policies`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ name: "x", rules: [] }) }).then((r) => r.status);
   check((await central({})) === 403, "central policy must refuse a caller who is not signed in as operator");
   check((await central({ authorization: `Bearer ${agents.anthropic.key}` })) === 403, "an agent must not be able to change policy");
   say(`TEND is running at ${URL_} (temporary, only on this computer). Two agents, two separate keys:`);
@@ -136,9 +137,15 @@ async function main() {
   const ids = Object.values(agents).map((a) => a.id);
 
   // ---- round 1 ---------------------------------------------------------------------------------------------------------------------
-  say("\nROUND 1. One central policy, applied once to both agents: read = allow, write = ask me, delete = never.");
-  const c1 = await op("POST", "/api/v1/policy", { agents: ids, rules: POLICY_V1, enforcement: "enforce" });
-  check(c1.status === 200, "central policy v1 was not accepted");
+  say("\nROUND 1. One central policy, created once and assigned to both agents: read = allow, write = ask me, delete = never.");
+  // Each agent's own rules: none for Claude; the OpenAI agent is (wrongly) given a looser one. The central policy must still win.
+  check((await op("POST", `/api/v1/agents/${agents.anthropic.id}/policy`, { rules: [], enforcement: "enforce" })).status === 200, "setting Claude's own rules failed");
+  check((await op("POST", `/api/v1/agents/${agents.openai.id}/policy`, { rules: [{ tool: "write_test_file", action: "create", effect: "allow" }], enforcement: "enforce" })).status === 200, "setting OpenAI's own rules failed");
+  say('  (The OpenAI agent also has a rule of its own that says write = allow. Agent rules can only tighten a central rule, never loosen it.)');
+  const created = await op("POST", "/api/v1/central-policies", { name: "Demo baseline", rules: POLICY_V1 });
+  check(created.status === 201, "creating the central policy failed");
+  const cp = created.body.centralPolicy.id;
+  check((await op("POST", `/api/v1/central-policies/${cp}/assignments`, { assign: ids })).status === 200, "assigning the central policy failed");
   const r1 = {};
   for (const name of Object.keys(PROVIDERS)) {
     const file = `${name}-note.txt`;
@@ -153,10 +160,10 @@ async function main() {
   // ---- round 2 ---------------------------------------------------------------------------------------------------------------------
   say("\nROUND 2. The policy is changed ONCE (write: ask me -> never). Same agents, same keys, same code, nothing restarted.");
   const before = Object.fromEntries(await Promise.all(Object.entries(agents).map(async ([n, a]) => [n, (await op("GET", `/api/v1/agents/${a.id}/policy`)).body])));
-  const c2 = await op("POST", "/api/v1/policy", { agents: ids, rules: POLICY_V2, enforcement: "enforce" });
-  check(c2.status === 200, "central policy v2 was not accepted");
+  const c2 = await op("POST", `/api/v1/central-policies/${cp}`, { rules: POLICY_V2, expectedVersion: 1 });
+  check(c2.status === 200, "updating the central policy failed");
   const after = Object.fromEntries(await Promise.all(Object.entries(agents).map(async ([n, a]) => [n, (await op("GET", `/api/v1/agents/${a.id}/policy`)).body])));
-  for (const n of Object.keys(PROVIDERS)) { say(`  ${PROVIDERS[n].label}: write was "${effect(before[n], "write_test_file")}", now "${effect(after[n], "write_test_file")}"`); check(effect(before[n], "write_test_file") === "approve" && effect(after[n], "write_test_file") === "deny", `${n}: the policy change did not reach this agent`); }
+  for (const n of Object.keys(PROVIDERS)) { say(`  ${PROVIDERS[n].label}: write was "${effect(before[n], "write_test_file")}", now "${effect(after[n], "write_test_file")}" (decided by the ${after[n].tools.find((t) => t.tool === "write_test_file")?.source} policy)`); check(effect(before[n], "write_test_file") === "approve" && effect(after[n], "write_test_file") === "deny", `${n}: the policy change did not reach this agent`); }
   const r2 = {};
   for (const name of Object.keys(PROVIDERS)) {
     const file = `${name}-note-2.txt`;
@@ -173,7 +180,9 @@ async function main() {
   const brief = (rules) => rules.map((r) => `${r.tool.replace("_test_file", "")}=${r.effect}`).join(" ");
   const line = (e) => {
     const d = e.data, who = names[e.agentId], what = `${d.tool}.${d.action}${d.resource ? ` ${d.resource}` : ""}`;
-    if (e.type === "policy.updated") return `${who}: policy now v${d.version} [${brief(d.policy)}]${d.central ? ` (one central change, ${d.central} agents)` : ""}`;
+    if (e.type === "policy.updated") return `${who}: own rules set [${brief(d.policy) || "none"}]`;
+    if (e.type === "policy.central_assigned") return `${who}: assigned central policy "${d.name}" v${d.policyVersion} [${brief(d.policy)}]`;
+    if (e.type === "policy.central_updated") return `${who}: central policy "${d.name}" changed to v${d.policyVersion} [${brief(d.policy)}]`;
     if (e.type === "review.decided") return `${who}: you ${d.status} a held request`;
     if (e.type === "key.revoked") return `${who}: key revoked`;
     if (/^authorization\./.test(e.type)) return `${who}: ${e.type.slice(14)} ${what}${d.reason ? ` (${d.reason})` : ""}`;
@@ -183,7 +192,7 @@ async function main() {
   for (const e of mine) say(`  ${new Date(e.at).toTimeString().slice(0, 8)}  ${line(e)}`);
   const per = Object.fromEntries(Object.entries(agents).map(([n, a]) => [n, mine.filter((e) => e.agentId === a.id).length]));
   say(`  (${mine.length} entries: ${Object.entries(per).map(([n, c]) => `${PROVIDERS[n].label} ${c}`).join(", ")})`);
-  check(mine.filter((e) => e.type === "policy.updated").length === 4 && mine.filter((e) => e.type === "policy.updated").every((e) => e.data.central === 2), "both central policy changes should be in the history, once per agent");
+  check(mine.filter((e) => e.type === "policy.central_assigned").length === 2 && mine.filter((e) => e.type === "policy.central_updated").length === 2, "the assignment and the central change should be in the history, once per agent");
   check(Object.values(per).every((c) => c > 0), "both agents should appear in the one audit history");
 
   // ---- revoke ----------------------------------------------------------------------------------------------------------------------

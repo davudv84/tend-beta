@@ -23,6 +23,8 @@ interface AgentRow {
   acked_version: number; created_at: number; last_seen_at: number | null; disconnected_at: number | null;
   /** Enforcement settings stay out of `Agent` on purpose: that type is sent to browsers, and a policy is not for visitors. */
   enforcement: "monitor" | "enforce"; policy: string;
+  /** The central policy this agent is assigned to, if any (central_policies.id). */
+  central_policy_id: string | null;
 }
 
 export interface Profile { name: string; model: string; provider: Provider; role: string; description: string; cadenceHours: number }
@@ -298,10 +300,14 @@ async function inspectTool(q: Q, agent: Agent, eventId: string, d: Record<string
       if (reason) await raise(reason === "executed_twice" ? "authorization_replay" : "authorization_mismatch", { authorizationId: azId, reason });
     } else {
       const a = await agentRow(q, agent.id);
-      const rules = a ? parsePolicy(a.policy) : undefined;
-      // An unreadable policy counts as governing everything: detection fails closed too.
-      const governed = !rules?.ok || rules.rules.some((r) => r.tool === d.tool && (r.action === "*" || r.action === d.action)
-        && (r.resourcePrefix === undefined || (typeof d.resource === "string" && d.resource.startsWith(r.resourcePrefix))));
+      const central = a ? await centralOf(q, a) : undefined;
+      // An unreadable policy counts as governing everything: detection fails closed too. A central policy governs as well.
+      const governs = (raw: unknown) => {
+        const rules = parsePolicy(raw);
+        return !rules.ok || rules.rules.some((r) => r.tool === d.tool && (r.action === "*" || r.action === d.action)
+          && (r.resourcePrefix === undefined || (typeof d.resource === "string" && d.resource.startsWith(r.resourcePrefix))));
+      };
+      const governed = !a || governs(a.policy) || (central !== undefined && governs(central.policy));
       if (a?.enforcement === "enforce" && governed) await raise("unauthorized_execution", { reason: "no_authorization" });
     }
   }
@@ -425,24 +431,100 @@ export async function setPolicy(db: DB, agentId: string, rules: unknown, enforce
   });
 }
 
-/**
- * One central policy for several agents: the same rules, validated once, applied to every listed agent in a single transaction (all or none).
- * Each agent keeps its own stored policy and its own key, so enforcement is exactly what it was; each gets its own `policy.updated` event,
- * marked `central: <how many agents>`, so one audit history shows the change landing on all of them. Operator only (the route checks).
- */
-export async function setPolicyMany(db: DB, agentIds: unknown, rules: unknown, enforcement?: unknown, by?: string) {
-  if (!Array.isArray(agentIds) || agentIds.length < 1 || agentIds.length > 50 || agentIds.some((x) => typeof x !== "string") || new Set(agentIds).size !== agentIds.length)
-    throw new HttpError(422, "invalid_agents", "agents must be a list of 1 to 50 distinct agent ids.");
-  const checked = checkedPolicy(rules, enforcement);
-  const ids = [...(agentIds as string[])].sort(); // a fixed lock order, so two central changes cannot deadlock
+// ---- central policies ----------------------------------------------------------------------------------------------------------------
+
+interface CentralRow { id: string; name: string; policy: string; version: number; created_at: number; updated_at: number; updated_by: string | null }
+const NAME = /^[^\u0000-\u001f\u007f]{1,64}$/;
+
+/** The central policy an agent is assigned to, read in the caller's transaction. `policy: null` (a dangling id) denies everything. */
+export async function centralOf(q: Q, a: Pick<AgentRow, "central_policy_id">): Promise<{ id: string; version: number; policy: string | null } | undefined> {
+  if (!a.central_policy_id) return undefined;
+  const c = await q.get<CentralRow>("SELECT * FROM central_policies WHERE id = ?", a.central_policy_id);
+  return { id: a.central_policy_id, version: c?.version ?? 0, policy: c?.policy ?? null };
+}
+
+const centralView = async (q: Q, c: CentralRow) => ({
+  id: c.id, name: c.name, version: c.version, rules: JSON.parse(c.policy), createdAt: c.created_at, updatedAt: c.updated_at,
+  agents: (await q.all<{ id: string }>("SELECT id FROM agents WHERE central_policy_id = ? ORDER BY id", c.id)).map((r) => r.id),
+});
+async function mustCentral(q: Q, id: string, lock = false) {
+  const c = await q.get<CentralRow>(`SELECT * FROM central_policies WHERE id = ?${lock ? " FOR UPDATE" : ""}`, id);
+  if (!c) throw new HttpError(404, "central_policy_not_found", `No central policy with id “${id}”.`);
+  return c;
+}
+const agentList = (v: unknown, field: string) => {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length > 50 || v.some((x) => typeof x !== "string") || new Set(v).size !== v.length)
+    throw new HttpError(422, "invalid_agents", `${field} must be a list of up to 50 distinct agent ids.`);
+  return [...(v as string[])].sort(); // a fixed lock order, so two changes cannot deadlock
+};
+
+export async function listCentralPolicies(q: Q) {
+  return Promise.all((await q.all<CentralRow>("SELECT * FROM central_policies ORDER BY name")).map((c) => centralView(q, c)));
+}
+
+/** A new central policy, assigned to nobody yet. Same validation as an agent's own policy. Operator only (the route checks). */
+export async function createCentralPolicy(db: DB, body: unknown, by?: string) {
+  const { name, rules } = (body ?? {}) as { name?: unknown; rules?: unknown };
+  if (typeof name !== "string" || !NAME.test(name.trim())) throw new HttpError(422, "invalid_name", "name must be 1–64 printable characters.");
+  const checked = checkedPolicy(rules);
   return db.tx(async (q) => {
     await q.lockEvents();
-    const events = [];
-    for (const id of ids) {
-      await mustAgent(q, id); // an unknown id fails the whole change
-      events.push(await applyPolicy(q, id, checked, enforcement, by, ids.length));
+    if (await q.get("SELECT 1 FROM central_policies WHERE name = ?", name.trim())) throw new HttpError(409, "name_taken", "A central policy with that name already exists.");
+    const id = `cp_${randomUUID().replaceAll("-", "").slice(0, 20)}`, now = Date.now();
+    await q.run("INSERT INTO central_policies (id, name, policy, version, created_at, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?, ?)", id, name.trim(), JSON.stringify(checked), now, now, by ?? null);
+    return centralView(q, (await mustCentral(q, id))!);
+  });
+}
+
+/**
+ * Changes a central policy. Every assigned agent is governed by the new rules from the moment this commits (requests, token claims and
+ * consumes all read it under the same lock), and each gets a `policy.central_updated` event carrying the full rule set and `by`.
+ */
+export async function updateCentralPolicy(db: DB, id: string, body: unknown, by?: string) {
+  const { rules, expectedVersion } = (body ?? {}) as { rules?: unknown; expectedVersion?: unknown };
+  const checked = checkedPolicy(rules, undefined, expectedVersion);
+  return db.tx(async (q) => {
+    await q.lockEvents();
+    const c = await mustCentral(q, id, true);
+    if (expectedVersion !== undefined && c.version !== expectedVersion)
+      throw new HttpError(409, "policy_changed", "This central policy changed since you opened it. Reload and try again.", { version: c.version });
+    const now = Date.now(), version = c.version + 1;
+    await q.run("UPDATE central_policies SET policy = ?, version = ?, updated_at = ?, updated_by = ? WHERE id = ?", JSON.stringify(checked), version, now, by ?? null, id);
+    for (const { id: agentId } of await q.all<{ id: string }>("SELECT id FROM agents WHERE central_policy_id = ? ORDER BY id FOR UPDATE", id))
+      await insertEvent(q, { agentId, type: "policy.central_updated", actor: "human", at: now, data: { version: await bump(q, agentId), policyId: id, name: c.name, policyVersion: version, policy: checked, ...(by ? { by } : {}) } });
+    return centralView(q, (await mustCentral(q, id))!);
+  });
+}
+
+/**
+ * Assigns this central policy to agents and/or removes it from them: { assign: [ids], unassign: [ids] }. All or nothing; an agent can
+ * hold one central policy, so assigning moves it from any other (the event names the previous one). Each change is an audit event.
+ */
+export async function assignCentralPolicy(db: DB, id: string, body: unknown, by?: string) {
+  const { assign, unassign } = (body ?? {}) as { assign?: unknown; unassign?: unknown };
+  const add = agentList(assign, "assign"), remove = agentList(unassign, "unassign");
+  if (!add.length && !remove.length) throw new HttpError(422, "invalid_agents", "Give at least one agent id in assign or unassign.");
+  if (add.some((x) => remove.includes(x))) throw new HttpError(422, "invalid_agents", "An agent cannot be assigned and unassigned at once.");
+  return db.tx(async (q) => {
+    await q.lockEvents();
+    const c = await mustCentral(q, id, true);
+    const now = Date.now(), rules = JSON.parse(c.policy);
+    for (const agentId of add) {
+      const row = (await q.get<AgentRow>("SELECT * FROM agents WHERE id = ? FOR UPDATE", agentId));
+      if (!row) throw new HttpError(404, "agent_not_found", `No agent with id “${agentId}”.`);
+      if (row.central_policy_id === id) continue;
+      await q.run("UPDATE agents SET central_policy_id = ? WHERE id = ?", id, agentId);
+      await insertEvent(q, { agentId, type: "policy.central_assigned", actor: "human", at: now, data: { version: await bump(q, agentId), policyId: id, name: c.name, policyVersion: c.version, policy: rules, ...(row.central_policy_id ? { previous: row.central_policy_id } : {}), ...(by ? { by } : {}) } });
     }
-    return events;
+    for (const agentId of remove) {
+      const row = (await q.get<AgentRow>("SELECT * FROM agents WHERE id = ? FOR UPDATE", agentId));
+      if (!row) throw new HttpError(404, "agent_not_found", `No agent with id “${agentId}”.`);
+      if (row.central_policy_id !== id) throw new HttpError(409, "not_assigned", `Agent “${agentId}” is not assigned to this central policy.`);
+      await q.run("UPDATE agents SET central_policy_id = NULL WHERE id = ?", agentId);
+      await insertEvent(q, { agentId, type: "policy.central_unassigned", actor: "human", at: now, data: { version: await bump(q, agentId), policyId: id, name: c.name, ...(by ? { by } : {}) } });
+    }
+    return centralView(q, c);
   });
 }
 

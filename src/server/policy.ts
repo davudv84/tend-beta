@@ -128,3 +128,21 @@ export function evaluate(agent: Pick<Agent, "status" | "integrationEnabled" | "p
   const effect = rule.effect === "allow" && NEVER_AUTOMATIC.has(req.tool) ? "approve" : rule.effect;
   return { effect, reason: effect === "allow" ? "policy_allowed" : "approval_required" };
 }
+
+export type EffectiveDecision = Decision & { source: "agent" | "central" };
+
+/**
+ * The decision with a central policy assigned. Precedence, in one sentence: anything the central policy governs is decided by the central
+ * rule unless the agent's own rules are STRICTER; anything it does not govern is decided by the agent's own rules alone, as before.
+ * So an agent-specific rule can tighten a central one but never loosen it. Both sides go through the same evaluate(), and an unreadable
+ * central policy denies everything (fail closed). `central` undefined means no central policy is assigned.
+ */
+export function evaluateEffective(agent: Pick<Agent, "status" | "integrationEnabled" | "permissions">, rawPolicy: unknown, central: unknown, req: AuthRequest): EffectiveDecision {
+  if (central === undefined) return { ...evaluate(agent, rawPolicy, req), source: "agent" };
+  const c = evaluate(agent, central, req);
+  if (c.reason === "invalid_policy") return { effect: "deny", reason: "invalid_policy", source: "central" };
+  if (c.reason === "no_policy") return { ...evaluate(agent, rawPolicy, req), source: "agent" };
+  const own = evaluate(agent, rawPolicy, req);
+  if (own.reason === "no_policy") return { ...c, source: "central" };
+  return strength[own.effect] > strength[c.effect] ? { ...own, source: "agent" } : { ...c, source: "central" };
+}

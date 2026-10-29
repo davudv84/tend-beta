@@ -39,6 +39,7 @@ const SHAPE: Record<string, readonly string[]> = {
   "config.acknowledged": ["version"], "permission.granted": ["permission", "reviewId", "version"],
   "agent.paused": ["version"], "agent.resumed": ["version"], "integration.disabled": ["version"], "integration.enabled": ["version"],
   "policy.updated": ["version"], "key.rotated": [], "key.revoked": [],
+  "policy.central_updated": ["version", "policyVersion"], "policy.central_assigned": ["version", "policyVersion"], "policy.central_unassigned": ["version"],
 };
 /** Where the screen needs some text, it gets a neutral one rather than the agent's own words. */
 const NEUTRAL: Record<string, Record<string, unknown>> = { "task.started": { title: "Task" } };

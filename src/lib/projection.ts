@@ -13,7 +13,7 @@ export type EventType =
   | "checkin.requested" | "checkin.request.delivered"
   | "agent.registered" | "key.rotated" | "key.revoked"
   | "alert.raised" | "review.withdrawn"
-  | "policy.updated" | "verification.run"
+  | "policy.updated" | "policy.central_updated" | "policy.central_assigned" | "policy.central_unassigned" | "verification.run"
   | "authorization.requested" | "authorization.denied" | "authorization.consumed" | "authorization.expired" | "authorization.cancelled";
 
 export type Actor = "agent" | "human" | "simulation" | "system";
@@ -162,7 +162,7 @@ export function applyEvents(p: Projection, events: WireEvent[]): Projection {
         log(e, "permission_granted", `Granted ${perm} to ${name(e.agentId)}`, { args: { perm } });
         break;
       }
-      case "policy.updated":
+      case "policy.updated": case "policy.central_updated": case "policy.central_assigned": case "policy.central_unassigned":
         // Only the version: what the rules are is not for the page's data, and visitors get no more than this.
         if (Number(d.version)) patchAgent(e.agentId, { configVersion: Number(d.version) });
         break;
