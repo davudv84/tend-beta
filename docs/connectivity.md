@@ -20,14 +20,17 @@ An adapter needs exactly one thing: `connectTend()` from `examples/claude-quicks
 - The result is `{ executed, outcome, reason, detail }`. Anything but `executed: true` means nothing happened; tell the model so.
 - Settings come from `TEND_URL` and `TEND_AGENT_KEY`. A missing key, a rejected key and an unreachable TEND each fail with a sentence, never a run.
 
-| Connection | Code | Status (see the Integrations page for the evidence) |
-|---|---|---|
-| Anthropic (Claude, Anthropic SDK) | `examples/claude-quickstart/agent.mjs`, `examples/real-agents/anthropic-agent.mjs` | Verified: real model, 2026-10-29 |
-| HTTP API (any agent) | the three API calls, `docs/api-examples.md` | Verified: run as written against a live TEND |
-| OpenAI, OpenAI Agents SDK | `examples/real-agents/openai-agent.mjs` | Compatible: mocked provider API only |
-| Model Context Protocol (any MCP host and server) | `examples/mcp-proxy/tend-mcp-proxy.mjs` | Compatible: real MCP server process, scripted client, no real host |
-| Claude Code, Cursor, Cline | the MCP proxy, set up in the host's MCP settings | Compatible: the proxy is tested; none of these hosts has been run with it |
-| Google Gemini, Mistral AI, Groq, Ollama, Hermes Agent, OpenClaw, Aider, LangChain, LangGraph, CrewAI, AutoGen, PydanticAI, Mastra, OpenAI-compatible API | none | Planned: nothing built or tested. The HTTP API works for any of them meanwhile |
+Statuses are not kept here: `npm run verify:integrations` runs the same real scenarios for every integration and writes them to
+[verification-report.md](verification-report.md) (and `src/lib/verification-report.json`, which the Integrations page reads).
+
+| Connection | Shared code |
+|---|---|
+| Anthropic SDK, OpenAI Agents SDK, LangChain, LangGraph, Mastra | `guardTool()` in `examples/adapters/guard.mjs` (or `gate.run()`) around each tool body |
+| OpenAI, Gemini, Mistral, Groq, Ollama, any OpenAI-compatible server | `examples/adapters/openai-compatible.mjs`, with `guardTool()` around each tool |
+| PydanticAI, AutoGen, CrewAI, any Python agent | `guard_tool()` in `examples/python/tend_gate.py` (standard library only) |
+| Claude Code, Cursor, Cline, Hermes Agent, OpenClaw, any MCP host | `examples/mcp-proxy/tend-mcp-proxy.mjs` in front of the MCP server |
+| Any language | the HTTP API, `docs/api-examples.md` |
+| Aider | none: no MCP and no tool-call hook, so there is nothing to intercept |
 
 A new provider needs no change to TEND: map its tool call to `gate.run`, as the examples do.
 

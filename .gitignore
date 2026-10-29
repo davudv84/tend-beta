@@ -57,3 +57,4 @@ beta-data/
 # Integration verification: framework packages and Python environments (npm run verify:setup)
 /.verify/
 /scripts/verify/frameworks/node_modules/
+__pycache__/

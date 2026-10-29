@@ -80,7 +80,7 @@ async function runClaudeCode({ url, key, prompt, system, ledger, dir }) {
 const python = (id, framework, label, tendProvider, needsVenv = true) => ({
   id, provider: tendProvider, model: HAIKU, label,
   requires: async () => [...needKey("ANTHROPIC_API_KEY"), ...(needsVenv && !existsSync(venvPython(framework)) ? [`the ${framework} environment (npm run verify:setup)`] : [])],
-  run: ({ url, key, prompt, system, ledger }) => runJson(needsVenv ? venvPython(framework) : "python3", ["-I", path.join(root, "scripts/verify/py_driver.py"), framework], { url, key, prompt, system, ledger }),
+  run: ({ url, key, prompt, system, ledger }) => runJson(needsVenv ? venvPython(framework) : "python3", ["-I", "-B", path.join(root, "scripts/verify/py_driver.py"), framework], { url, key, prompt, system, ledger }),
 });
 /** A JavaScript framework driver from scripts/verify/frameworks (its own package, so the app gets no new dependency). */
 const jsFramework = (id, label, tendProvider) => ({

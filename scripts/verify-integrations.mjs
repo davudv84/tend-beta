@@ -158,7 +158,7 @@ async function renderDoc(report) {
   const { INTEGRATIONS } = await import("../src/lib/integrations-catalog.ts");
   const rows = INTEGRATIONS.map((i) => {
     const r = report.integrations[i.id];
-    const status = r?.status === "verified" ? "VERIFIED" : r?.status === "blocked" ? "BLOCKED" : r?.status === "failed" ? "FAILED" : i.status === "planned" ? "PLANNED" : "NOT RUN";
+    const status = r?.status === "verified" ? "VERIFIED" : r?.status === "blocked" ? "BLOCKED" : r?.status === "failed" ? "FAILED" : !i.connect ? "PLANNED" : "NOT RUN";
     const failed = r?.scenarios?.filter((s) => s.verdict !== "PASS").map((s) => `${s.scenario}: ${s.verdict}${s.why ? ` (${s.why})` : ""}${s.failed?.length ? ` (${s.failed.join("; ")})` : ""}`).join("<br>") || "";
     return `| ${i.name} | ${status} | ${r?.label ?? ""} | ${r?.scenarios ? r.scenarios.map((s) => `${s.scenario} ${s.verdict === "PASS" ? "pass" : s.verdict.toLowerCase()}`).join(", ") : ""} | ${failed} | ${(r?.missing ?? []).join("; ")} | ${(r?.verifiedAt ?? r?.lastRunAt ?? r?.lastCheckedAt ?? "").slice(0, 16).replace("T", " ")} |`;
   });

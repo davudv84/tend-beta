@@ -1,0 +1,656 @@
+{
+  "suite": "npm run verify:integrations",
+  "generatedAt": "2026-10-29T20:00:09.033Z",
+  "integrations": {
+    "claude": {
+      "status": "verified",
+      "label": "claude-haiku-4-5 via the official Anthropic SDK (@anthropic-ai/sdk)",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0128,
+      "lastRunAt": "2026-10-29T20:00:11.044Z",
+      "verifiedAt": "2026-10-29T20:00:11.044Z"
+    },
+    "openaiCompatible": {
+      "status": "verified",
+      "label": "the OpenAI-compatible adapter against Anthropic's OpenAI-compatible endpoint (claude-haiku-4-5)",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0129,
+      "lastRunAt": "2026-10-29T20:01:04.220Z",
+      "verifiedAt": "2026-10-29T20:01:04.220Z"
+    },
+    "openai": {
+      "status": "verified",
+      "label": "the official OpenAI Agents SDK (@openai/agents) driving claude-haiku-4-5 through Anthropic's OpenAI-compatible endpoint (no OpenAI key available)",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0132,
+      "lastRunAt": "2026-10-29T20:01:19.065Z",
+      "verifiedAt": "2026-10-29T20:01:19.065Z"
+    },
+    "claudeCode": {
+      "status": "verified",
+      "label": "Claude Code 2.1.312 headless (claude -p --bare, claude-haiku-4-5) with TEND's MCP proxy as its only MCP server",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.02,
+      "lastRunAt": "2026-10-29T20:01:32.919Z",
+      "verifiedAt": "2026-10-29T20:01:32.919Z"
+    },
+    "mcp": {
+      "status": "verified",
+      "label": "the MCP proxy with a real MCP host (Claude Code) and a real MCP stdio server (examples/mcp-proxy/notes-server.mjs)",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.02,
+      "lastRunAt": "2026-10-29T20:01:32.919Z",
+      "verifiedAt": "2026-10-29T20:01:32.919Z"
+    },
+    "http": {
+      "status": "verified",
+      "label": "TEND's HTTP API from Python with only the standard library (examples/python/tend_gate.py); Claude Haiku 4.5 over the raw Messages API",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0121,
+      "lastRunAt": "2026-10-29T20:00:25.082Z",
+      "verifiedAt": "2026-10-29T20:00:25.082Z"
+    },
+    "ollama": {
+      "status": "verified",
+      "label": "a local model (qwen2.5 7B) in Ollama through its OpenAI-compatible endpoint",
+      "model": "qwen2.5:7b-instruct",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0,
+      "lastRunAt": "2026-10-29T20:00:43.727Z",
+      "verifiedAt": "2026-10-29T20:00:43.727Z"
+    },
+    "langchain": {
+      "status": "verified",
+      "label": "LangChain JS (createAgent from langchain) with ChatAnthropic, claude-haiku-4-5",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0139,
+      "lastRunAt": "2026-10-29T20:02:14.457Z",
+      "verifiedAt": "2026-10-29T20:02:14.457Z"
+    },
+    "langgraph": {
+      "status": "verified",
+      "label": "LangGraph JS (createReactAgent) with ChatAnthropic, claude-haiku-4-5",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0139,
+      "lastRunAt": "2026-10-29T20:02:32.735Z",
+      "verifiedAt": "2026-10-29T20:02:32.735Z"
+    },
+    "mastra": {
+      "status": "verified",
+      "label": "Mastra (@mastra/core Agent) with claude-haiku-4-5",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0138,
+      "lastRunAt": "2026-10-29T20:02:49.904Z",
+      "verifiedAt": "2026-10-29T20:02:49.904Z"
+    },
+    "pydanticAi": {
+      "status": "verified",
+      "label": "PydanticAI Agent with claude-haiku-4-5",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0127,
+      "lastRunAt": "2026-10-29T20:03:07.725Z",
+      "verifiedAt": "2026-10-29T20:03:07.725Z"
+    },
+    "autogen": {
+      "status": "verified",
+      "label": "AutoGen AgentChat AssistantAgent with claude-haiku-4-5",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0131,
+      "lastRunAt": "2026-10-29T20:03:26.871Z",
+      "verifiedAt": "2026-10-29T20:03:26.871Z"
+    },
+    "crewai": {
+      "status": "verified",
+      "label": "CrewAI Crew with claude-haiku-4-5 (CrewAI's native Anthropic provider)",
+      "model": "claude-haiku-4-5",
+      "scenarios": [
+        {
+          "scenario": "allow",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "deny",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "approve",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "reject",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "revoke",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "unavailable",
+          "verdict": "PASS",
+          "failed": []
+        },
+        {
+          "scenario": "audit",
+          "verdict": "PASS",
+          "failed": []
+        }
+      ],
+      "usd": 0.0136,
+      "lastRunAt": "2026-10-29T20:03:44.214Z",
+      "verifiedAt": "2026-10-29T20:03:44.214Z"
+    },
+    "openaiApi": {
+      "status": "blocked",
+      "label": "OpenAI's Chat Completions API through the OpenAI-compatible adapter",
+      "missing": [
+        "OPENAI_API_KEY (an API key for this provider, in the environment)"
+      ],
+      "lastCheckedAt": "2026-10-29T20:00:43.726Z"
+    },
+    "gemini": {
+      "status": "blocked",
+      "label": "Google Gemini's OpenAI-compatible endpoint through the OpenAI-compatible adapter",
+      "missing": [
+        "GEMINI_API_KEY (an API key for this provider, in the environment)"
+      ],
+      "lastCheckedAt": "2026-10-29T20:00:43.727Z"
+    },
+    "mistral": {
+      "status": "blocked",
+      "label": "Mistral's API through the OpenAI-compatible adapter",
+      "missing": [
+        "MISTRAL_API_KEY (an API key for this provider, in the environment)"
+      ],
+      "lastCheckedAt": "2026-10-29T20:00:43.727Z"
+    },
+    "groq": {
+      "status": "blocked",
+      "label": "Groq's OpenAI-compatible endpoint through the OpenAI-compatible adapter",
+      "missing": [
+        "GROQ_API_KEY (an API key for this provider, in the environment)"
+      ],
+      "lastCheckedAt": "2026-10-29T20:00:43.727Z"
+    },
+    "cursor": {
+      "status": "blocked",
+      "label": "Cursor through TEND's MCP proxy",
+      "missing": [
+        "Cursor's headless agent CLI (cursor-agent, from cursor.com/cli) signed in to a Cursor account; Cursor.app alone cannot be driven by a test"
+      ],
+      "lastCheckedAt": "2026-10-29T20:02:14.426Z"
+    },
+    "cline": {
+      "status": "blocked",
+      "label": "Cline through TEND's MCP proxy",
+      "missing": [
+        "the Cline CLI (npm install -g cline) with a model provider configured"
+      ],
+      "lastCheckedAt": "2026-10-29T20:02:14.437Z"
+    },
+    "hermes": {
+      "status": "blocked",
+      "label": "Hermes Agent through TEND's MCP proxy (mcp_servers in ~/.hermes/config.yaml)",
+      "missing": [
+        "Hermes Agent installed (its installer runs a remote script: needs your review and approval) with a model provider configured"
+      ],
+      "lastCheckedAt": "2026-10-29T20:02:14.444Z"
+    },
+    "openclaw": {
+      "status": "blocked",
+      "label": "OpenClaw through TEND's MCP proxy (openclaw mcp add)",
+      "missing": [
+        "OpenClaw installed and its gateway configured with a model provider (needs your review and approval)"
+      ],
+      "lastCheckedAt": "2026-10-29T20:02:14.450Z"
+    }
+  },
+  "usd": 0.1519
+}
