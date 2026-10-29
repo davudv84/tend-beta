@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { BRAND_ICONS } from "./brand-icons.ts";
 import { INTEGRATIONS, liveStatus, matches } from "./integrations-catalog.ts";
 
 test("no integration is called working without evidence of a real connection; planned ones cannot be connected", () => {
@@ -11,6 +12,18 @@ test("no integration is called working without evidence of a real connection; pl
   }
   assert.deepEqual(INTEGRATIONS.filter((i) => i.status === "verified").map((i) => i.id).sort(), ["claude", "http"], "only what was really verified");
   assert.equal(new Set(INTEGRATIONS.map((i) => i.id)).size, INTEGRATIONS.length);
+  for (const i of INTEGRATIONS) if (i.status !== "planned") assert.ok(i.connect, `${i.id}: working or compatible means it can be connected`);
+});
+
+test("logos are official marks only, never a stand-in: each one names the product it is shown for", () => {
+  for (const i of INTEGRATIONS.filter((x) => x.logo)) {
+    const mark = BRAND_ICONS[i.logo!];
+    assert.ok(mark && /^[Mm]/.test(mark.path) && mark.source.startsWith("https://"), `${i.id}: mark data and its source`);
+    // "Anthropic" for Anthropic, "Mistral AI" for Mistral AI, "Model Context Protocol" for it: the mark is the product's own.
+    assert.equal(mark.title.toLowerCase().replace(/\W/g, ""), i.name.toLowerCase().replace(/\W/g, ""), `${i.id} shows ${mark.title}`);
+  }
+  // Parcel-company "Hermes" is not Hermes Agent; brands without an official mark in the set get the neutral fallback.
+  for (const id of ["hermes", "openai", "openaiApi", "groq", "openclaw", "aider", "autogen", "mastra", "pydanticAi", "http", "openaiCompatible"]) assert.equal(INTEGRATIONS.find((i) => i.id === id)?.logo, undefined, id);
 });
 
 test("live status counts only connected agents of that provider, and only actions TEND authorized and that succeeded", () => {

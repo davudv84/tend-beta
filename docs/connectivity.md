@@ -22,11 +22,12 @@ An adapter needs exactly one thing: `connectTend()` from `examples/claude-quicks
 
 | Connection | Code | Status (see the Integrations page for the evidence) |
 |---|---|---|
-| Claude, Anthropic SDK | `examples/claude-quickstart/agent.mjs`, `examples/real-agents/anthropic-agent.mjs` | Working: real model, 2026-10-29 |
-| Any agent over HTTP | the three API calls, `docs/api-examples.md` | Working: run as written against a live TEND |
-| OpenAI Agents SDK | `examples/real-agents/openai-agent.mjs` | Compatible, not yet verified: mocked provider API only |
-| MCP (any MCP host and server) | `examples/mcp-proxy/tend-mcp-proxy.mjs` | Compatible, not yet verified: real MCP server process, scripted client, no real host |
-| Hermes Agent, Google Gemini | none | Planned: nothing built or tested |
+| Anthropic (Claude, Anthropic SDK) | `examples/claude-quickstart/agent.mjs`, `examples/real-agents/anthropic-agent.mjs` | Verified: real model, 2026-10-29 |
+| HTTP API (any agent) | the three API calls, `docs/api-examples.md` | Verified: run as written against a live TEND |
+| OpenAI, OpenAI Agents SDK | `examples/real-agents/openai-agent.mjs` | Compatible: mocked provider API only |
+| Model Context Protocol (any MCP host and server) | `examples/mcp-proxy/tend-mcp-proxy.mjs` | Compatible: real MCP server process, scripted client, no real host |
+| Claude Code, Cursor, Cline | the MCP proxy, set up in the host's MCP settings | Compatible: the proxy is tested; none of these hosts has been run with it |
+| Google Gemini, Mistral AI, Groq, Ollama, Hermes Agent, OpenClaw, Aider, LangChain, LangGraph, CrewAI, AutoGen, PydanticAI, Mastra, OpenAI-compatible API | none | Planned: nothing built or tested. The HTTP API works for any of them meanwhile |
 
 A new provider needs no change to TEND: map its tool call to `gate.run`, as the examples do.
 

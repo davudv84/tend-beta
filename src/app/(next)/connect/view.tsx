@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
 import { TEST_SCRIPT, agentSnippet, connectCommand, maskedCommand } from "@/lib/connect-snippet";
+import { IntegrationLogo } from "@/components/integration-logo";
 import { INTEGRATIONS } from "@/lib/integrations-catalog";
 import { dateTime, timeAgo, useNow } from "@/lib/format";
 import { TEST_TOOL, testState } from "@/lib/onboarding";
@@ -168,7 +169,7 @@ function Flow() {
             {CONNECTABLE.map((i) => (
               <button key={i.id} type="button" onClick={() => choose(i.id)}
                 className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-primary">
-                <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-sunken font-mono text-small font-semibold">{i.monogram}</span>
+                <IntegrationLogo entry={i} className="size-9" />
                 <span className="min-w-0">
                   <span className="block text-ui font-semibold">{i.name}</span>
                   <span className="mt-0.5 block text-small text-pretty text-muted-foreground">{t.integrations.items[i.id].summary}</span>
@@ -177,7 +178,7 @@ function Flow() {
               </button>
             ))}
           </div>
-          <p className="mt-5 text-small text-muted-foreground">{c.pick.planned(PLANNED.map((i) => i.name).join(", "))} <Link href="/integrations" className="text-primary underline-offset-4 hover:underline">{c.pick.all}</Link></p>
+          <p className="mt-5 text-small text-muted-foreground">{c.pick.planned(PLANNED.length)} <Link href="/integrations" className="text-primary underline-offset-4 hover:underline">{c.pick.all}</Link></p>
         </div>
       )}
 
