@@ -479,15 +479,18 @@ test("central policy on a real pool: five operators save from the same version a
   }
 });
 
-test("a stuck database answers with an error within the time limit, and a protected request then fails closed", { skip }, async () => {
+test("time limits work through a transaction-pooling proxy: no startup parameter is sent, each transaction sets its own, and a stuck query fails closed", { skip }, async () => {
   const before = process.env.TEND_DB_TIMEOUT_MS;
   process.env.TEND_DB_TIMEOUT_MS = "300";
   const t = await tempDb();
   try {
+    // PgBouncer (Neon's pooled connections) refuses unknown startup parameters: none may be set on the connection itself.
+    assert.equal((await t.db.get<{ statement_timeout: string }>("SHOW statement_timeout"))!.statement_timeout, "0", "nothing set at connection level");
+    assert.equal(await t.db.tx(async (q) => (await q.get<{ statement_timeout: string }>("SHOW statement_timeout"))!.statement_timeout), "300ms", "set inside the transaction");
     const started = Date.now();
-    assert.equal(await sqlState(() => t.db.get("SELECT pg_sleep(5)")), "57014", "statement_timeout cancels it");
-    assert.ok(Date.now() - started < 3_000, "and does so within the limit, not after the full sleep");
-    // Hold the event lock in another session for longer than the limit: the agent's request cannot get it, and is refused, never granted.
+    assert.equal(await sqlState(() => t.db.tx((q) => q.get("SELECT pg_sleep(5)"))), "57014", "a stuck statement in a transaction is cancelled by the server");
+    assert.notEqual(await sqlState(() => t.db.get("SELECT pg_sleep(5)")), "ok", "a stuck single query is abandoned by the client limit");
+    assert.ok(Date.now() - started < 4_000, "both within the limit, not after the full sleep");
     const agent = await agentWithPolicy(t.db);
     await setPolicy(t.db, agent.id, [{ tool: "t", action: "a", effect: "allow" }], "enforce");
     const holder = t.db.tx(async (q) => { await q.lockEvents(); await q.get("SELECT pg_sleep(0.25)"); });
@@ -498,5 +501,44 @@ test("a stuck database answers with an error within the time limit, and a protec
   } finally {
     await t.close();
     if (before === undefined) delete process.env.TEND_DB_TIMEOUT_MS; else process.env.TEND_DB_TIMEOUT_MS = before;
+  }
+});
+
+test("an instance on schema 9 with data (what the current beta deployment runs) upgrades in place: nothing lost, all in the default workspace", { skip }, async () => {
+  assertLocal(URL_);
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const name = `tend_test_${randomBytes(6).toString("hex")}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const u = new URL(URL_);
+  u.pathname = `/${name}`;
+  const db = await postgres(u.toString());
+  try {
+    // The old schema, exactly as migrations 1-9 left it, with a little history in it.
+    await db.tx(async (q) => {
+      await q.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at BIGINT NOT NULL)");
+      for (let i = 0; i < 9; i++) { await q.exec(MIGRATIONS[i]); await q.run("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", i + 1, Date.now()); }
+      await q.run("INSERT INTO agents (id, profile, origin, created_at) VALUES ('old-agent', ?, 'connected', ?)", JSON.stringify({ name: "Old", model: "m", provider: "Custom", role: "r", description: "", cadenceHours: 0 }), Date.now());
+      await q.run("INSERT INTO central_policies (id, name, policy, version, created_at, updated_at) VALUES ('cp_old', 'Baseline', '[]', 1, 0, 0)");
+      await q.run("INSERT INTO events (id, agent_id, type, at, actor) VALUES ('ev_old', 'old-agent', 'agent.registered', 1, 'human')");
+    });
+    await migrate(db);
+    assert.equal((await db.get<{ v: number }>("SELECT MAX(version) AS v FROM schema_migrations"))!.v, MIGRATIONS.length);
+    assert.equal((await db.get<{ workspace_id: string }>("SELECT workspace_id FROM agents WHERE id = 'old-agent'"))!.workspace_id, "default");
+    assert.equal((await db.get<{ workspace_id: string }>("SELECT workspace_id FROM central_policies WHERE id = 'cp_old'"))!.workspace_id, "default");
+    assert.equal(await count(db, "SELECT COUNT(*)::int AS n FROM events"), 1, "history kept");
+    // A new workspace may reuse the old policy name, and new events join the hash chain after the old, unhashed ones.
+    await db.run("INSERT INTO workspaces (id, name, created_at) VALUES ('ws_new', 'n', 0)");
+    await db.run("INSERT INTO central_policies (id, name, policy, version, created_at, updated_at, workspace_id) VALUES ('cp_new', 'Baseline', '[]', 1, 0, 0, 'ws_new')");
+    await setPolicy(db, "old-agent", [{ tool: "t", action: "call", effect: "allow" }], "enforce");
+    const { verifyAudit } = await import("./audit-chain.ts");
+    const v = await verifyAudit(db);
+    assert.equal(v.ok, true);
+    assert.equal(v.checked, 1, "the old event is before the chain; the new one starts it");
+    await migrate(db); // running again changes nothing
+  } finally {
+    await db.close();
+    await admin.query(`DROP DATABASE ${name} WITH (FORCE)`);
+    await admin.end();
   }
 });

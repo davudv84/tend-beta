@@ -284,11 +284,12 @@ export async function postgres(url: string): Promise<DB> {
   const pg = (await import("pg")).default;
   // BIGINT columns hold millisecond timestamps and counts, all well inside Number's safe range.
   pg.types.setTypeParser(20, (v: string) => Number(v));
-  // Every statement and every open transaction has a time limit (TEND_DB_TIMEOUT_MS, default 10 s): a stuck database answers with an error,
-  // which every protected path turns into "do not act", instead of holding requests (and the event lock) until the platform kills them.
+  // Every statement has a time limit (TEND_DB_TIMEOUT_MS, default 10 s): a stuck database answers with an error, which every protected path
+  // turns into "do not act", instead of holding requests (and the event lock) until the platform kills them. Not as startup parameters:
+  // PgBouncer, which Neon's pooled connections go through, refuses unknown ones and the connection would fail. So: the server-side limits are
+  // set with SET LOCAL inside each transaction (fine in transaction pooling), and a client-side limit covers single queries.
   const limit = Math.min(Math.max(Number(process.env.TEND_DB_TIMEOUT_MS) || 10_000, 100), 60_000);
-  const pool = new pg.Pool({ connectionString: url, max: 4, idleTimeoutMillis: 5_000, connectionTimeoutMillis: 10_000,
-    statement_timeout: limit, query_timeout: limit + 1_000, idle_in_transaction_session_timeout: limit * 2 });
+  const pool = new pg.Pool({ connectionString: url, max: 4, idleTimeoutMillis: 5_000, connectionTimeoutMillis: 10_000, query_timeout: limit + 1_000 });
   pool.on("error", (e) => console.error("[tend] idle database client error", e.message));
   const base = queries(pool, (sql) => pool.query(sql));
   return {
@@ -299,6 +300,7 @@ export async function postgres(url: string): Promise<DB> {
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        await client.query(`SET LOCAL statement_timeout = ${limit}; SET LOCAL idle_in_transaction_session_timeout = ${limit * 2}`);
         const out = await fn(queries(client, (sql) => client.query(sql)));
         await client.query("COMMIT");
         return out;
