@@ -50,8 +50,15 @@ if (!out.executed) return `Not done: ${out.outcome}. ${out.detail ?? ""}`;   // 
 
 ## One policy for several agents (Claude and OpenAI)
 
-`npm run demo:cross` shows two independent agents, a Claude one and an OpenAI one, each with its own key, controlled by one policy. Change the policy once and both change, without touching or restarting either agent. Both appear in one audit history, and revoking one leaves the other working.
-A provider whose key is set (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) runs a real model; the other is played by a scripted stand-in, and the demo says which is which. The operator call behind it is `POST /api/v1/policy` with `{ "agents": [id, id], "rules": [...] }`: it validates once and applies to all the listed agents or none. Each agent still keeps its own stored policy copy, so a later change to just one agent makes them differ (the audit log shows it).
+`npm run demo:cross` shows two independent agents, a Claude one and an OpenAI one, each with its own key, under one central policy. Changing the policy once changes both, without touching or restarting either agent. Both appear in one audit history, and revoking one leaves the other working.
+A provider whose key is set (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) runs a real model; the other is played by a scripted stand-in, and the demo says which is which.
+
+How central policies work (operator API, signed-in operators only):
+
+- `POST /api/v1/central-policies` with `{ "name": "...", "rules": [...] }` creates one; `POST /api/v1/central-policies/{id}` with `{ "rules": [...] }` changes it; `POST /api/v1/central-policies/{id}/assignments` with `{ "assign": [agent ids], "unassign": [...] }` assigns it. `GET /api/v1/central-policies` lists them with their agents.
+- **Precedence:** for any tool the central policy has a rule for, the stricter of the central rule and the agent's own rule wins, so an agent's own rules can tighten but never loosen it. Tools the central policy doesn't mention follow the agent's own rules, as before. An unreadable central policy refuses everything.
+- A change applies to every assigned agent at once, including requests already waiting or approved: anything the new rules forbid can no longer be used. Each assignment and change is recorded for every agent it affects, with the full rules.
+- An agent can follow one central policy at a time. Central policies cannot be deleted (unassign them instead). The protection checks on the Verification page say "not verified" for agents under a central policy.
 
 ## Run your own TEND with a dashboard
 
