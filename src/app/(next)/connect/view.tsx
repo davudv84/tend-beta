@@ -8,6 +8,7 @@ import { CheckIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
 import { SignIn } from "@/components/sign-in";
 import { useReadOnlyReason } from "@/components/agent-callout";
 import { ProviderIntegrations } from "@/components/provider-integrations";
+import { SampleAgent } from "@/components/sample-agent";
 import { ToolPermissions } from "@/components/tool-permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -279,6 +280,7 @@ function Flow() {
           </div>
         </div>
       )}
+      <SampleAgent />
       <ProviderIntegrations />
       <Examples />
     </Page>

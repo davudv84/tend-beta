@@ -46,6 +46,7 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "v1/central-policies/[id]:POST": "operator",
   "v1/central-policies/[id]/assignments:POST": "operator",
   "v1/reviews/[id]:POST": "operator",
+  "v1/sample-agent:POST": "operator",
   "v1/demo/reset:POST": "operator",
   "v1/demo/check-ins:POST": "operator",
 };
