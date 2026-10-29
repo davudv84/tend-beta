@@ -28,29 +28,49 @@ as a real agent (tests: `src/server/sample-agent.test.ts`). Testers who want to 
 
 Choose one. Both give three isolated instances; neither touches the original repository or its Vercel project.
 
-### Option A: Vercel Hobby + Neon Free, one project each (pending Vercel's answer on Hobby use)
+### Option A: Vercel Hobby + Neon Free, one project each (pending Vercel's written answer on Hobby use)
 
-From the `tend-beta` folder. The commands follow Vercel's CLI documentation and have **not** been run; check each project in the dashboard after
-the first one. If Vercel offers to connect the GitHub repository, decline: CLI deploys need no Git connection, and the repository's `vercel.json`
-turns Git deployments off anyway.
+Checked 2026-10-29 against Vercel's and Neon's own pages:
+
+- **Cost:** Hobby and Neon Free are $0 and need no card. Going over a Hobby limit pauses that feature for up to 30 days, and over a Neon limit
+  suspends compute or blocks writes. Neither charges. Hobby limits are shared by **every project in the account**, including any other site you run there.
+- **Fit:** three projects of 200 allowed and three databases of 100. TEND's use is small: the dashboard polls every 2.5 s only while its tab is
+  visible, which is a few thousand requests per tester-hour against 1,000,000 invocations and 4 Active CPU-hours a month (shared, see above).
+  Neon gives 100 compute-hours and 1 GB per project; its computes sleep after 5 minutes, so the first request after a pause is a little slower.
+- **Use:** Hobby is "non-commercial personal use only"; commercial means "financial gain of anyone involved in any part of the production".
+  Vercel says to ask Support if unsure. Neon calls Free "for prototypes, side projects, and small teams" and does not restrict commercial use.
+- **No outer gate:** Hobby allows one Shareable Link and one external user per account, so Vercel Authentication cannot admit three outside testers.
+  Leave Deployment Protection at its default (it protects preview URLs, not the production address) and do **not** pick "All Deployments".
+  Each tester's own sign-in token is the lock.
+
+Prepared locally (git-ignored, mode 600; already done): `beta-envs/tend-beta-e1ij7uel`, `beta-envs/tend-beta-n2xls5ff`, `beta-envs/tend-beta-g76aydi6`,
+each with its own admin token and payments key. The random names make the addresses hard to guess. To make them again: `npm run beta:provision -- <names>`.
+
+1. **Neon** (console.neon.tech, Free plan): create three projects with exactly those names, all in one region (for example AWS Europe Central,
+   Frankfurt). For each, copy the **pooled** connection string (its host contains `-pooler`) into `DATABASE_URL=` in that name's `vercel.env`.
+2. `npm run beta:check` must print no FAIL (it refuses a shared database, a shared token, a public or demo instance).
+3. **Vercel**, from the `tend-beta` folder. These commands follow Vercel's CLI documentation and have **not** been run; check the first project in
+   the dashboard before doing the other two. If Vercel offers to connect the GitHub repository, decline: a CLI deploy needs no Git connection, and
+   the repository's `vercel.json` turns Git deployments off anyway.
 
 ```bash
-npm run beta:provision -- alice bob carol        # beta-envs/<name>/vercel.env: a fresh token and payments key each, mode 600, git-ignored
-# Neon: create one project per tester (tend-beta-alice, ...), same region; paste each POOLED connection string as DATABASE_URL= in that tester's file
-npm run beta:check                               # refuses shared databases, shared tokens, a public or demo instance, local-only settings
 npx vercel login
-for n in alice bob carol; do
-  npx vercel project create tend-beta-$n                                              # a new project in your Hobby account
-  npx vercel link --yes --project tend-beta-$n                                        # this folder now deploys to it
+for n in tend-beta-e1ij7uel tend-beta-n2xls5ff tend-beta-g76aydi6; do
+  npx vercel project create $n
+  npx vercel link --yes --project $n
   while IFS='=' read -r k v; do case "$k" in ''|\#*) continue;; esac; printf %s "$v" | npx vercel env add "$k" production; done < beta-envs/$n/vercel.env
-  npx vercel deploy --prod --regions fra1                                             # one region on Hobby: pick the one next to Neon
+  npx vercel deploy --prod --regions fra1          # one region on Hobby: the one next to your Neon region
 done
-npm run beta:live -- alice=https://tend-beta-alice.vercel.app bob=https://tend-beta-bob.vercel.app carol=https://tend-beta-carol.vercel.app
+rm -rf .vercel                                    # this folder stays linked to nothing
+npm run beta:live -- t1=https://tend-beta-e1ij7uel.vercel.app t2=https://tend-beta-n2xls5ff.vercel.app t3=https://tend-beta-g76aydi6.vercel.app
 ```
 
-`beta:live` checks HTTPS, the security headers, that a visitor sees nothing, the session cookie flags, and that every instance refuses every
-other's key and session. Then open each address yourself once and run the sample agent. Limits: Hobby has no gate in front of the sign-in page,
-so the token is the only lock; the file tools cannot run on serverless hosting (the sample agent and the guided test do not need them).
+`beta:live` checks HTTPS, the security headers, that a visitor sees nothing, the cookie flags, and that every instance refuses every other's key
+and session. Then open each address yourself once and run the sample agent. The file tools cannot run on serverless hosting; the sample agent and
+the guided test do not need them.
+
+If Vercel says no: Render's free web services (750 hours a month per workspace, asleep after 15 minutes idle, "do not use them for production")
+can run the same server with the same Neon databases, or use Option B below.
 
 ### Option B: your own computer + Cloudflare Tunnel and Access (free; needs a domain on Cloudflare)
 
