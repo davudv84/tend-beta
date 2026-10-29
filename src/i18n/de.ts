@@ -18,7 +18,7 @@ export const de: Dict = {
     description: "Legen Sie fest, was jeder KI-Assistent darf, geben Sie heikle Aktionen selbst frei und sehen Sie, was wirklich passiert ist.",
     pages: {
       sanctuary: "KI-Welt", agents: "Assistenten", agent: "Assistent", reflections: "Rückblicke", checkIns: "Statusmeldungen", checkIn: "Statusmeldung",
-      newCheckIn: "Neue Statusmeldung", connect: "Integrationen", home: "Start", timeline: "Aktivität", research: "Forschung", oversight: "Freigaben", developers: "Entwickler", operator: "Admin-Anmeldung", labs: "Labs", policies: "Richtlinien", verification: "Prüfung", settings: "Einstellungen",
+      newCheckIn: "Neue Statusmeldung", connect: "Agent verbinden", integrations: "Integrationen", home: "Start", timeline: "Aktivität", research: "Forschung", oversight: "Freigaben", developers: "Entwickler", operator: "Admin-Anmeldung", labs: "Labs", policies: "Richtlinien", verification: "Prüfung", settings: "Einstellungen",
     },
   },
 
@@ -664,9 +664,39 @@ export const de: Dict = {
     readOnly: "Melden Sie sich als Operator an, um zu sehen und zu ändern, was dieser Agent darf.",
   },
 
+  integrations: {
+    title: "Integrationen",
+    description: "Wege, TEND vor einen Agenten zu schalten. Jeder zeigt, was wirklich getestet wurde und was gerade mit diesem TEND verbunden ist.",
+    search: "Integrationen durchsuchen",
+    all: "Alle",
+    categories: { sdk: "Agent-SDKs", protocol: "Protokolle", api: "Direkte API", framework: "Agent-Frameworks" },
+    status: { verified: "Funktioniert", compatible: "Kompatibel, noch nicht bestätigt", planned: "Geplant" },
+    statusHelp: {
+      verified: "Durchgehend mit einer echten Verbindung getestet.",
+      compatible: "Gebaut und nur mit Platzhaltern getestet. Noch nicht mit dem Original.",
+      planned: "Noch nicht gebaut oder getestet. Lässt sich hier nicht verbinden.",
+    },
+    here: (n: number, ago: string | null) => (n === 0 ? "Noch nicht mit diesem TEND verbunden" : `In diesem TEND: ${n} ${n === 1 ? "Agent" : "Agenten"}${ago ? `, letzte freigegebene Aktion ${ago}` : ", noch keine freigegebene Aktion"}`),
+    connect: "Verbinden",
+    details: "Details",
+    how: "So wird verbunden",
+    evidence: "So wurde getestet",
+    evidenceKind: { "real-model": "Echtes Modell", "real-protocol": "Echte Verbindung", protocol: "Echtes Protokoll, geskripteter Client", mocked: "Anbieter durch Platzhalter ersetzt" },
+    none: "Keine Integration passt. Leeren Sie die Suche, um alle zu sehen.",
+    custom: "Zusammen mit anderen als „Custom“ registrierten Agenten gezählt.",
+    items: {
+      claude: { summary: "TEND vor die Werkzeuge eines Claude-Agenten schalten, der mit dem Anthropic SDK gebaut ist.", how: "Ihr Agent ruft vor jedem Werkzeug connectTend() auf und handelt nur auf TENDs Ja. Beispiel: examples/claude-quickstart." },
+      http: { summary: "Jeder Agent, in jeder Sprache: vor dem Handeln TEND per HTTP fragen.", how: "Drei Aufrufe: fragen, nach der Freigabe ein Einmal-Token abholen, es direkt vor dem Handeln einlösen. Alle Aufrufe: docs/api-examples.md." },
+      openai: { summary: "TEND vor die Werkzeuge eines Agenten schalten, der mit dem OpenAI Agents SDK gebaut ist.", how: "Die execute-Funktion jedes Werkzeugs fragt zuerst TEND. Beispiel: examples/real-agents/openai-agent.mjs. Noch nicht mit der echten OpenAI-API ausgeführt." },
+      mcp: { summary: "TEND zwischen einen MCP-Host und einen beliebigen MCP-Server schalten: Jeder Werkzeugaufruf braucht TENDs Ja.", how: "In den MCP-Einstellungen des Hosts den Proxy statt des Servers starten: examples/mcp-proxy. Noch nicht mit einem echten MCP-Host ausprobiert." },
+      hermes: { summary: "Agenten, die mit Hermes Agent von Nous Research gebaut sind.", how: "Noch nicht verbunden oder getestet." },
+      gemini: { summary: "Agenten auf Basis von Google Gemini.", how: "Noch nicht verbunden oder getestet. Bis dahin funktioniert die HTTP-Integration mit jedem Agenten." },
+    },
+  },
   connect: {
     defaultRole: "Verbundener Agent",
-    title: "Integrationen",
+    title: "Agent verbinden",
+    more: "Für Entwickler: die Beispiel-Agenten und die API direkt",
     description: "Einen Agenten registrieren, festlegen, was er darf, und eine echte Aktion durch Tend laufen sehen. Etwa fünf Minuten.",
     providers: {
       title: "Echte KI-Agenten",
@@ -723,7 +753,22 @@ export const de: Dict = {
       result: { ran: "ausgeführt (erlaubt)", approved: "Sie haben es erlaubt; jetzt „Weitermachen lassen“ drücken", denied: "von Ihrer Regel abgewiesen; nie ausgeführt", waiting: "wartet auf Sie", rejected: "Sie haben abgelehnt; nie ausgeführt", expired: "niemand hat rechtzeitig entschieden; nie ausgeführt", cancelled: "abgebrochen; nie ausgeführt", not_permitted: "von Ihren Regeln nicht mehr erlaubt; nie ausgeführt" },
     },
     stepOf: (n, total, label) => `Schritt ${n} von ${total} · ${label}`,
-    steps: ["Anlegen", "Berechtigungen", "Verbinden und testen", "Ergebnis"],
+    steps: ["Anbieter wählen", "Einrichten", "Berechtigungen", "Prüfen"],
+    pick: {
+      title: "Wählen Sie, wie Ihr Agent verbunden wird",
+      body: "Wählen Sie, wie Ihr Agent läuft. Bis der Agent angelegt ist, lässt sich das noch ändern.",
+      chosen: (name: string) => `Verbindung über ${name}.`,
+      change: "Ändern",
+      planned: (names: string) => `Noch nicht verbindbar: ${names}.`,
+      all: "Alle Integrationen ansehen",
+    },
+    use: {
+      title: (name: string) => `In Ihrem Agenten verwenden: ${name}`,
+      body: "Der Befehl oben macht einen echten Testaufruf. Um TEND vor die eigenen Werkzeuge Ihres Agenten zu schalten, binden Sie es so ein. Der Schlüssel bleibt dort, wo Ihr Agent läuft; er ist nicht Teil dieser Anleitung.",
+      show: "Integrationscode anzeigen",
+      copy: "Code kopieren",
+    },
+
     signIn: "Melden Sie sich als Operator an, um einen Agenten zu verbinden.",
     know: {
       title: "Das sollten Sie vorher wissen",

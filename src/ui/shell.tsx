@@ -27,7 +27,7 @@ const item = (key: NavKey, href: string, icon: Item["icon"], match: RegExp): Ite
 const GROUPS: { key: "monitor" | "control" | "infrastructure"; items: Item[] }[] = [
   { key: "monitor", items: [item("home", "/home", LayoutGridIcon, /^\/home(\/|$)/), item("assistants", "/agents", CpuIcon, /^\/agents(\/|$)/), item("activity", "/timeline", ActivityIcon, /^\/timeline(\/|$)/)] },
   { key: "control", items: [item("approvals", "/oversight", CircleCheckIcon, /^\/oversight(\/|$)/), item("policies", "/policies", FileTextIcon, /^\/policies(\/|$)/)] },
-  { key: "infrastructure", items: [item("verification", "/verification", ShieldCheckIcon, /^\/verification(\/|$)/), item("integrations", "/connect", LinkIcon, /^\/(connect|developers)(\/|$)/)] },
+  { key: "infrastructure", items: [item("verification", "/verification", ShieldCheckIcon, /^\/verification(\/|$)/), item("integrations", "/integrations", LinkIcon, /^\/(integrations|connect|developers)(\/|$)/)] },
 ];
 const SETTINGS = item("settings", "/settings", SlidersHorizontalIcon, /^\/settings(\/|$)/);
 

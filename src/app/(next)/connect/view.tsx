@@ -2,21 +2,20 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
 import { SignIn } from "@/components/sign-in";
 import { useReadOnlyReason } from "@/components/agent-callout";
 import { ProviderIntegrations } from "@/components/provider-integrations";
-import { SampleAgent } from "@/components/sample-agent";
 import { ToolPermissions } from "@/components/tool-permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
-import { TEST_SCRIPT, connectCommand, maskedCommand } from "@/lib/connect-snippet";
+import { TEST_SCRIPT, agentSnippet, connectCommand, maskedCommand } from "@/lib/connect-snippet";
+import { INTEGRATIONS } from "@/lib/integrations-catalog";
 import { dateTime, timeAgo, useNow } from "@/lib/format";
 import { TEST_TOOL, testState } from "@/lib/onboarding";
 import type { PolicyView } from "@/lib/permissions";
@@ -26,7 +25,8 @@ import { cn } from "@/lib/utils";
 import { Disclosure } from "@/ui/disclosure";
 import { BackLink, Page, PageSkeleton } from "@/ui/page";
 
-const PROVIDERS: Provider[] = ["Anthropic", "OpenAI", "Google", "Custom"];
+const CONNECTABLE = INTEGRATIONS.filter((i) => i.connect && i.status !== "planned");
+const PLANNED = INTEGRATIONS.filter((i) => i.status === "planned");
 const SUGGEST = [TEST_TOOL];
 type Step = 1 | 2 | 3;
 
@@ -56,7 +56,7 @@ export default function View() {
   if (!canAct)
     return (
       <Page>
-        <BackLink href="/agents" label={t.ui.nav.assistants} />
+        <BackLink href="/integrations" label={t.integrations.title} />
         <h1 className="mt-8 text-section text-balance">{t.connect.title}</h1>
         <p className="mt-4 max-w-[46ch] text-lead text-muted-foreground">{t.connect.signIn} {readOnly}</p>
       </Page>
@@ -82,7 +82,10 @@ function Flow() {
   const [step, setStep] = useState<Step>(agentId ? 2 : 1);
   // The key lives only in this component's memory. It is never put in the address, storage or logs.
   const [key, setKey] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", model: "", provider: "Custom" as Provider });
+  // Step 1 is the choice of how the agent connects; it may come from the Integrations page (?provider=claude).
+  const [picked, setPicked] = useState<string | null>(() => (CONNECTABLE.some((i) => i.id === params.get("provider")) ? params.get("provider") : null));
+  const entry = CONNECTABLE.find((i) => i.id === picked);
+  const [form, setForm] = useState({ name: "", model: "", provider: (entry?.provider ?? "Custom") as Provider });
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [policy, setPolicy] = useState<PolicyView | null>(null);
@@ -94,7 +97,7 @@ function Flow() {
   const state = useMemo(() => testState(agent, authorizations, taskEvents, now, after), [agent, authorizations, taskEvents, now, after]);
   const finished = ["verified", "failed", "rejected", "blocked", "closed"].includes(state.kind);
   const testAllowed = !!policy?.valid && (policy.tools.find((x) => x.tool === TEST_TOOL)?.effect ?? "deny") !== "deny";
-  const onView = useCallback((v: PolicyView) => setPolicy(v), []);
+  const onView = setPolicy; // a state setter is stable: no wrapper needed
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,7 +136,12 @@ function Flow() {
     if (!r.ok) toast.error(c.s3.notRecorded, { description: errorText(t, r) });
   };
 
-  const shownStep = step === 3 && finished ? 4 : step;
+  const shownStep = step === 1 ? (entry ? 2 : 1) : step === 2 ? 3 : 4;
+  const choose = (id: string) => {
+    const i = CONNECTABLE.find((x) => x.id === id);
+    setPicked(id);
+    setForm((f) => ({ ...f, provider: (i?.provider ?? "Custom") as Provider }));
+  };
   const copyButton = (what: string, text: string, label: string) => (
     <Button variant="secondary" className="h-10 rounded-full border-border px-4 text-small" onClick={() => void copy(what, text)}>
       {copied === what ? <CheckIcon /> : <CopyIcon />} {copied === what ? c.s3.copied : label}
@@ -145,27 +153,42 @@ function Flow() {
 
   return (
     <Page>
-      <BackLink href="/agents" label={t.ui.nav.assistants} />
+      <BackLink href="/integrations" label={t.integrations.title} />
       <header className="mt-8">
         <h1 className="text-section text-balance">{c.title}</h1>
         <p className="mt-4 max-w-[46ch] text-lead text-pretty text-muted-foreground">{c.description}</p>
         <p className="mt-6 text-small text-muted-foreground" aria-live="polite">{c.stepOf(shownStep, c.steps.length, c.steps[shownStep - 1])}</p>
       </header>
 
-      {step === 1 && (
+      {step === 1 && !entry && (
         <div className="mt-12">
-          {heading(c.s1.title)}
+          {heading(c.pick.title)}
+          {lead(c.pick.body)}
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            {CONNECTABLE.map((i) => (
+              <button key={i.id} type="button" onClick={() => choose(i.id)}
+                className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-primary">
+                <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-sunken font-mono text-small font-semibold">{i.monogram}</span>
+                <span className="min-w-0">
+                  <span className="block text-ui font-semibold">{i.name}</span>
+                  <span className="mt-0.5 block text-small text-pretty text-muted-foreground">{t.integrations.items[i.id].summary}</span>
+                  <span className={cn("mt-2 inline-block rounded-full border px-2 py-0.5 text-caption", i.status === "verified" ? "border-primary/25 bg-primary/[0.07] text-primary" : "border-border text-muted-foreground")}>{t.integrations.status[i.status]}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-5 text-small text-muted-foreground">{c.pick.planned(PLANNED.map((i) => i.name).join(", "))} <Link href="/integrations" className="text-primary underline-offset-4 hover:underline">{c.pick.all}</Link></p>
+        </div>
+      )}
+
+      {step === 1 && entry && (
+        <div className="mt-12">
+          <p className="text-small text-muted-foreground">{c.pick.chosen(entry.name)} <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => setPicked(null)}>{c.pick.change}</button></p>
+          <div className="mt-4">{heading(c.s1.title)}</div>
           {lead(c.s1.body)}
           <form onSubmit={create} className="mt-8 grid gap-5">
             <div className="grid gap-2"><Label htmlFor="cn-name">{c.s1.name}</Label><Input id="cn-name" className={field} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={40} required /></div>
             <div className="grid gap-2"><Label htmlFor="cn-model">{c.s1.model}</Label><Input id="cn-model" className={field} value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} maxLength={60} placeholder={c.s1.modelHint} required /></div>
-            <div className="grid gap-2">
-              <Label htmlFor="cn-provider">{c.s1.provider}</Label>
-              <Select value={form.provider} onValueChange={(v) => setForm({ ...form, provider: v as Provider })}>
-                <SelectTrigger id="cn-provider" className={cn(field, "w-full")}><SelectValue /></SelectTrigger>
-                <SelectContent>{PROVIDERS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
             {errors.length > 0 && <ul role="alert" className="text-small text-clay">{errors.map((x) => <li key={x}>{x}</li>)}</ul>}
             {/* The security facts, stated before anything is created. Shown whatever the display preference is. */}
             <section aria-labelledby="cn-know" className="mt-4">
@@ -219,6 +242,16 @@ function Flow() {
                     <Block className="mt-2"><pre className="overflow-x-auto font-mono text-meta leading-relaxed">{TEST_SCRIPT}</pre></Block>
                   </Disclosure>
                 </div>
+                {entry?.connect && (
+                  <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
+                    <h3 className="text-title">{c.use.title(entry.name)}</h3>
+                    <p className="text-small text-muted-foreground">{c.use.body}</p>
+                    <Disclosure summary={c.use.show}>
+                      <Block className="mt-2"><pre className="overflow-x-auto font-mono text-meta leading-relaxed">{agentSnippet(entry.connect, origin)}</pre></Block>
+                      <div className="mt-3">{copyButton("snippet", agentSnippet(entry.connect, origin), c.use.copy)}</div>
+                    </Disclosure>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="mt-8 grid justify-items-start gap-3">
@@ -276,13 +309,14 @@ function Flow() {
           <div className="mt-8 flex flex-wrap gap-2.5">
             <Button asChild className="h-12 rounded-full px-7 text-ui"><Link href={`/agents/${agentId}`}>{c.s4.openAgent}</Link></Button>
             <Button variant="secondary" className="h-12 rounded-full border-border px-6 text-ui" onClick={() => setStep(2)}>{c.s4.permissions}</Button>
-            {state.kind === "verified" && <Button variant="ghost" className="h-12 rounded-full px-5 text-ui" onClick={() => { setAgentId(null); setKey(null); setPolicy(null); setForm({ name: "", model: "", provider: "Custom" }); setStep(1); }}>{c.s4.again}</Button>}
+            {state.kind === "verified" && <Button variant="ghost" className="h-12 rounded-full px-5 text-ui" onClick={() => { setAgentId(null); setKey(null); setPolicy(null); setPicked(null); setForm({ name: "", model: "", provider: "Custom" }); setStep(1); }}>{c.s4.again}</Button>}
           </div>
         </div>
       )}
-      <SampleAgent />
-      <ProviderIntegrations />
-      <Examples />
+      <Disclosure summary={c.more} className="mt-16">
+        <ProviderIntegrations />
+        <Examples />
+      </Disclosure>
     </Page>
   );
 }

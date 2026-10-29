@@ -58,3 +58,50 @@ export function connectCommand(url: string, key: string) {
 
 /** The same command with the key hidden, for showing on screen. */
 export const maskedCommand = (url: string) => connectCommand(url, `tend_sk_${"x".repeat(24)}`).replace(/tend_sk_x{24}/, "tend_sk_••••••••");
+
+/**
+ * How to wire a real agent, per kind of connection. The key is never embedded: the agent reads it from TEND_AGENT_KEY, which the person sets
+ * where the agent runs. These are instructions to copy, not a claim that the agent is connected; only a real tool call shows that.
+ */
+export function agentSnippet(kind: "claude" | "openai" | "mcp" | "http", url: string) {
+  if (!URL_OK.test(url)) throw new Error("not a plain http(s) address");
+  const env = `export TEND_URL=${url}\nexport TEND_AGENT_KEY=tend_sk_…   # the key above, where your agent runs`;
+  if (kind === "claude") return `${env}\n\n// Copy examples/claude-quickstart/tend-client.mjs and examples/claude-agent/gate.mjs next to your agent
+// (in tend-client.mjs, change the gate import to "./gate.mjs"). Then, around each sensitive tool:
+import { connectTend } from "./tend-client.mjs";
+const gate = connectTend();
+const out = await gate.run(
+  { tool: "send_email", action: "send", resource: "client-1042", detail: "Email to client 1042: Invoice 42" },
+  () => sendEmail(/* your real code */),
+);
+if (!out.executed) return \`Not done: \${out.outcome}\`; // tell Claude, so it can tell the user`;
+  if (kind === "openai") return `${env}\n\n// Same two files as for Claude; then wrap the tool's execute function (OpenAI Agents SDK):
+import { tool } from "@openai/agents";
+import { connectTend } from "./tend-client.mjs";
+const gate = connectTend();
+export const sendEmail = tool({
+  name: "send_email", description: "Send an email", parameters: { type: "object", properties: { to: { type: "string" } }, required: ["to"], additionalProperties: false },
+  execute: async ({ to }) => {
+    const out = await gate.run({ tool: "send_email", action: "send", resource: to, detail: \`Email to \${to}\` }, () => realSend(to));
+    return out.executed ? "sent" : \`Not done: \${out.outcome}\`;
+  },
+});`;
+  if (kind === "mcp") return `// In your MCP host's configuration, start the proxy instead of the server (examples/mcp-proxy):
+{
+  "mcpServers": {
+    "files": {
+      "command": "node",
+      "args": ["/path/to/tend/examples/mcp-proxy/tend-mcp-proxy.mjs", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/path/to/folder"],
+      "env": { "TEND_URL": "${url}", "TEND_AGENT_KEY": "tend_sk_…" }
+    }
+  }
+}
+// In TEND each MCP tool is that tool's name with the action "call", e.g. read_file · call.`;
+  return `${env}\n\n# 1. Ask before acting (the exact request is what a person approves)
+curl -s -H "authorization: Bearer $TEND_AGENT_KEY" -H 'content-type: application/json' \\
+  -d '{"tool":"send_email","action":"send","resource":"client-1042","detail":"Email to client 1042"}' $TEND_URL/api/v1/authorizations
+# 2. Once allowed: a one-time token        POST $TEND_URL/api/v1/authorizations/<id>/token
+# 3. Spend it, repeating the request, then act only on {"authorized":true}
+#                                           POST $TEND_URL/api/v1/authorizations/<id>/consume
+# Every call, runnable: docs/api-examples.md`;
+}

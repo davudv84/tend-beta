@@ -23,7 +23,7 @@ export const en = {
     description: "Choose what each AI assistant may do, approve sensitive actions yourself, and see what has really happened.",
     pages: {
       sanctuary: "AI World", agents: "Assistants", agent: "Assistant", reflections: "Agent notes", checkIns: "Status reports", checkIn: "Status report",
-      newCheckIn: "New status report", connect: "Integrations", home: "Home", timeline: "Activity", research: "Research", oversight: "Approvals", developers: "Developers", operator: "Operator sign-in", labs: "Labs", policies: "Policies", verification: "Verification", settings: "Settings",
+      newCheckIn: "New status report", connect: "Connect an agent", integrations: "Integrations", home: "Home", timeline: "Activity", research: "Research", oversight: "Approvals", developers: "Developers", operator: "Operator sign-in", labs: "Labs", policies: "Policies", verification: "Verification", settings: "Settings",
     },
   },
 
@@ -675,9 +675,39 @@ export const en = {
     readOnly: "Sign in as an operator to see and change what this agent may do.",
   },
 
+  integrations: {
+    title: "Integrations",
+    description: "Ways to put TEND in front of an agent. Each one says what has really been tested, and what is connected to this TEND now.",
+    search: "Search integrations",
+    all: "All",
+    categories: { sdk: "Agent SDKs", protocol: "Protocols", api: "Direct API", framework: "Agent frameworks" },
+    status: { verified: "Working", compatible: "Compatible, not yet verified", planned: "Planned" },
+    statusHelp: {
+      verified: "Tested end to end with a real connection.",
+      compatible: "Built, and tested against stand-ins only. Not yet with the real thing.",
+      planned: "Not built or tested yet. It can’t be connected here.",
+    },
+    here: (n: number, ago: string | null) => (n === 0 ? "Not connected to this TEND yet" : `In this TEND: ${n} agent${n === 1 ? "" : "s"}${ago ? `, last authorized action ${ago}` : ", no authorized action yet"}`),
+    connect: "Connect",
+    details: "Details",
+    how: "How it connects",
+    evidence: "How it was tested",
+    evidenceKind: { "real-model": "Real model", "real-protocol": "Real connection", protocol: "Real protocol, scripted client", mocked: "Provider replaced by a stand-in" },
+    none: "No integration matches. Clear the search to see them all.",
+    custom: "Counted together with other agents registered as Custom.",
+    items: {
+      claude: { summary: "Put TEND in front of the tools of a Claude agent built with the Anthropic SDK.", how: "Your agent calls connectTend() before each tool runs and acts only on TEND’s yes. Example: examples/claude-quickstart." },
+      http: { summary: "Any agent, in any language: ask TEND over HTTP before acting.", how: "Three calls: ask, collect a one-time token once allowed, spend it right before acting. Every call: docs/api-examples.md." },
+      openai: { summary: "Put TEND in front of the tools of an agent built with the OpenAI Agents SDK.", how: "Each tool’s execute function asks TEND first. Example: examples/real-agents/openai-agent.mjs. Not yet run against the real OpenAI API." },
+      mcp: { summary: "Put TEND between an MCP host and any MCP server: every tool call needs TEND’s yes.", how: "In the host’s MCP settings, start the proxy instead of the server: examples/mcp-proxy. Not yet tried with a real MCP host." },
+      hermes: { summary: "Agents built with Nous Research’s Hermes Agent.", how: "Not connected or tested yet." },
+      gemini: { summary: "Agents built on Google Gemini.", how: "Not connected or tested yet. Until then, the HTTP integration works with any agent." },
+    },
+  },
   connect: {
     defaultRole: "Connected agent",
-    title: "Integrations",
+    title: "Connect an agent",
+    more: "For developers: the example agents and the raw API",
     description: "Register an agent, choose what it may do, and watch one real action pass through Tend. About five minutes.",
     providers: {
       title: "Real AI agents",
@@ -734,7 +764,22 @@ export const en = {
       result: { ran: "ran (allowed)", approved: "you allowed it; press “Let it continue”", denied: "refused by your rule; never ran", waiting: "waiting for you", rejected: "you said no; never ran", expired: "nobody decided in time; never ran", cancelled: "cancelled; never ran", not_permitted: "no longer allowed by your rules; never ran" },
     },
     stepOf: (n: number, total: number, label: string) => `Step ${n} of ${total} · ${label}`,
-    steps: ["Create", "Permissions", "Connect and test", "Result"],
+    steps: ["Choose provider", "Configure", "Permissions", "Verify"],
+    pick: {
+      title: "Choose how your agent connects",
+      body: "Pick the way your agent runs. You can change it until the agent is created.",
+      chosen: (name: string) => `Connecting with ${name}.`,
+      change: "Change",
+      planned: (names: string) => `Not connectable yet: ${names}.`,
+      all: "See all integrations",
+    },
+    use: {
+      title: (name: string) => `Use it in your agent: ${name}`,
+      body: "The command above makes one real test call. To put TEND in front of your agent’s own tools, wire it like this. The key stays where your agent runs; it is not part of these instructions.",
+      show: "Show the integration code",
+      copy: "Copy code",
+    },
+
     signIn: "Sign in as an operator to connect an agent.",
     know: {
       title: "What to know first",
