@@ -68,7 +68,8 @@ workspace and cancels anything waiting. **Enable** lets them sign in again; they
 > 3. Sign in, open **Connect an agent**, pick **Anthropic** (or **HTTP API**), and follow the four steps. The last one gives you a one-line
 >    command to run in a terminal (Node 18 or newer): it asks TEND to run a harmless test action, you approve it in the browser, and you see
 >    the verified result. About five minutes.
-> 4. Then try your own agent, see below. Feedback: reply to this mail using the questions in the attached template.
+> 4. Then follow docs/beta/integration-guide.md (attached): the sample agent, a policy with an argument rule, your own agent.
+>    Feedback: reply with the questions in docs/beta/feedback.md; bugs: docs/beta/bug-report.md.
 
 ### The 5-minute integration test
 
@@ -84,8 +85,8 @@ included). Their own agent then uses the same key with one of the verified integ
 
 ### Bugs and feedback
 
-- **Feedback:** reply by e-mail with the questions in `docs/feedback-template.md`.
-- **Bugs:** one mail per bug, subject `TEND bug: <one line>`, with: what you did (steps), what you expected, what happened, the time (with time
+- **Feedback:** reply by e-mail with the questions in `docs/beta/feedback.md` (and the setup times from the guide's measuring table).
+- **Bugs:** `docs/beta/bug-report.md`: one mail per bug, subject `TEND bug: <one line>`, with: what you did (steps), what you expected, what happened, the time (with time
   zone), the page address, and a screenshot. From the browser: the error text on screen. From a terminal: the output, **with any `tend_sk_…`
   key removed**. Never send an API key or a password; nobody at TEND will ask for one.
 - **Security issues:** mark the subject `TEND security` and do not post them anywhere else.

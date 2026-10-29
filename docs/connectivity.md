@@ -55,8 +55,9 @@ Enforcement fails closed: if TEND cannot be reached, answers with an error, or i
 
 ## One policy for every framework
 
-Every adapter asks TEND in the same form: the tool name, the action `call`, a hash of all arguments as the resource, and the readable arguments
-as the detail. So one central policy (`npm run tend -- policy create ...`, or the API) governs agents on any framework at once; an agent's own
+Every adapter asks TEND in the same form: the tool name, the action `call`, a hash of all arguments as the resource, the readable arguments
+as the detail, and a summary of the arguments for argument-aware rules (`when`). Allowed calls take one request (`POST /api/v1/authorize`,
+authorized and spent together); after a person's approval, `POST /api/v1/authorizations/{id}/spend`. So one central policy (`npm run tend -- policy create ...`, or the API) governs agents on any framework at once; an agent's own
 rules can only make it stricter. `npm run demo:universal` shows it with real models: one policy, four frameworks (Anthropic SDK, LangChain,
 PydanticAI, Claude Code through MCP), one change applied to all, one agent revoked without touching the others, one audit log.
 
