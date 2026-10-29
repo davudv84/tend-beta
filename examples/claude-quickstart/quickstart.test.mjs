@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { test } from "node:test";
 import { parseAuthRequest } from "../../src/server/policy.ts";
+import { describeEvent, parseRule } from "../../scripts/cli-lib.mjs";
 import { apiProblem } from "./agent.mjs";
 import { SCENARIOS } from "./scenarios.mjs";
 import { connectTend } from "./tend-client.mjs";
@@ -106,4 +107,14 @@ test("npm run demo (scripted, no key): all four behaviours, and no secret in the
   assert.match(r.stdout, /RESULT: all 4 actions were controlled correctly/);
   for (const want of ["allowed by policy, ran", "DENIED by policy, never ran", "approved by you, then ran", "REJECTED by you, never ran"]) assert.ok(r.stdout.includes(want), want);
   assert.ok(!/demo_[A-Za-z0-9_-]{20,}|tend_sk_[A-Za-z0-9_-]{20,}/.test(r.stdout + r.stderr), "no admin token or agent key was printed");
+});
+
+test("the operator command line reads rules strictly and says in the audit when a central policy decided", () => {
+  assert.deepEqual(parseRule("send_email:send:approve"), { tool: "send_email", action: "send", effect: "approve" });
+  assert.deepEqual(parseRule("delete_record:delete:deny:R-"), { tool: "delete_record", action: "delete", effect: "deny", resourcePrefix: "R-" });
+  for (const bad of ["send_email:send", "send_email:send:maybe", ":send:allow", ""]) assert.throws(() => parseRule(bad), /Use tool:action:effect/);
+  const e = { type: "authorization.denied", agentId: "a1", data: { tool: "send_email", action: "send", resource: "team-2", reason: "policy_denied", policySource: "central", centralVersion: 3 } };
+  assert.equal(describeEvent(e, { a1: "My agent" }), "My agent: denied send_email.send team-2 (policy_denied, by central policy v3)");
+  assert.equal(describeEvent({ ...e, data: { ...e.data, policySource: undefined } }, { a1: "My agent" }), "My agent: denied send_email.send team-2 (policy_denied)");
+  assert.equal(describeEvent({ type: "task.started", agentId: "a1", data: {} }), "", "unrelated events are left out");
 });

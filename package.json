@@ -26,6 +26,7 @@
     "e2e:real-claude": "node scripts/real-claude-e2e.mjs",
     "demo": "node scripts/demo.mjs",
     "demo:cross": "node scripts/demo-cross.mjs",
+    "tend": "node scripts/tend-cli.mjs",
     "agents:try": "node scripts/agents-try.mjs",
     "agents:confined": "node scripts/agents-confined.mjs",
     "agents:doctor": "node scripts/agents-doctor.mjs",

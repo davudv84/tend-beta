@@ -66,7 +66,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   let gate;
   try {
-    gate = connectTend({ log: (l) => console.log(l), onPending: () => console.log("  Waiting for you: open the TEND dashboard (Approvals) and decide.") });
+    gate = connectTend({ log: (l) => console.log(l), onPending: () => console.log("  Waiting for you: decide in the TEND dashboard (Approvals), or run  npm run tend -- pending") });
   } catch (e) {
     console.error(e.message);
     process.exit(2);

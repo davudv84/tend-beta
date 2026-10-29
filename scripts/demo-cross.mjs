@@ -20,6 +20,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { keyPrefix } from "../examples/real-agents/env.mjs";
+import { describeEvent } from "./cli-lib.mjs";
 import { ensureBuilt } from "./ensure-built.mjs";
 import { fakeAnthropic, fakeOpenAI } from "./fake-models.mjs";
 import { startIsolatedServer } from "./isolated-server.mjs";
@@ -177,17 +178,7 @@ async function main() {
   // ---- audit -----------------------------------------------------------------------------------------------------------------------
   say("\nAUDIT. One history for both agents, as TEND recorded it:");
   const names = Object.fromEntries(Object.entries(agents).map(([n, a]) => [a.id, PROVIDERS[n].label]));
-  const brief = (rules) => rules.map((r) => `${r.tool.replace("_test_file", "")}=${r.effect}`).join(" ");
-  const line = (e) => {
-    const d = e.data, who = names[e.agentId], what = `${d.tool}.${d.action}${d.resource ? ` ${d.resource}` : ""}`;
-    if (e.type === "policy.updated") return `${who}: own rules set [${brief(d.policy) || "none"}]`;
-    if (e.type === "policy.central_assigned") return `${who}: assigned central policy "${d.name}" v${d.policyVersion} [${brief(d.policy)}]`;
-    if (e.type === "policy.central_updated") return `${who}: central policy "${d.name}" changed to v${d.policyVersion} [${brief(d.policy)}]`;
-    if (e.type === "review.decided") return `${who}: you ${d.status} a held request`;
-    if (e.type === "key.revoked") return `${who}: key revoked`;
-    if (/^authorization\./.test(e.type)) return `${who}: ${e.type.slice(14)} ${what}${d.reason ? ` (${d.reason})` : ""}`;
-    return "";
-  };
+  const line = (e) => describeEvent(e, names);
   const mine = (await op("GET", "/api/v1/events?since=0")).body.events.filter((e) => ids.includes(e.agentId) && line(e));
   for (const e of mine) say(`  ${new Date(e.at).toTimeString().slice(0, 8)}  ${line(e)}`);
   const per = Object.fromEntries(Object.entries(agents).map(([n, a]) => [n, mine.filter((e) => e.agentId === a.id).length]));
