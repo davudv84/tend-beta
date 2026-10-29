@@ -417,7 +417,8 @@ async function tryFlow() {
         c.stderr.on("data", (d) => (out += d));
         c.on("close", (code) => resolve({ code, out }));
       });
-      expect(!/401|invalid_key|rejected this agent/.test(r.out), `the try-out was rejected: ${r.out.slice(-400)}`);
+      // A 401 status, not "401" inside a random port number such as :54013 (that made this check fail about one run in six).
+      expect(!/(?<![\d:])401(?!\d)|invalid_key|rejected this agent/.test(r.out), `the try-out was rejected: ${r.out.slice(-400)}`);
       expect(r.code === 0 && /All checks passed/.test(r.out), `exit ${r.code}: ${r.out.slice(-400)}`);
       expect(!r.out.includes("S".repeat(32)) && !r.out.includes("offline-not-a-real-key"), "a saved key was printed");
       expect(/accepted by this server \(embedded temp database\)/.test(r.out), "the key was not confirmed against the isolated server");

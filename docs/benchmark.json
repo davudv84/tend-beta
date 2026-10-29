@@ -1,0 +1,159 @@
+{
+  "machine": {
+    "cpu": "Apple M1 Pro",
+    "cores": 10,
+    "memoryGb": 16,
+    "os": "darwin 27.0.0",
+    "node": "v24.16.0",
+    "database": "embedded",
+    "network": "loopback"
+  },
+  "at": "2026-10-29T21:51:13.846Z",
+  "setup": {
+    "ms": 284,
+    "enforced": true,
+    "developerSteps": [
+      "create the agent (name, model) and copy its key",
+      "set three rules",
+      "download one file (curl)",
+      "set TEND_URL and TEND_AGENT_KEY",
+      "wrap each tool with guardTool",
+      "approve the held call"
+    ],
+    "integrationCodeLines": {
+      "anthropicSdk": 3,
+      "langchain": 4,
+      "openaiAgentsSdk": 7,
+      "openaiCompatible": 4,
+      "python": 6,
+      "mcpHost": "configuration only (one JSON entry)"
+    },
+    "dependencies": 0,
+    "sdkBytes": 21412,
+    "note": "Machine time for the scripted path. The person's time, measured once in a browser on 2026-10-29: 89 s from sign-in to a verified test action."
+  },
+  "limits": {
+    "requestsPerProtectedCall": 4,
+    "defaultAgentRequestsPerMinute": 120,
+    "defaultProtectedCallsPerMinute": 30,
+    "setting": "TEND_AGENT_RPM (10–10000)"
+  },
+  "latency": {
+    "direct": {
+      "n": 300,
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0
+    },
+    "untilToolRuns": {
+      "n": 300,
+      "mean": 14.95,
+      "p50": 12.3,
+      "p95": 26.84,
+      "p99": 55.87
+    },
+    "wholeCallIncludingAuditReport": {
+      "n": 300,
+      "mean": 20.13,
+      "p50": 16.66,
+      "p95": 47.73,
+      "p99": 65.63
+    },
+    "note": "allowed by policy: request, single-use token, consume, then the tool; the audit report follows the tool. Loopback and an embedded database: a hosted TEND adds the network round trips."
+  },
+  "mcp": {
+    "direct": {
+      "n": 100,
+      "mean": 0.67,
+      "p50": 0.03,
+      "p95": 0.09,
+      "p99": 0.29
+    },
+    "throughTend": {
+      "n": 100,
+      "mean": 16.28,
+      "p50": 15.99,
+      "p95": 18.33,
+      "p99": 22.33
+    }
+  },
+  "load": {
+    "agents": 10,
+    "callsEach": 30,
+    "seconds": 4.05,
+    "callsPerSecond": 74,
+    "errors": 0
+  },
+  "enforcement": {
+    "requests": 60,
+    "expected": {
+      "ran": 30,
+      "neverRan": 30
+    },
+    "observed": {
+      "allow": 15,
+      "deny": 0,
+      "approved": 15,
+      "rejected": 0
+    },
+    "violations": 0
+  },
+  "reliability": [
+    {
+      "case": "Unauthorized tool execution",
+      "tests": 6,
+      "passed": 6,
+      "failed": 0,
+      "ok": true
+    },
+    {
+      "case": "Agent revocation",
+      "tests": 5,
+      "passed": 5,
+      "failed": 0,
+      "ok": true
+    },
+    {
+      "case": "Approval replay",
+      "tests": 4,
+      "passed": 4,
+      "failed": 0,
+      "ok": true
+    },
+    {
+      "case": "Policy change during a pending approval",
+      "tests": 4,
+      "passed": 4,
+      "failed": 0,
+      "ok": true
+    },
+    {
+      "case": "TEND unavailable",
+      "tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "ok": true
+    },
+    {
+      "case": "Database unavailable",
+      "tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "ok": true
+    },
+    {
+      "case": "Cross-tenant isolation",
+      "tests": 6,
+      "passed": 6,
+      "failed": 0,
+      "ok": true
+    }
+  ],
+  "realModelCoverage": {
+    "integrationsVerified": 13,
+    "blocked": 8,
+    "scenariosEach": 7,
+    "source": "src/lib/verification-report.json (npm run verify:integrations)"
+  }
+}

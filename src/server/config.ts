@@ -98,6 +98,14 @@ export const config = {
   get adminEmail() {
     return process.env.TEND_ADMIN_EMAIL ?? "";
   },
+  /**
+   * Authenticated requests per agent per minute (TEND_AGENT_RPM, 10–10000; default 120). One protected tool call takes four (request, token,
+   * consume, report), so the default lets an agent make about 30 protected calls a minute; past it, calls are refused, never let through.
+   */
+  get agentRequestsPerMinute() {
+    const v = Number(process.env.TEND_AGENT_RPM ?? "");
+    return Number.isInteger(v) && v >= 10 && v <= 10_000 ? v : 120;
+  },
   get localHttp() {
     return process.env.TEND_LOCAL_HTTP === "1" && !process.env.VERCEL && this.trustedProxy === 0 && !this.databaseUrl;
   },

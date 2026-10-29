@@ -99,7 +99,8 @@ included). Their own agent then uses the same key with one of the verified integ
   (`docs/security-limitations.md`).
 - **The server-side file tools** (`TEND_GATEWAY_NOTES_DIR`, `TEND_GATEWAY_SANDBOX_DIR`) are one folder for the whole server, not per workspace:
   leave them unset on a shared instance (they cannot run on Vercel anyway). The guided test does not need them.
-- **Testers without access to the repository** have the guided test, the HTTP API (`docs/api-examples.md` shows every call with `curl`) and the
-  one-file Python client only if you send it (`examples/python/tend_gate.py`). The JavaScript adapters and the MCP proxy are files in this
-  repository: give testers read access to `davudv84/tend-beta`, or send those files.
+- **Adapters for testers:** TEND serves them itself: `/sdk/tend.mjs` (every JavaScript adapter and the MCP proxy, one file, no dependencies)
+  and `/sdk/tend_gate.py` (Python, standard library). The Connect page shows the `curl` line; no access to this repository is needed.
+- **Per-agent rate:** 120 authenticated requests a minute by default, about 30 protected calls (each makes four). Past that, calls are refused.
+  `TEND_AGENT_RPM` raises it (10–10000).
 - No independent security review. Ask testers to use fictional data only.

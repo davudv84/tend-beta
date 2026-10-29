@@ -16,7 +16,7 @@ const ADMIN = `e2e_admin_${randomBytes(20).toString("hex")}`;
 const dir = mkdtempSync(path.join(tmpdir(), "tend-accounts-e2e-"));
 let URL_ = "";
 let passed = 0, failed = 0;
-const check = (ok, text) => { ok ? passed++ : failed++; console.log(`${ok ? "ok  " : "FAIL"} ${text}`); };
+const check = (ok, text) => { if (ok) passed++; else failed++; console.log(`${ok ? "ok  " : "FAIL"} ${text}`); };
 
 async function call(method, p, { body, cookie, key } = {}) {
   const res = await fetch(URL_ + p, { method, headers: { ...(body !== undefined && { "content-type": "application/json" }), ...(cookie && { cookie }), ...(key && { authorization: `Bearer ${key}` }) }, body: body === undefined ? undefined : JSON.stringify(body) });

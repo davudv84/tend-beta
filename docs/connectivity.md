@@ -52,3 +52,26 @@ Configuration: see the comment at the top of `examples/mcp-proxy/tend-mcp-proxy.
 
 Enforcement fails closed: if TEND cannot be reached, answers with an error, or its database is unavailable, the action does not run
 (`src/server/failure-modes.test.ts`, `examples/claude-agent/gate.test.mjs`, `src/server/mcp-proxy.test.ts`).
+
+## One policy for every framework
+
+Every adapter asks TEND in the same form: the tool name, the action `call`, a hash of all arguments as the resource, and the readable arguments
+as the detail. So one central policy (`npm run tend -- policy create ...`, or the API) governs agents on any framework at once; an agent's own
+rules can only make it stricter. `npm run demo:universal` shows it with real models: one policy, four frameworks (Anthropic SDK, LangChain,
+PydanticAI, Claude Code through MCP), one change applied to all, one agent revoked without touching the others, one audit log.
+
+Developers get the adapters from their TEND server: `curl -fsSO $TEND_URL/sdk/tend.mjs` (JavaScript, including the MCP proxy:
+`node tend.mjs -- <server command>`) or `/sdk/tend_gate.py` (Python). Built from `examples/` by `scripts/build-sdk.mjs`.
+
+## Trying a policy before saving it
+
+**Preview against recorded actions** (Policies, while editing) replays the agent's requests of the last 30 days through the draft and shows
+what would be allowed, held for a person or blocked, and which decisions would change. For a central policy:
+`npm run tend -- simulate "<policy>" --rule tool:action:effect ...`, or `POST /api/v1/policy-simulations`. It reads only (through the
+read-only wrapper the protection checks use) and never runs a tool.
+
+## Measuring it
+
+`npm run benchmark` (setup steps, added latency, load, enforcement, reliability; results in `docs/benchmark.md`) and `npm run reliability`
+(each failure case and the tests that show protected actions fail closed in it).
+

@@ -1,3 +1,4 @@
+import { config } from "./config.ts";
 import { bearer } from "./auth.ts";
 import type { DB } from "./db.ts";
 import { clientIp, HttpError, limit } from "./http.ts";
@@ -26,6 +27,6 @@ export async function authAgent(db: DB, req: Request) {
   if (!key) return rejected(db, req, "missing_key", "Send your agent key as: Authorization: Bearer tend_sk_…");
   const agent = await agentByKey(db, key);
   if (!agent) return rejected(db, req, "invalid_key", "Unknown or revoked API key.");
-  await limit(db, `agent:${agent.id}`, 120);
+  await limit(db, `agent:${agent.id}`, config.agentRequestsPerMinute);
   return agent;
 }
