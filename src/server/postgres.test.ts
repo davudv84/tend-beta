@@ -457,3 +457,24 @@ test("central policy on a real pool: one change races live requests from two age
     await t.close();
   }
 });
+
+test("central policy on a real pool: five operators save from the same version at once; exactly one wins and only its rules are in force", { skip }, async () => {
+  const t = await tempDb();
+  try {
+    const reg = await registerAgent(t.db, { name: "OpenAI agent", model: "m", provider: "OpenAI" });
+    const cp = await createCentralPolicy(t.db, { name: "Baseline", rules: [{ tool: "send_email", action: "send", effect: "approve" }] });
+    await assignCentralPolicy(t.db, cp.id, { assign: [reg.agent.id] });
+    const effects = ["allow", "deny", "approve", "deny", "allow"] as const;
+    const results = await Promise.allSettled(effects.map((effect, i) => updateCentralPolicy(t.db, cp.id, { rules: [{ tool: "send_email", action: "send", effect }], expectedVersion: 1 }, `operator-${i}`)));
+    const won = results.filter((r) => r.status === "fulfilled") as PromiseFulfilledResult<Awaited<ReturnType<typeof updateCentralPolicy>>>[];
+    assert.equal(won.length, 1, "one save wins");
+    for (const r of results.filter((x) => x.status === "rejected") as PromiseRejectedResult[]) assert.equal((r.reason as { code?: string }).code, "policy_changed");
+    const agent = (await getAgent(t.db, reg.agent.id))!;
+    const v = (await requestAuthorization(t.db, agent, { tool: "send_email", action: "send", resource: "m-1" }, null)).view;
+    const expected = { allow: "approved", approve: "pending", deny: "denied" }[won[0].value.rules[0].effect as "allow" | "approve" | "deny"];
+    assert.equal(v.status, expected, "a request afterwards is judged by the winner's rules");
+    assert.equal((await t.db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE type = 'policy.central_updated'"))!.n, 1, "and only the winner was recorded");
+  } finally {
+    await t.close();
+  }
+});
