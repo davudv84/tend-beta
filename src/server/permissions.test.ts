@@ -128,7 +128,9 @@ test("rules the screen cannot show are reported as custom and survive an edit", 
     await setPolicy(db, id, custom, "enforce");
     const view = await policyView(db, id);
     const by = Object.fromEntries(view.tools.map((t) => [t.tool, t.custom]));
-    assert.deepEqual(by, { pay_invoice: false, test_ping: false, list_notes: false, read_note: true, write_note: true, read_test_file: false, write_test_file: false, delete_test_file: false });
+    // other_tool is the agent's own tool with a plain rule: listed, and editable with the three choices.
+    assert.deepEqual(by, { pay_invoice: false, test_ping: false, list_notes: false, read_note: true, write_note: true, read_test_file: false, write_test_file: false, delete_test_file: false, other_tool: false });
+    assert.deepEqual(view.tools.find((t) => t.tool === "other_tool"), { tool: "other_tool", action: "go", risk: "write", available: true, own: true, effect: "allow", source: "agent", custom: false });
     const rules = applyChoices(view.rules, [{ tool: "list_notes", action: "list", choice: "ask" }]);
     await setPolicy(db, id, rules, "enforce", undefined, view.version);
     assert.deepEqual((await policyView(db, id)).rules.filter((r) => r.tool !== "list_notes"), custom, "nothing else was touched");

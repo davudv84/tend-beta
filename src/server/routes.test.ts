@@ -51,6 +51,7 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "v1/central-policies/[id]/assignments:POST": "operator",
   "v1/reviews/[id]:POST": "operator",
   "v1/sample-agent:POST": "operator",
+  "v1/policy-simulations:POST": "operator",
   "v1/demo/reset:POST": "admin",
   "v1/demo/check-ins:POST": "admin",
   "account/register:POST": "account",
@@ -112,7 +113,7 @@ test("operator routes stay inside the caller's workspace: an id in the path is c
       // Nothing that reads or changes the object may come before the check.
       assert.ok(!/\b(control|setPolicy|policyView|rotateKey|revokeKey|requestCheckIn|runVerification|latestVerification|decide|updateCentralPolicy|assignCentralPolicy)\(/.test(h.body.slice(0, at)), `${h.key}: the workspace check must come first`);
     }
-    for (const fn of ["registerAgent(", "listCentralPolicies(", "createCentralPolicy(", "startSample(", "continueSample(", "integrationStatus("])
+    for (const fn of ["registerAgent(", "listCentralPolicies(", "createCentralPolicy(", "startSample(", "continueSample(", "integrationStatus(", "simulatePolicy("])
       for (const line of h.body.split("\n").filter((l) => l.includes(fn))) assert.match(line, /workspace\)/, `${h.key}: ${fn} must be given the caller's workspace`);
   }
 });

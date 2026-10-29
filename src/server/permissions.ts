@@ -15,7 +15,12 @@ export async function policyView(q: Q, agentId: string) {
   const centralRules = central ? parsePolicy(central.policy) : undefined;
   // Judge the rules, not the agent's current state: a paused agent still has the policy it has.
   const probe = { status: "active" as const, integrationEnabled: true, permissions: toAgent(row).permissions };
-  const tools = toolCatalog().map((t) => ({
+  // The agent's own tools (and the central policy's): every tool a rule names that is not one of TEND's gateway tools, decided the same way.
+  const catalog = toolCatalog();
+  const own = [...rules, ...(centralRules?.ok ? centralRules.rules : [])]
+    .filter((r, i, all) => r.action !== "*" && !catalog.some((t) => t.tool === r.tool) && all.findIndex((x) => x.tool === r.tool) === i)
+    .map((r) => ({ tool: r.tool, action: r.action, risk: "write" as const, available: true, own: true }));
+  const tools = [...catalog, ...own].map((t) => ({
     ...t,
     // An unreadable policy denies everything, as at run time.
     effect: evaluateEffective(probe, parsed.ok ? rules : row.policy, central?.policy, { tool: t.tool, action: t.action, resource: null, detail: null }).effect,

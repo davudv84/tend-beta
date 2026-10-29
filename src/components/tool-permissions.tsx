@@ -6,8 +6,8 @@ import { LockIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
-import { applyChoices, choiceOf, type Choice, type PolicyView } from "@/lib/permissions";
-import { useStore } from "@/lib/store";
+import { applyChoices, choiceOf, type Choice, type Effect, type PolicyView } from "@/lib/permissions";
+import { call, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const CHOICES: Choice[] = ["allow", "ask", "never"];
@@ -17,6 +17,12 @@ const CHOICES: Choice[] = ["allow", "ask", "never"];
  * every save it asks the server again and shows that, so the screen cannot drift from the saved policy. Nothing here is
  * trusted: the server validates the rules and refuses to let a spending tool run without approval.
  */
+/** A tool name TEND accepts (policy.ts ID). */
+const TOOL_ID = /^[A-Za-z0-9_.:-]{1,64}$/;
+
+/** What POST /api/v1/policy-simulations answers (src/server/simulate.ts). */
+interface Simulation { actions: number; would: Record<Effect, number>; changes: Record<string, number>; examples: { id: string; tool: string; action: string; resource: string | null; was: Effect; would: Effect }[] }
+
 export function ToolPermissions({ agentId, suggest, onView }: {
   agentId: string;
   /** Tools to pre-select as "Ask me first" on first load, if they are blocked. Nothing is saved until the person saves. Pass a constant array. */
@@ -33,6 +39,9 @@ export function ToolPermissions({ agentId, suggest, onView }: {
   const [draft, setDraft] = useState<Record<string, Choice>>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sim, setSim] = useState<Simulation | null>(null);
+  const [extra, setExtra] = useState<string[]>([]); // own tools added here, not saved yet
+  const [newTool, setNewTool] = useState("");
   const first = useRef(true);
 
   /** Shows what the server answered: the policy, or why there is none. Returns the policy so a caller can compare it. */
@@ -66,20 +75,44 @@ export function ToolPermissions({ agentId, suggest, onView }: {
     );
   if (!view) return <p className="text-small text-faint">{p.loading}</p>;
 
-  const rows = view.tools;
+  // A custom rule is editable here when it is a plain rule (no resource prefix, no permission): one tool, one action, one effect.
+  const plainRule = (tool: string, action: string) => view.rules.some((r) => r.tool === tool && r.action === action && r.resourcePrefix === undefined && r.permission === undefined);
+  const rows = [...view.tools, ...extra.filter((tool) => !view.tools.some((x) => x.tool === tool)).map((tool) => ({ tool, action: "call", risk: "write" as const, available: true, effect: "deny" as Effect, custom: true, added: true }))];
+  const editable = (r: (typeof rows)[number]) => !r.custom || ("added" in r && r.added) || plainRule(r.tool, r.action);
   const current = (tool: string) => draft[tool] ?? choiceOf(rows.find((r) => r.tool === tool)!.effect);
-  const changes = rows.filter((r) => !r.custom && draft[r.tool] !== undefined && draft[r.tool] !== choiceOf(r.effect));
-  const pick = (tool: string, c: Choice) => (setNotice(null), setDraft((d) => ({ ...d, [tool]: c })));
-  const askAll = () => (setNotice(null), setDraft(Object.fromEntries(rows.filter((r) => !r.custom).map((r) => [r.tool, "ask" as Choice]))));
+  const changes = rows.filter((r) => editable(r) && draft[r.tool] !== undefined && (draft[r.tool] !== choiceOf(r.effect) || ("added" in r && r.added)));
+  const pick = (tool: string, c: Choice) => (setNotice(null), setSim(null), setDraft((d) => ({ ...d, [tool]: c })));
+  const askAll = () => (setNotice(null), setSim(null), setDraft(Object.fromEntries(rows.filter(editable).map((r) => [r.tool, "ask" as Choice]))));
+  const addTool = (e: React.FormEvent) => {
+    e.preventDefault();
+    const tool = newTool.trim();
+    if (!TOOL_ID.test(tool) || rows.some((r) => r.tool === tool)) return;
+    setExtra((x) => [...x, tool]);
+    setDraft((d) => ({ ...d, [tool]: "ask" }));
+    setNewTool("");
+    setSim(null);
+  };
+  const proposed = () => applyChoices(view.rules, changes.map((c) => ({ tool: c.tool, action: c.action, choice: draft[c.tool] })));
+
+  // Replays this agent's recorded requests through the draft, on the server, read-only. Nothing runs and nothing is saved.
+  const preview = async () => {
+    setBusy(true);
+    const r = await call<Simulation>("/api/v1/policy-simulations", { agentId, rules: proposed() });
+    setBusy(false);
+    if (!r.ok) return toast.error(p.simFailed, { description: errorText(t, r) });
+    setSim(r.data);
+  };
 
   const save = async () => {
     setBusy(true);
-    const r = await savePolicy(agentId, { rules: applyChoices(view.rules, changes.map((c) => ({ tool: c.tool, action: c.action, choice: draft[c.tool] }))), expectedVersion: view.version });
+    const r = await savePolicy(agentId, { rules: proposed(), expectedVersion: view.version });
+    setSim(null);
+    if (r.ok) setExtra([]);
     // Whatever happened, show what the server has now.
     const fresh = apply(await getPolicy(agentId));
     setBusy(false);
     if (!r.ok) return toast.error(errorText(t, r));
-    const kept = rows.filter((x) => !x.custom && fresh && draft[x.tool] !== undefined && choiceOf(fresh.tools.find((y) => y.tool === x.tool)!.effect) !== draft[x.tool]);
+    const kept = rows.filter((x) => editable(x) && fresh && fresh.tools.some((y) => y.tool === x.tool) && draft[x.tool] !== undefined && choiceOf(fresh.tools.find((y) => y.tool === x.tool)!.effect) !== draft[x.tool]);
     setNotice(kept.length ? p.stricter(kept.map((x) => p.names[x.tool] ?? x.tool).join(", ")) : p.saved);
   };
 
@@ -97,7 +130,7 @@ export function ToolPermissions({ agentId, suggest, onView }: {
                 <span className="text-sm font-medium">{name}</span>
                 <span className="ml-2 text-caption text-faint">{p.risk[r.risk]}</span>
               </div>
-              {r.custom ? (
+              {!editable(r) ? (
                 <p className="text-small text-muted-foreground">{p.custom}</p>
               ) : (
                 <div role="radiogroup" aria-label={p.groupLabel(name)} className="flex flex-wrap gap-2">
@@ -127,11 +160,44 @@ export function ToolPermissions({ agentId, suggest, onView }: {
           );
         })}
       </ul>
+      <form onSubmit={addTool} className="grid gap-1.5">
+        <label htmlFor={`own-${agentId}`} className="text-small font-medium">{p.ownTitle}</label>
+        <div className="flex gap-2">
+          <input id={`own-${agentId}`} value={newTool} onChange={(e) => setNewTool(e.target.value)} placeholder="send_email" spellCheck={false} autoComplete="off"
+            className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 font-mono text-small outline-none focus-visible:border-primary" />
+          <Button type="submit" variant="outline" size="sm" disabled={busy || !TOOL_ID.test(newTool.trim())}>{p.ownAdd}</Button>
+        </div>
+        <p className="text-caption text-faint">{p.ownHint}</p>
+      </form>
       <div className="flex flex-wrap items-center gap-3">
         <Button size="sm" onClick={() => void save()} disabled={busy || changes.length === 0}>{busy ? p.saving : p.save}</Button>
+        <Button variant="outline" size="sm" onClick={() => void preview()} disabled={busy || changes.length === 0}>{p.simulate}</Button>
         <Button variant="ghost" size="sm" onClick={askAll} disabled={busy}>{p.askAll}</Button>
         <span className="text-caption text-faint">{view.enforcement === "enforce" ? p.enforced : p.monitored}</span>
       </div>
+      {sim && changes.length > 0 && (
+        <section aria-label={p.simTitle} className="rounded-xl border border-border bg-sunken/40 px-4 py-3.5 text-small">
+          <h3 className="font-medium">{p.simTitle}</h3>
+          {sim.actions === 0 ? <p className="mt-1 text-muted-foreground">{p.simNone}</p> : (
+            <>
+              <p className="mt-1 text-muted-foreground">{p.simSummary(sim.actions)}</p>
+              <p className="mt-1 font-medium tabular-nums">{p.simCounts(sim.would.allow, sim.would.approve, sim.would.deny)}</p>
+              <p className="mt-2 text-muted-foreground">{p.simChanged(Object.values(sim.changes).reduce((a, b) => a + b, 0))}</p>
+              {sim.examples.length > 0 && (
+                <ul className="mt-1.5 grid gap-1">
+                  {sim.examples.slice(0, 6).map((x) => (
+                    <li key={x.id} className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="font-mono text-caption">{x.tool}.{x.action}{x.resource ? ` ${x.resource}` : ""}</span>
+                      <span className="text-caption text-muted-foreground">{p.choice[choiceOf(x.was)]} → <span className="font-medium text-foreground">{p.choice[choiceOf(x.would)]}</span></span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+          <p className="mt-2 text-caption text-faint">{p.simNote}</p>
+        </section>
+      )}
       <p role="status" className="text-small text-muted-foreground">{changes.length ? p.unsaved : (notice ?? "")}</p>
       <p className="text-caption text-faint">{p.enforcedNote}</p>
     </div>

@@ -8,6 +8,8 @@
 //   npm run tend -- policy create "<name>" --rule tool:action:effect [--rule ...] [--assign "<agent name>" ...]
 //   npm run tend -- policy update "<name>" --rule tool:action:effect [--rule ...]
 //   npm run tend -- policy assign "<name>" "<agent name>" [...]     |  policy unassign "<name>" "<agent name>" [...]
+//   npm run tend -- simulate "<central policy>" --rule tool:action:effect [...]   what the change would have decided (read-only)
+//   npm run tend -- simulate --agent "<agent name>" --rule ... [--days 30]         an agent's own rules; --assign "<agent>" for a new central policy
 //   npm run tend -- audit [--agent "<agent name>"] [--last 30]     what TEND recorded, oldest first
 //
 // Another address: TEND_URL=http://localhost:3100 npm run tend -- status
@@ -129,6 +131,19 @@ if (cmd === "status") {
     const c = (await call("POST", `/api/v1/central-policies/${c0.id}/assignments`, { [sub]: await agentIds(agentNames) })).data.centralPolicy;
     console.log(`${sub === "assign" ? "Assigned" : "Unassigned"}: ${show(c, names)}`);
   } else die("policy list | create | update | assign | unassign (npm run tend -- help)");
+} else if (cmd === "simulate") {
+  // Replays recorded requests through the proposed rules on the server. Nothing runs and nothing is saved.
+  const rules = rulesFromFlags();
+  const days = flags("days").length ? Number(flags("days")[0]) : undefined;
+  const target = flags("agent").length ? { agentId: (await agentIds(flags("agent")))[0] }
+    : flags("assign").length ? { agentIds: await agentIds(flags("assign")) }
+    : sub ? { centralPolicyId: (await centralByName(sub)).id } : die('simulate "<central policy>" | --agent "<agent>" | --assign "<agent>" ..., with --rule tool:action:effect');
+  const r = (await call("POST", "/api/v1/policy-simulations", { ...target, rules, ...(days && { days }) })).data;
+  console.log(`Simulated against ${r.actions} recorded action(s) from the last ${r.days} day(s)${r.truncated ? " (the most recent 5000)" : ""}. Nothing was run or saved.`);
+  console.log(`  would allow ${r.would.allow}, ask ${r.would.approve}, block ${r.would.deny}   (it was: allowed ${r.was.allow}, asked ${r.was.approve}, blocked ${r.was.deny})`);
+  for (const [k, n] of Object.entries(r.changes)) console.log(`  ${n} ${k.replace("->", " -> ")}`);
+  for (const a of r.agents) console.log(`  ${a.name}: ${a.actions} action(s), ${a.changed} decided differently`);
+  for (const x of r.examples.slice(0, 10)) console.log(`    ${names[x.agentId] ?? x.agentId}  ${x.tool}.${x.action}${x.resource ? ` ${x.resource}` : ""}: ${x.was} -> ${x.would} (${x.reason})`);
 } else if (cmd === "audit") {
   const only = flags("agent").length ? new Set(await agentIds(flags("agent"))) : null;
   const last = Number(flags("last")[0] ?? 30);
