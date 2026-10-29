@@ -11,6 +11,7 @@
 //   npm run tend -- simulate "<central policy>" --rule tool:action:effect [...]   what the change would have decided (read-only)
 //   npm run tend -- simulate --agent "<agent name>" --rule ... [--days 30]         an agent's own rules; --assign "<agent>" for a new central policy
 //   npm run tend -- audit [--agent "<agent name>"] [--last 30]     what TEND recorded, oldest first
+//   npm run tend -- audit-verify                                  checks the log's hash chain; keep the printed head hash somewhere else
 //
 // Another address: TEND_URL=http://localhost:3100 npm run tend -- status
 import "./node-check.mjs";
@@ -144,6 +145,10 @@ if (cmd === "status") {
   for (const [k, n] of Object.entries(r.changes)) console.log(`  ${n} ${k.replace("->", " -> ")}`);
   for (const a of r.agents) console.log(`  ${a.name}: ${a.actions} action(s), ${a.changed} decided differently`);
   for (const x of r.examples.slice(0, 10)) console.log(`    ${names[x.agentId] ?? x.agentId}  ${x.tool}.${x.action}${x.resource ? ` ${x.resource}` : ""}: ${x.was} -> ${x.would} (${x.reason})`);
+} else if (cmd === "audit-verify") {
+  const r = (await call("GET", "/api/admin/audit")).data;
+  if (r.ok) console.log(`Audit chain intact: ${r.checked} event(s) checked${r.firstChained ? ` from #${r.firstChained}` : ""}. Head hash: ${r.head ?? "none yet"}\nKeep this hash outside TEND; a history rewritten later will not end in it.`);
+  else { console.log(`AUDIT CHAIN BROKEN at event #${r.brokenAt}: ${r.reason} (${r.checked} checked before it).`); process.exitCode = 1; }
 } else if (cmd === "audit") {
   const only = flags("agent").length ? new Set(await agentIds(flags("agent"))) : null;
   const last = Number(flags("last")[0] ?? 30);

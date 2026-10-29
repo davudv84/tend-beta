@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { blocked, startProxy, toRequest } from "../../examples/mcp-proxy/tend-mcp-proxy.mjs";
 import { connectTend } from "../../examples/claude-quickstart/tend-client.mjs";
 import { authAgent } from "./agent-auth.ts";
-import { claimToken, consumeAuthorization, requestAuthorization } from "./authz.ts";
+import { authorizationStatus, claimToken, consumeAuthorization, requestAuthorization, spendApproved } from "./authz.ts";
 import { memoryDb, type DB } from "./db.ts";
 import { json, readJson, route } from "./http.ts";
 import { decide, ingestEvents, registerAgent, revokeKey, setPolicy } from "./repo.ts";
@@ -24,6 +24,14 @@ function serve(db: DB) {
       const { view, created } = await requestAuthorization(db, agent, await readJson(req), req.headers.get("idempotency-key"));
       return json(view, view.status === "denied" ? 403 : created ? 201 : 200);
     }
+    if (req.method === "POST" && p === "/api/v1/authorize") {
+      const { view } = await requestAuthorization(db, agent, await readJson(req), req.headers.get("idempotency-key"), Date.now(), { spend: true });
+      return json({ ...view, authorized: view.status === "consumed" }, view.status === "consumed" ? 200 : view.status === "pending" ? 202 : view.status === "denied" ? 403 : 409);
+    }
+    const st = p.match(/^\/api\/v1\/authorizations\/([^/]+)$/);
+    if (req.method === "GET" && st) return json(await authorizationStatus(db, agent, st[1]));
+    const sp = p.match(/^\/api\/v1\/authorizations\/([^/]+)\/spend$/);
+    if (req.method === "POST" && sp) return json(await spendApproved(db, agent, sp[1], await readJson(req)));
     const m = p.match(/^\/api\/v1\/authorizations\/([^/]+)\/(token|consume)$/);
     if (req.method === "POST" && m?.[2] === "token") { const { view } = await claimToken(db, agent, m[1]); return json(view, view.status === "pending" ? 202 : 200); }
     if (req.method === "POST" && m?.[2] === "consume") return json(await consumeAuthorization(db, agent, m[1], await readJson(req)));

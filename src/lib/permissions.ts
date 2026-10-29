@@ -5,7 +5,7 @@ export type Effect = "allow" | "approve" | "deny";
 export type Choice = "allow" | "ask" | "never";
 export type Risk = "read" | "write" | "spend" | "test";
 
-export interface RuleLike { tool: string; action: string; resourcePrefix?: string; effect: Effect; permission?: string }
+export interface RuleLike { tool: string; action: string; resourcePrefix?: string; effect: Effect; permission?: string; when?: Record<string, unknown> }
 
 /** GET /api/v1/agents/{id}/policy: the saved policy, and the decision the server would make for each tool. */
 export interface PolicyView {
@@ -26,7 +26,7 @@ export const effectOf = (c: Choice): Effect => (c === "allow" ? "allow" : c === 
  * untouched, including the ones this screen cannot show (a resource prefix, a permission, another action or tool).
  */
 export function applyChoices(saved: RuleLike[], changes: { tool: string; action: string; choice: Choice }[]): RuleLike[] {
-  const plain = (r: RuleLike) => r.resourcePrefix === undefined && r.permission === undefined;
+  const plain = (r: RuleLike) => r.resourcePrefix === undefined && r.permission === undefined && r.when === undefined;
   const kept = saved.filter((r) => !(plain(r) && changes.some((c) => c.tool === r.tool && c.action === r.action)));
   return [...kept, ...changes.map((c) => ({ tool: c.tool, action: c.action, effect: effectOf(c.choice) }))];
 }

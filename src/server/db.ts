@@ -225,6 +225,19 @@ export const MIGRATIONS: string[] = [
    ALTER TABLE auth_events DROP CONSTRAINT auth_events_type_check;
    ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected',
      'account.registered', 'account.verified', 'account.approved', 'account.disabled', 'account.reset_requested', 'account.password_reset'));`,
+  // Arguments an authorization is bound to (argument-aware rules, simulation). And a hash chain over the event log: each new event's hash
+  // covers the previous event's hash and its own content, computed in the database for every insert path, so a changed or removed event
+  // shows when the chain is checked (verifyAudit). Events from before this migration have no hash; the chain starts after them.
+  `ALTER TABLE authorizations ADD COLUMN args TEXT;
+   ALTER TABLE events ADD COLUMN hash TEXT;
+   CREATE FUNCTION events_chain() RETURNS trigger LANGUAGE plpgsql AS $fn$
+   DECLARE prev TEXT;
+   BEGIN
+     SELECT hash INTO prev FROM events ORDER BY seq DESC LIMIT 1;
+     NEW.hash := encode(sha256(convert_to(coalesce(prev, '') || '|' || NEW.id || '|' || NEW.agent_id || '|' || NEW.type || '|' || NEW.at::text || '|' || NEW.actor || '|' || NEW.data, 'UTF8')), 'hex');
+     RETURN NEW;
+   END $fn$;
+   CREATE TRIGGER events_chain BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION events_chain();`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -271,7 +284,11 @@ export async function postgres(url: string): Promise<DB> {
   const pg = (await import("pg")).default;
   // BIGINT columns hold millisecond timestamps and counts, all well inside Number's safe range.
   pg.types.setTypeParser(20, (v: string) => Number(v));
-  const pool = new pg.Pool({ connectionString: url, max: 4, idleTimeoutMillis: 5_000, connectionTimeoutMillis: 10_000 });
+  // Every statement and every open transaction has a time limit (TEND_DB_TIMEOUT_MS, default 10 s): a stuck database answers with an error,
+  // which every protected path turns into "do not act", instead of holding requests (and the event lock) until the platform kills them.
+  const limit = Math.min(Math.max(Number(process.env.TEND_DB_TIMEOUT_MS) || 10_000, 100), 60_000);
+  const pool = new pg.Pool({ connectionString: url, max: 4, idleTimeoutMillis: 5_000, connectionTimeoutMillis: 10_000,
+    statement_timeout: limit, query_timeout: limit + 1_000, idle_in_transaction_session_timeout: limit * 2 });
   pool.on("error", (e) => console.error("[tend] idle database client error", e.message));
   const base = queries(pool, (sql) => pool.query(sql));
   return {

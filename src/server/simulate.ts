@@ -15,7 +15,7 @@ import { DEFAULT_WORKSPACE } from "./session.ts";
 import { readOnly } from "./verification.ts";
 
 export const SIMULATION = { maxActions: 5_000, defaultDays: 30, maxDays: 90, examples: 50 };
-interface Row { id: string; agent_id: string; tool: string; action: string; resource: string | null; detail: string | null; status: string; reason: string | null; created_at: number }
+interface Row { id: string; agent_id: string; tool: string; action: string; resource: string | null; detail: string | null; status: string; reason: string | null; created_at: number; args: string | null }
 interface AgentRow { id: string; profile: string; permissions: string; policy: string; central_policy_id: string | null; workspace_id: string }
 
 /** What was decided when the agent asked: allowed by policy, held for a person, or denied (for whatever reason). */
@@ -61,7 +61,7 @@ export async function simulatePolicy(db: Q, input: unknown, workspace = DEFAULT_
 
   const ids = agents.map((a) => a.id);
   const rows = ids.length
-    ? await q.all<Row>(`SELECT id, agent_id, tool, action, resource, detail, status, reason, created_at FROM authorizations WHERE agent_id IN (${ids.map(() => "?").join(", ")}) AND created_at >= ? ORDER BY created_at DESC LIMIT ?`,
+    ? await q.all<Row>(`SELECT id, agent_id, tool, action, resource, detail, status, reason, created_at, args FROM authorizations WHERE agent_id IN (${ids.map(() => "?").join(", ")}) AND created_at >= ? ORDER BY created_at DESC LIMIT ?`,
       ...ids, now - days * 86_400_000, SIMULATION.maxActions + 1)
     : [];
   const truncated = rows.length > SIMULATION.maxActions;
@@ -75,7 +75,7 @@ export async function simulatePolicy(db: Q, input: unknown, workspace = DEFAULT_
     const a = agents.find((x) => x.id === r.agent_id)!;
     const { own, central } = policiesOf(a);
     const d = evaluateEffective({ status: "active", integrationEnabled: true, permissions: JSON.parse(a.permissions) }, JSON.parse(own), central === undefined ? undefined : central === null ? null : JSON.parse(central),
-      { tool: r.tool, action: r.action, resource: r.resource, detail: r.detail });
+      { tool: r.tool, action: r.action, resource: r.resource, detail: r.detail, args: r.args ? JSON.parse(r.args) : null });
     const was = recorded(r);
     totals[d.effect]++;
     before[was]++;

@@ -33,6 +33,8 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "v1/authorizations/[id]/token:POST": "agent",
   "v1/authorizations/[id]/consume:POST": "agent",
   "v1/authorizations/[id]/cancel:POST": "agent",
+  "v1/authorize:POST": "agent",
+  "v1/authorizations/[id]/spend:POST": "agent",
   "v1/gateway/requests:POST": "agent",
   "v1/gateway/execute:POST": "agent",
   "v1/agents:POST": "operator",
@@ -61,6 +63,7 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "account/forgot:POST": "account",
   "account/reset:POST": "account",
   "admin/users:GET": "admin",
+  "admin/audit:GET": "admin",
   "admin/users/[id]:POST": "admin",
 };
 

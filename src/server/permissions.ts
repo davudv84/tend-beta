@@ -26,7 +26,7 @@ export async function policyView(q: Q, agentId: string) {
     effect: evaluateEffective(probe, parsed.ok ? rules : row.policy, central?.policy, { tool: t.tool, action: t.action, resource: null, detail: null }).effect,
     source: evaluateEffective(probe, parsed.ok ? rules : row.policy, central?.policy, { tool: t.tool, action: t.action, resource: null, detail: null }).source,
     // Rules that the three-way choice cannot express (a resource prefix, a permission, a wildcard, another action).
-    custom: rules.some((r) => r.tool === t.tool && !(r.action === t.action && r.resourcePrefix === undefined && r.permission === undefined)),
+    custom: rules.some((r) => r.tool === t.tool && !(r.action === t.action && r.resourcePrefix === undefined && r.permission === undefined && r.when === undefined)),
   }));
   return { agentId, version: row.config_version, enforcement: row.enforcement, valid: parsed.ok, rules, tools,
     central: central ? { id: central.id, version: central.version, valid: !!centralRules?.ok, rules: centralRules?.ok ? centralRules.rules : [] } : null };

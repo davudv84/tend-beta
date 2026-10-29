@@ -1,4 +1,7 @@
-// Pre-execution authorization: request → (human approval) → claim a token → consume it right before acting.
+// Pre-execution authorization. Two ways to the same guarantees:
+//   one round trip   POST /authorize: allowed by policy → authorized and spent in one transaction; needs a person → pending, and once
+//                    approved POST /authorizations/{id}/spend spends it (agent key + exact request + atomic status change, no token).
+//   token flow       request → (human approval) → claim a token → consume it right before acting (the server-side gateway uses this).
 // "Consumed" means Tend authorized the action once. It is not proof the action ran: that is only ever
 // shown by the tool.called event the agent reports afterwards.
 //
@@ -27,12 +30,12 @@ type Status = "pending" | "approved" | "rejected" | "expired" | "consumed" | "de
 interface Row {
   id: string; agent_id: string; tool: string; action: string; resource: string | null; detail: string | null; fingerprint: string;
   status: Status; reason: string | null; created_at: number; expires_at: number; decided_at: number | null; approved_until: number | null;
-  token_hash: string | null; token_expires_at: number | null; consumed_at: number | null; mismatches: number;
+  token_hash: string | null; token_expires_at: number | null; consumed_at: number | null; mismatches: number; args: string | null;
 }
 
 const newToken = () => `tend_az_${randomBytes(32).toString("base64url")}`;
-const asRequest = (r: Row): AuthRequest => ({ tool: r.tool, action: r.action, resource: r.resource, detail: r.detail });
-const bound = (r: AuthRequest) => ({ tool: r.tool, action: r.action, ...(r.resource && { resource: r.resource }), ...(r.detail && { detail: r.detail }) });
+const asRequest = (r: Row): AuthRequest => ({ tool: r.tool, action: r.action, resource: r.resource, detail: r.detail, args: r.args ? JSON.parse(r.args) : null });
+const bound = (r: Pick<AuthRequest, "tool" | "action" | "resource" | "detail">) => ({ tool: r.tool, action: r.action, ...(r.resource && { resource: r.resource }), ...(r.detail && { detail: r.detail }) });
 
 /** What an agent may see about an authorization. Never the fingerprint or token hash. */
 const view = (r: Row) => ({
@@ -79,7 +82,7 @@ export async function sweepExpired(db: DB, now: number) {
 }
 
 /** Asks to do something sensitive. Denials are stored too (they are part of the audit trail) and answered with 403. */
-export async function requestAuthorization(db: DB, agent: Agent, body: unknown, idemKey: string | null, now = Date.now()) {
+export async function requestAuthorization(db: DB, agent: Agent, body: unknown, idemKey: string | null, now = Date.now(), { spend = false } = {}) {
   const parsed = parseAuthRequest(body);
   if (!parsed.ok) throw new HttpError(422, "invalid_request", "The authorization request did not validate.", { errors: parsed.errors });
   if (idemKey !== null && !ID.test(idemKey)) throw new HttpError(422, "invalid_idempotency_key", "Idempotency-Key must be 1–64 characters of letters, digits, _ . : -");
@@ -95,6 +98,8 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
       const prior = await q.get<Row>("SELECT * FROM authorizations WHERE agent_id = ? AND idempotency_key = ?", agent.id, idemKey);
       if (prior) {
         if (prior.fingerprint !== fp) throw new HttpError(409, "idempotency_conflict", "That Idempotency-Key was already used for a different request.");
+        // Already spent: whether the first answer arrived or not, the action may already have run. Never authorize it twice.
+        if (spend && prior.status === "consumed") throw new HttpError(409, "already_consumed", "This request was already authorized and spent. Ask again with a new key if it must run again.");
         return { view: view(prior), created: false };
       }
     }
@@ -105,20 +110,22 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
     const central = await centralOf(q, a);
     const d = evaluateEffective(toAgent(a), a.policy, central?.policy, r);
     const source = d.source === "central" && central ? { policySource: "central", centralPolicyId: central.id, centralVersion: central.version } : {};
-    const status: Status = d.effect === "allow" ? "approved" : d.effect === "approve" ? "pending" : "denied";
+    // With spend, an action the policy allows is authorized and spent in this one transaction: there is no token to lose or replay.
+    const status: Status = d.effect === "allow" ? (spend ? "consumed" : "approved") : d.effect === "approve" ? "pending" : "denied";
     const id = `az_${randomUUID().replaceAll("-", "").slice(0, 24)}`;
     await q.run(
-      `INSERT INTO authorizations (id, agent_id, tool, action, resource, detail, fingerprint, status, reason, created_at, expires_at, decided_at, approved_until, idempotency_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO authorizations (id, agent_id, tool, action, resource, detail, fingerprint, status, reason, created_at, expires_at, decided_at, approved_until, idempotency_key, args, consumed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, agent.id, r.tool, r.action, r.resource, r.detail, fp, status, d.reason, now,
       status === "pending" ? now + TTL.request : status === "approved" ? now + TTL.approval : now,
-      status === "pending" ? null : now, status === "approved" ? now + TTL.approval : null, idemKey);
+      status === "pending" ? null : now, status === "approved" ? now + TTL.approval : null, idemKey, r.args ? JSON.stringify(r.args) : null, status === "consumed" ? now : null);
     // A human reviews it in the existing queue; the review id is the authorization id.
     if (status === "pending") await q.run("INSERT INTO reviews (id, agent_id, status) VALUES (?, ?, 'pending')", id, agent.id);
     const stored = (await q.get<Row>("SELECT * FROM authorizations WHERE id = ?", id))!;
     await insertEvent(q, status === "denied"
       ? { agentId: agent.id, type: "authorization.denied", actor: "system", at: now, data: { authorizationId: id, ...bound(r), reason: d.reason, ...source } }
-      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), status, reason: d.reason, approval: status === "pending", expiresAt: view(stored).expiresAt, ...source } });
+      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), status: status === "consumed" ? "approved" : status, reason: d.reason, approval: status === "pending", expiresAt: view(stored).expiresAt, ...source } });
+    if (status === "consumed") await insertEvent(q, { agentId: agent.id, type: "authorization.consumed", actor: "system", at: now, data: { authorizationId: id, ...bound(r) } });
     return { view: view(stored), created: true };
   });
 }
@@ -204,6 +211,49 @@ export async function consumeAuthorization(db: DB, agent: Agent, id: string, bod
     return { err: tokenOk
       ? new HttpError(403, "mismatch", "The tool, action, resource or detail differ from what was approved.")
       : new HttpError(403, "invalid_token", "The authorization token is not valid.") };
+  });
+  if ("err" in out) throw out.err;
+  return { authorized: true, authorizationId: id, ...bound(out.row) };
+}
+
+/**
+ * Spends an approved authorization without a token (the one-round-trip flow): the agent's key, the exact request (fingerprint, arguments
+ * included) and one atomic status change from approved to consumed. Of any number of concurrent or repeated attempts at most one wins;
+ * a repeat after it won is a replay (alert, 409). The policy is checked again, so tightening it after the approval still stops it.
+ */
+export async function spendApproved(db: DB, agent: Agent, id: string, body: unknown, now = Date.now()) {
+  const parsed = parseAuthRequest(body);
+  if (!parsed.ok) throw new HttpError(422, "invalid_request", "The execution parameters did not validate.", { errors: parsed.errors });
+  const fp = fingerprint(agent.id, parsed.request);
+  const out = await db.tx(async (q): Promise<{ row: Row } | { err: HttpError }> => {
+    await q.lockEvents();
+    await expireStale(q, now);
+    const row = await q.get<Row>("SELECT * FROM authorizations WHERE id = ? AND agent_id = ?", id, agent.id);
+    if (!row) return { err: new HttpError(404, "authorization_not_found", "No authorization with that id.") };
+    const alert = (reason: string, extra: object = {}) => insertEvent(q, {
+      agentId: agent.id, type: "alert.raised", actor: "system", at: now,
+      data: { kind: reason === "replay" ? "authorization_replay" : "authorization_mismatch", authorizationId: id, ...bound(row), reason, ...extra },
+    });
+    if (row.status === "consumed") {
+      await alert("replay");
+      return { err: new HttpError(409, "already_consumed", "This authorization was already used.") };
+    }
+    if (row.status === "pending") return { err: new HttpError(409, "pending", "A person has not decided yet.", { status: row.status }) };
+    if (row.status !== "approved") return { err: new HttpError(403, "not_approved", `This authorization is ${row.status}.`, { status: row.status }) };
+    const d = await stillPermitted(q, row);
+    if (d.effect === "deny") return { err: new HttpError(403, "not_permitted", "The agent is no longer allowed to do this.", { reason: d.reason }) };
+    const won = await q.run("UPDATE authorizations SET status = 'consumed', consumed_at = ?, token_hash = NULL WHERE id = ? AND agent_id = ? AND status = 'approved' AND approved_until > ? AND fingerprint = ?", now, id, agent.id, now, fp);
+    if (won) {
+      await insertEvent(q, { agentId: agent.id, type: "authorization.consumed", actor: "system", at: now, data: { authorizationId: id, ...bound(row) } });
+      return { row };
+    }
+    if (row.fingerprint === fp) return { err: new HttpError(403, "expired", "The approval expired before it was used. Ask again.") };
+    const revoke = row.mismatches + 1 >= MISMATCH_LIMIT;
+    await q.run(revoke
+      ? "UPDATE authorizations SET mismatches = mismatches + 1, status = 'cancelled', token_hash = NULL WHERE id = ? AND status = 'approved'"
+      : "UPDATE authorizations SET mismatches = mismatches + 1 WHERE id = ? AND status = 'approved'", id);
+    await alert("parameters_differ", { revoked: revoke });
+    return { err: new HttpError(403, "mismatch", "The tool, action, resource, detail or arguments differ from what was approved.") };
   });
   if ("err" in out) throw out.err;
   return { authorized: true, authorizationId: id, ...bound(out.row) };

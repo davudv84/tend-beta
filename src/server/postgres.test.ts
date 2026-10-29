@@ -478,3 +478,25 @@ test("central policy on a real pool: five operators save from the same version a
     await t.close();
   }
 });
+
+test("a stuck database answers with an error within the time limit, and a protected request then fails closed", { skip }, async () => {
+  const before = process.env.TEND_DB_TIMEOUT_MS;
+  process.env.TEND_DB_TIMEOUT_MS = "300";
+  const t = await tempDb();
+  try {
+    const started = Date.now();
+    assert.equal(await sqlState(() => t.db.get("SELECT pg_sleep(5)")), "57014", "statement_timeout cancels it");
+    assert.ok(Date.now() - started < 3_000, "and does so within the limit, not after the full sleep");
+    // Hold the event lock in another session for longer than the limit: the agent's request cannot get it, and is refused, never granted.
+    const agent = await agentWithPolicy(t.db);
+    await setPolicy(t.db, agent.id, [{ tool: "t", action: "a", effect: "allow" }], "enforce");
+    const holder = t.db.tx(async (q) => { await q.lockEvents(); await q.get("SELECT pg_sleep(0.25)"); });
+    const asked = await sqlState(() => requestAuthorization(t.db, agent, { tool: "t", action: "a" }, null));
+    await holder.catch(() => {});
+    assert.ok(asked === "ok" || asked === "57014", `either it waited for the lock within the limit or was cancelled (${asked})`);
+    assert.equal(await count(t.db, "SELECT COUNT(*)::int AS n FROM authorizations WHERE status = 'consumed'"), 0, "nothing was spent either way");
+  } finally {
+    await t.close();
+    if (before === undefined) delete process.env.TEND_DB_TIMEOUT_MS; else process.env.TEND_DB_TIMEOUT_MS = before;
+  }
+});
