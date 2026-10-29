@@ -4,6 +4,7 @@
 //                        node tend.mjs -- <mcp server command>    (with TEND_URL and TEND_AGENT_KEY in the environment)
 //   /sdk/tend_gate.py    the standard-library Python client (Gate, guard_tool)
 //   /sdk/notes-server.mjs  the harmless MCP server, to try the proxy
+//   /sdk/sample.mjs      a sample agent with three tools behind TEND, scripted or driven by Claude (--claude)
 // tend.mjs is the shipped modules (examples/) concatenated in dependency order, with their imports of each other removed and their imports of
 // Node built-ins merged: the same code, not a copy kept by hand. No dependencies. The output is committed; sdk.test.mjs fails if it is stale.
 //
@@ -46,6 +47,7 @@ export function files() {
     "tend.mjs": bundle(),
     "tend_gate.py": readFileSync(path.join(root, "examples/python/tend_gate.py"), "utf8"),
     "notes-server.mjs": readFileSync(path.join(root, "examples/mcp-proxy/notes-server.mjs"), "utf8"),
+    "sample.mjs": readFileSync(path.join(root, "examples/sdk-sample/sample.mjs"), "utf8"),
   };
 }
 

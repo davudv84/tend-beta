@@ -3,7 +3,7 @@
 // Everything here proves one thing: when Tend does not say yes, the simulated action does not happen.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cancelAuthorization, claimToken, consumeAuthorization, requestAuthorization, TTL } from "../../src/server/authz.ts";
+import { authorizationStatus, cancelAuthorization, claimToken, consumeAuthorization, requestAuthorization, spendApproved, TTL } from "../../src/server/authz.ts";
 import { memoryDb } from "../../src/server/db.ts";
 import { HttpError } from "../../src/server/http.ts";
 import { decide, getAgent, inbox, ingestEvents, registerAgent, setPolicy } from "../../src/server/repo.ts";
@@ -32,8 +32,15 @@ function localTend(db, agentId, o = {}) {
     const sent = o.tamper ? o.tamper(path, body) : body;
     let out;
     try {
-      const m = path.match(/^\/api\/v1\/authorizations\/([^/]+)\/(token|consume|cancel)$/);
-      if (path === "/api/v1/authorizations") {
+      const m = path.match(/^\/api\/v1\/authorizations\/([^/]+)\/(token|consume|cancel|spend)$/);
+      const status = path.match(/^\/api\/v1\/authorizations\/([^/]+)$/);
+      if (path === "/api/v1/authorize") {
+        const { view } = await requestAuthorization(db, agent, sent, headers["Idempotency-Key"] ?? null, now, { spend: true });
+        if (view.status === "denied") throw Object.assign(new Error("Tend 403"), { status: 403, body: view });
+        out = { ...view, authorized: view.status === "consumed" };
+      } else if (m?.[2] === "spend") out = await spendApproved(db, agent, m[1], sent, now);
+      else if (status && body === undefined) out = await authorizationStatus(db, agent, status[1], now);
+      else if (path === "/api/v1/authorizations") {
         const { view } = await requestAuthorization(db, agent, sent, headers["Idempotency-Key"] ?? null, now);
         if (view.status === "denied") throw Object.assign(new Error("Tend 403"), { status: 403, body: view });
         out = view;
@@ -63,7 +70,7 @@ async function setup(policy, options = {}, gateOptions = {}) {
   await setPolicy(db, agent.id, policy, "enforce");
   const tend = localTend(db, agent.id, options);
   const logs = [];
-  const gate = createGate({ tend, pollMs: 5, retryMs: 0, retries: 1, approvalTimeoutMs: 2_000, log: (l) => logs.push(l), ...gateOptions });
+  const gate = createGate({ tend, pollMs: 5, retryMs: 0, retries: 1, approvalTimeoutMs: 2_000, log: (l) => logs.push(l), flow: "token", ...gateOptions });
   let ran = 0;
   const act = async () => ++ran;
   const report = (event) => tend("/api/v1/events", { type: "tool.called", data: event });
@@ -154,7 +161,7 @@ test("replay: a spent token cannot be used again, and running the same request a
   const spent = [];
   const s = await setup(ALLOW_PAYMENTS);
   const tend = s.tend;
-  const gate = createGate({ tend: (p, b, h) => (p.endsWith("/consume") && spent.push({ path: p, body: b }), tend(p, b, h)), pollMs: 5, retryMs: 0 });
+  const gate = createGate({ tend: (p, b, h) => (p.endsWith("/consume") && spent.push({ path: p, body: b }), tend(p, b, h)), pollMs: 5, retryMs: 0, flow: "token" });
   assert.equal((await gate.run(PAY, s.act)).executed, true);
   assert.equal(s.ran(), 1);
   // An attacker who captured the token tries it again, directly.
@@ -237,7 +244,7 @@ test("tokens and keys never appear in logs, results, stored events or error text
     }
   };
   const logs = [];
-  const gate = createGate({ tend, pollMs: 5, retryMs: 0, onPending: (id) => decide(s.db, id, "approved"), log: (l) => logs.push(l) });
+  const gate = createGate({ tend, pollMs: 5, retryMs: 0, onPending: (id) => decide(s.db, id, "approved"), log: (l) => logs.push(l), flow: "token" });
   const out = await gate.run(PAY, s.act, (event) => tend("/api/v1/events", { type: "tool.called", data: event }));
   const token = captured.find((x) => x.startsWith("tend_az_"));
   assert.ok(token);
@@ -325,5 +332,75 @@ test("the whole agent, enforced: restricted reads are denied, payments need a hu
     assert.equal((await evs(db, "task.completed")).length, 3);
     assert.equal((await evs(db, "tool.called")).length, 4);
     await db.close();
+  }
+});
+
+// ---- the one-round-trip flow (the default) --------------------------------------------------------------------------------------------
+const fast = (policy, options = {}, gateOptions = {}) => setup(policy, options, { flow: "fast", ...gateOptions });
+
+test("one round trip: an allowed action is authorized and spent in a single call, runs once, and is reported", async () => {
+  const s = await fast(ALLOW_PAYMENTS);
+  const out = await s.run();
+  assert.deepEqual([out.executed, out.outcome, s.ran()], [true, "success", 1]);
+  assert.deepEqual(s.tend.calls, ["/api/v1/authorize", "/api/v1/events"], "one request before acting, one report after");
+  assert.equal((await row(s.db)).status, "consumed");
+  assert.equal((await row(s.db)).token_hash, null, "no token ever existed");
+  await s.db.close();
+});
+
+test("one round trip: denied or no rule never runs; a person's approval runs it once; a rejection never", async () => {
+  const d = await fast([{ tool: "send_payment", action: "execute", effect: "deny" }]);
+  assert.deepEqual([(await d.run()).outcome, d.ran()], ["denied", 0]);
+  await d.db.close();
+  const a = await fast(APPROVE_PAYMENTS, {}, { onPending: async (id) => void (await decide(a.db, id, "approved")) });
+  const out = await a.run();
+  assert.deepEqual([out.executed, a.ran()], [true, 1]);
+  assert.equal(a.tend.calls.filter((p) => p.endsWith("/spend")).length, 1);
+  await a.db.close();
+  const r = await fast(APPROVE_PAYMENTS, {}, { onPending: async (id) => void (await decide(r.db, id, "rejected")) });
+  assert.deepEqual([(await r.run()).outcome, r.ran()], ["rejected", 0]);
+  await r.db.close();
+});
+
+test("one round trip: a lost answer is never turned into a second execution", async () => {
+  // The first call is authorized and spent, then its answer is lost. The retry with the same key is refused: nothing runs.
+  const s = await fast(ALLOW_PAYMENTS, { lose: (p) => p === "/api/v1/authorize" });
+  const out = await s.run();
+  assert.deepEqual([out.executed, s.ran()], [false, 0]);
+  assert.equal(out.reason, "already_consumed");
+  assert.equal((await s.db.get("SELECT COUNT(*)::int AS n FROM authorizations")).n, 1);
+  await s.db.close();
+});
+
+test("one round trip: the same tool call (same idempotency key) delivered twice runs once", async () => {
+  const s = await fast(ALLOW_PAYMENTS);
+  const once = await s.gate.run({ ...PAY, idempotencyKey: "call_123" }, s.act, s.report);
+  const twice = await s.gate.run({ ...PAY, idempotencyKey: "call_123" }, s.act, s.report);
+  assert.deepEqual([once.executed, twice.executed, twice.reason, s.ran()], [true, false, "already_consumed", 1]);
+  await s.db.close();
+});
+
+test("one round trip: a spend is bound to the arguments, policy changes before it stop it, and failures never run anything", async () => {
+  const tampered = await fast(APPROVE_PAYMENTS, { tamper: (p, b) => (p.endsWith("/spend") ? { ...b, detail: "EUR 9000.00 to Someone Else" } : b) },
+    { onPending: async (id) => void (await decide(tampered.db, id, "approved")) });
+  assert.deepEqual([(await tampered.run()).executed, tampered.ran()], [false, 0]);
+  await tampered.db.close();
+  const tightened = await fast(APPROVE_PAYMENTS, {}, { onPending: async (id) => {
+    await decide(tightened.db, id, "approved");
+    await setPolicy(tightened.db, tightened.agent.id, [{ tool: "send_payment", action: "execute", effect: "deny" }], "enforce");
+  } });
+  assert.deepEqual([(await tightened.run()).executed, tightened.ran()], [false, 0]);
+  await tightened.db.close();
+  for (const [name, options] of Object.entries({
+    "network down": { down: () => true },
+    "server error on authorize": { status: (p) => (p === "/api/v1/authorize" ? 503 : 0) },
+    "authorize answers consumed for another tool": { override: (p, b) => (p === "/api/v1/authorize" ? { id: "az_x", status: "consumed", authorized: true, ...b, tool: "send_refund" } : undefined) },
+    "authorize answers with no id": { override: (p) => (p === "/api/v1/authorize" ? { status: "consumed", authorized: true } : undefined) },
+    "spend fails": { status: (p) => (p.endsWith("/spend") ? 500 : 0) },
+  })) {
+    const s = await fast(name.startsWith("spend") ? APPROVE_PAYMENTS : ALLOW_PAYMENTS, options, { approvalTimeoutMs: 200, onPending: async (id) => void (await decide(s.db, id, "approved")) });
+    const out = await s.run();
+    assert.deepEqual([out.executed, s.ran()], [false, 0], name);
+    await s.db.close();
   }
 });

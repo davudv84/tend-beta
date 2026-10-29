@@ -8,6 +8,7 @@ Fail closed: a timeout, a network error, an error status or an unexpected answer
 (it is idempotent); spending the one-time token never is. Nothing here prints a token or a key. Every outcome is reported to TEND's audit
 log as a tool.called event. This is cooperative enforcement: code that skips the gate is not stopped (see docs/connectivity.md).
 """
+import copy
 import hashlib
 import json
 import os
@@ -25,11 +26,32 @@ class TendError(Exception):
         self.status, self.code, self.body = status, code, body or {}
 
 
+def _sha(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def summarize(args):
+    """The arguments as TEND's rules see them: long strings and lists replaced by their hash and length. Too large: None (conditions then fail closed)."""
+    def walk(v, depth):
+        if isinstance(v, str):
+            return v if len(v) <= 256 else {"sha256": _sha(v), "length": len(v)}
+        if isinstance(v, (list, tuple)):
+            return [walk(x, depth + 1) for x in v] if len(v) <= 50 and depth < 4 else {"sha256": _sha(json.dumps(v, separators=(",", ":"), ensure_ascii=False, default=str)), "length": len(v)}
+        if isinstance(v, dict):
+            return {str(k): walk(x, depth + 1) for k, x in v.items()} if depth < 4 else {"sha256": _sha(json.dumps(v, separators=(",", ":"), ensure_ascii=False, default=str))}
+        return v if v is None or isinstance(v, (bool, int, float)) else str(v)
+    if not isinstance(args, dict):
+        return None
+    out = walk(args, 0)
+    return out if len(json.dumps(out, separators=(",", ":"), ensure_ascii=False)) <= 3500 else None
+
+
 def to_request(name, args):
-    """What TEND is asked for one call: the tool, "call", a hash of all arguments, and the readable arguments (shortened if long)."""
+    """What TEND is asked for one call: the tool, "call", a hash of all arguments, the readable arguments (shortened if long) and their summary."""
     text = json.dumps(args, separators=(",", ":"), ensure_ascii=False)
     detail = text if len(text) <= 200 else text[: 200 - len(MORE)] + MORE
-    return {"tool": name, "action": "call", "resource": "args:" + hashlib.sha256(text.encode()).hexdigest()[:32], "detail": detail}
+    summary = summarize(args)
+    return {"tool": name, "action": "call", "resource": "args:" + _sha(text)[:32], "detail": detail, **({"args": summary} if summary else {})}
 
 
 class Gate:
@@ -65,7 +87,7 @@ class Gate:
 
     def run(self, request, execute):
         """Run execute() at most once, and only after TEND authorized exactly this request. Returns a dict with "executed"."""
-        req = {k: request[k] for k in ("tool", "action", "resource", "detail") if request.get(k)}
+        req = {k: request[k] for k in ("tool", "action", "resource", "detail", "args") if request.get(k)}
         auth_id = None
 
         def stop(outcome, reason=None, event="cancelled", policy=None):
@@ -118,7 +140,7 @@ class Gate:
             return stop("unavailable" if transient(e) else "refused", e.code)
         finally:
             token = None
-        if used.get("authorized") is not True or used.get("authorizationId") != auth_id or any(used.get(k) != req.get(k) for k in ("tool", "action", "resource", "detail")):
+        if used.get("authorized") is not True or used.get("authorizationId") != auth_id or any(used.get(k) != req.get(k) for k in ("tool", "action", "resource", "detail")):  # args are bound by TEND's fingerprint
             return stop("refused", "unexpected_response")
 
         try:
@@ -137,6 +159,7 @@ def not_done(out):
 def guard_tool(gate, name, fn):
     """fn(**args) runs only on TEND's yes; otherwise the model gets a sentence starting with "Not done"."""
     def guarded(**args):
+        args = copy.deepcopy(args)  # what runs is exactly what was authorized, whatever the caller changes afterwards
         out = gate.run(to_request(name, args), lambda: fn(**args))
         if not out["executed"]:
             return not_done(out)

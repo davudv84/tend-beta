@@ -10,7 +10,8 @@ import { createInterface } from "node:readline";
 
 // ---- examples/claude-agent/gate.mjs ----------------------------------------------------------------------
 // The trusted execution wrapper. A sensitive tool function runs only inside gate.run(), and only after Tend
-// has authorized exactly this action: authorize → (wait for a human) → claim a token → consume it → act.
+// has authorized exactly this action. Default flow, one round trip when the policy allows it: authorize-and-spend → act;
+// when a person must decide: ask → wait → spend → act. flow: "token" keeps the older authorize → claim token → consume → act.
 //
 //   const out = await gate.run({ tool: "send_payment", action: "execute", resource: "INV-1", detail: "EUR 5.00 to X" }, () => pay());
 //   out.executed === true only if Tend said yes. Every other outcome means nothing was done; `out.detail`, when present, says why in words.
@@ -28,14 +29,14 @@ const same = (a, b) => (a ?? null) === (b ?? null);
 /** Why a call to TEND failed, in words: a hint from the client, else TEND's own validation errors or message. */
 const why = (e) => e.hint ?? (e.body?.errors?.join?.("; ") || e.body?.message || undefined);
 
-export function createGate({ tend, approvalTimeoutMs = 120_000, pollMs = 2_000, retries = 2, retryMs = 500, onPending, log = () => {} }) {
+export function createGate({ tend, approvalTimeoutMs = 120_000, pollMs = 2_000, retries = 2, retryMs = 500, onPending, log = () => {}, flow = "fast" }) {
   /**
    * @param request { tool, action, resource?, detail? }  what is being authorized and, byte for byte, what will be done
    * @param execute  async ({ authorizationId }) => result. The protected action: called at most once, and only after a successful consume.
    * @param report   optional (event) => Promise: tells Tend's monitoring what happened. Failures to report never change the outcome.
    */
   async function run(request, execute, report = async () => {}) {
-    const req = { tool: request.tool, action: request.action, ...(request.resource && { resource: request.resource }), ...(request.detail && { detail: request.detail }) };
+    const req = { tool: request.tool, action: request.action, ...(request.resource && { resource: request.resource }), ...(request.detail && { detail: request.detail }), ...(request.args && { args: request.args }) };
     let authorizationId;
     const label = `${req.tool}.${req.action}${req.resource ? ` ${req.resource}` : ""}`;
 
@@ -49,8 +50,80 @@ export function createGate({ tend, approvalTimeoutMs = 120_000, pollMs = 2_000, 
       return { executed: false, outcome, ...(reason && { reason }), ...(authorizationId && { authorizationId }) };
     };
 
+    const key = request.idempotencyKey ?? `gate-${randomUUID()}`;
+    const echoes = (used) => used?.authorized === true && used.authorizationId === authorizationId && used.tool === req.tool && used.action === req.action && same(used.resource, req.resource) && same(used.detail, req.detail);
+    const act = async () => {
+      let outcome = "success", result, error;
+      try {
+        result = await execute({ authorizationId });
+      } catch (e) {
+        outcome = "failure";
+        error = "execution_failed";
+        log(`  gate ${label} → authorized, but the action failed (${e?.name ?? "Error"})`);
+      }
+      try {
+        await report({ ...req, outcome, authorizationId, ...(error && { error }) });
+      } catch {
+        // The authorization record shows it was spent; the missing report is itself visible to operators.
+      }
+      return { executed: true, outcome, result, authorizationId };
+    };
+
+    if (flow === "fast") {
+      // 1. Ask, and when the policy allows it, have it authorized and spent in the same call. Retried only with the same key: a repeat of a
+      //    request that was already spent is refused by TEND (409), so a lost answer can never make the action run twice.
+      let first;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          first = await tend("/api/v1/authorize", req, { "Idempotency-Key": key });
+          break;
+        } catch (e) {
+          if (e.status === 403 && e.body?.status === "denied") {
+            authorizationId = e.body.id;
+            const policyDenied = ["policy_denied", "no_policy", "invalid_policy", "missing_permission"].includes(e.body.reason);
+            return stop("denied", e.body.reason, { outcome: "denied", ...(policyDenied && { policy: e.body.reason }) });
+          }
+          if (transient(e) && attempt < retries) { await sleep(retryMs); continue; }
+          return { ...(await stop(transient(e) ? "unavailable" : "refused", e.code)), ...(why(e) && { detail: why(e) }) };
+        }
+      }
+      authorizationId = first?.id;
+      if (typeof authorizationId !== "string") return stop("refused", "unexpected_response");
+      if (first.status === "consumed") return echoes({ ...first, authorizationId: first.id }) ? act() : stop("refused", "unexpected_response");
+      if (first.status !== "pending") return stop("refused", "unexpected_response");
+
+      // 2. A person decides. Only TEND's answer counts.
+      log(`  gate ${label} → waiting for human approval (${authorizationId})`);
+      await onPending?.(authorizationId);
+      const deadline = Date.now() + approvalTimeoutMs;
+      for (;;) {
+        let st;
+        try {
+          st = await tend(`/api/v1/authorizations/${authorizationId}`);
+        } catch (e) {
+          if (!transient(e)) return stop("refused", e.code ?? "unexpected_response");
+        }
+        if (st?.status === "approved") break;
+        if (st && st.status !== "pending") return stop(st.status === "rejected" ? "rejected" : st.status === "expired" ? "expired" : "refused", st.status, { outcome: st.status === "rejected" ? "denied" : "cancelled" });
+        if (Date.now() >= deadline) {
+          try { await tend(`/api/v1/authorizations/${authorizationId}/cancel`, {}); } catch { /* TEND expires it on its own */ }
+          return stop("timeout", "no_decision");
+        }
+        await sleep(pollMs);
+      }
+      // 3. Spend it, once, right before acting. Never retried: after an ambiguous failure, ask again.
+      let used;
+      try {
+        used = await tend(`/api/v1/authorizations/${authorizationId}/spend`, req);
+      } catch (e) {
+        const status = e.body?.status;
+        if (status === "rejected") return stop("rejected", status, { outcome: "denied" });
+        return { ...(await stop(transient(e) ? "unavailable" : "refused", e.code)), ...(why(e) && { detail: why(e) }) };
+      }
+      return echoes(used) ? act() : stop("refused", "unexpected_response");
+    }
+
     // 1. Ask. Retried with the same idempotency key, so a lost response never creates a second request.
-    const key = `gate-${randomUUID()}`;
     let created;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -196,15 +269,33 @@ then start your agent with:  node --env-file=.env.agent your-agent.mjs`);
 const ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const log = (m) => process.stderr.write(`[tend-mcp-proxy] ${m}\n`); // stdout belongs to the protocol
 
-/** What TEND is asked for one tools/call: the tool, "call", a hash of the full arguments, and the readable arguments (shortened if long). */
+const sha = (text) => createHash("sha256").update(text).digest("hex");
+/**
+ * The arguments as TEND's rules see them (`when` conditions): the same structure, with long strings and long lists replaced by their hash
+ * and length, so the request stays small. Too large or too deep even then: null, and rules with conditions do not match (they fail closed).
+ */
+export function summarize(args) {
+  const walk = (v, depth) => {
+    if (typeof v === "string") return v.length <= 256 ? v : { sha256: sha(v), length: v.length };
+    if (Array.isArray(v)) return v.length <= 50 && depth < 4 ? v.map((x) => walk(x, depth + 1)) : { sha256: sha(JSON.stringify(v)), length: v.length };
+    if (v && typeof v === "object") return depth < 4 ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, depth + 1)])) : { sha256: sha(JSON.stringify(v)) };
+    return typeof v === "number" || typeof v === "boolean" || v === null ? v : String(v);
+  };
+  if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+  const out = walk(args, 0);
+  return JSON.stringify(out).length <= 3_500 ? out : null;
+}
+
+/** What TEND is asked for one tools/call: the tool, "call", a hash of the full arguments, the readable arguments (shortened if long) and their summary. */
 export function toRequest(params) {
   const name = params?.name, args = params?.arguments ?? {};
   if (typeof name !== "string" || !ID.test(name)) return null;
   const text = JSON.stringify(args);
-  const resource = `args:${createHash("sha256").update(text).digest("hex").slice(0, 32)}`;
+  const resource = `args:${sha(text).slice(0, 32)}`;
   const more = "… (shortened; bound to all arguments)"; // TEND accepts at most 200 characters of detail
   const detail = text.length <= 200 ? text : `${text.slice(0, 200 - more.length)}${more}`;
-  return { tool: name, action: "call", resource, detail };
+  const summary = summarize(args);
+  return { tool: name, action: "call", resource, detail, ...(summary && Object.keys(summary).length && { args: summary }) };
 }
 
 /** A tool error the host shows to the model, so it can tell the user that the action did not happen. */
@@ -271,15 +362,42 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 // The wrapped function returns the tool's own result when TEND allowed it, and otherwise a sentence that starts with "Not done", so the
 // model can tell the user the action did not happen. It never throws for a refusal: frameworks differ in what an exception does.
 
+/** Why it did not happen, in words a developer can act on. The code stays in parentheses for searching logs. */
+const HINTS = {
+  no_policy: (t) => `no rule for ${t} · call yet: add one in TEND (Policies, "Your agent's own tools")`,
+  policy_denied: () => "the policy says never",
+  invalid_policy: () => "the saved policy cannot be read, so everything is blocked",
+  rejected: () => "a person rejected it",
+  expired: () => "nobody decided in time",
+  no_decision: () => "nobody decided in time",
+  not_permitted: () => "the policy or the agent changed before it ran",
+  already_consumed: () => "this exact call was already authorized once, and is not run twice",
+  invalid_key: () => "TEND does not accept this agent key (revoked, or from another TEND: check TEND_URL and TEND_AGENT_KEY)",
+  agent_paused: () => "the agent is paused in TEND",
+};
 /** The text a model sees when TEND did not allow a call. */
-export const notDone = (out) => `Not done: TEND did not allow this tool call (${out.outcome}${out.reason ? `: ${out.reason}` : ""}${out.detail ? `; ${out.detail}` : ""}).`;
-
+export const notDone = (out, tool = "this tool") => {
+  const hint = HINTS[out.reason]?.(tool) ?? HINTS[out.outcome]?.(tool);
+  return `Not done: TEND did not allow this tool call (${out.outcome}${out.reason ? `: ${out.reason}` : ""}${hint ? `; ${hint}` : ""}${out.detail ? `; ${out.detail}` : ""}).`;
+};
+/**
+ * Wraps a tool function. The function receives a private copy of the arguments, taken when TEND was asked, so what runs is exactly what was
+ * authorized even if the caller changes its own object afterwards. Pass the framework's tool-call id as the second argument when it has one:
+ * the same call delivered twice then runs once.
+ */
 export function guardTool(gate, name, fn) {
-  return async (args = {}) => {
-    const request = toRequest({ name, arguments: args });
-    if (!request) return notDone({ outcome: "refused", reason: "tool name TEND cannot accept" });
-    const out = await gate.run(request, () => fn(args));
-    if (!out.executed) return notDone(out);
+  return async (args = {}, callId) => {
+    let snapshot;
+    try {
+      snapshot = structuredClone(args);
+    } catch {
+      return notDone({ outcome: "refused", reason: "arguments that cannot be copied" }, name);
+    }
+    const request = toRequest({ name, arguments: snapshot });
+    if (!request) return notDone({ outcome: "refused", reason: "tool name TEND cannot accept" }, name);
+    const key = typeof callId === "string" && callId ? `call-${callId}`.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 64) : undefined;
+    const out = await gate.run({ ...request, ...(key && { idempotencyKey: key }) }, () => fn(snapshot));
+    if (!out.executed) return notDone(out, name);
     return out.outcome === "success" ? out.result : "TEND allowed this call, but the tool itself failed.";
   };
 }

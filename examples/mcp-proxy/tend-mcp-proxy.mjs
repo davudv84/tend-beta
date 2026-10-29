@@ -21,15 +21,33 @@ import { connectTend } from "../claude-quickstart/tend-client.mjs";
 const ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const log = (m) => process.stderr.write(`[tend-mcp-proxy] ${m}\n`); // stdout belongs to the protocol
 
-/** What TEND is asked for one tools/call: the tool, "call", a hash of the full arguments, and the readable arguments (shortened if long). */
+const sha = (text) => createHash("sha256").update(text).digest("hex");
+/**
+ * The arguments as TEND's rules see them (`when` conditions): the same structure, with long strings and long lists replaced by their hash
+ * and length, so the request stays small. Too large or too deep even then: null, and rules with conditions do not match (they fail closed).
+ */
+export function summarize(args) {
+  const walk = (v, depth) => {
+    if (typeof v === "string") return v.length <= 256 ? v : { sha256: sha(v), length: v.length };
+    if (Array.isArray(v)) return v.length <= 50 && depth < 4 ? v.map((x) => walk(x, depth + 1)) : { sha256: sha(JSON.stringify(v)), length: v.length };
+    if (v && typeof v === "object") return depth < 4 ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, depth + 1)])) : { sha256: sha(JSON.stringify(v)) };
+    return typeof v === "number" || typeof v === "boolean" || v === null ? v : String(v);
+  };
+  if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+  const out = walk(args, 0);
+  return JSON.stringify(out).length <= 3_500 ? out : null;
+}
+
+/** What TEND is asked for one tools/call: the tool, "call", a hash of the full arguments, the readable arguments (shortened if long) and their summary. */
 export function toRequest(params) {
   const name = params?.name, args = params?.arguments ?? {};
   if (typeof name !== "string" || !ID.test(name)) return null;
   const text = JSON.stringify(args);
-  const resource = `args:${createHash("sha256").update(text).digest("hex").slice(0, 32)}`;
+  const resource = `args:${sha(text).slice(0, 32)}`;
   const more = "… (shortened; bound to all arguments)"; // TEND accepts at most 200 characters of detail
   const detail = text.length <= 200 ? text : `${text.slice(0, 200 - more.length)}${more}`;
-  return { tool: name, action: "call", resource, detail };
+  const summary = summarize(args);
+  return { tool: name, action: "call", resource, detail, ...(summary && Object.keys(summary).length && { args: summary }) };
 }
 
 /** A tool error the host shows to the model, so it can tell the user that the action did not happen. */
