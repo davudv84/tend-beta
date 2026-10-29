@@ -26,6 +26,10 @@ export interface Viewer {
   public: boolean;
   operatorAvailable: boolean;
   demo: boolean;
+  workspace?: string;
+  admin?: boolean;
+  accounts?: boolean;
+  account?: { email: string };
 }
 
 /** `code` is the server's error code (or "network"); the interface translates it, `error` is the fallback. */
@@ -48,6 +52,8 @@ interface Store extends Projection {
   init: () => Promise<void>;
   poll: () => Promise<void>;
   signIn: (token: string) => Promise<Result>;
+  /** E-mail and password (accounts). Like signIn, it checks that this browser really holds the session before changing the screen. */
+  signInWithPassword: (email: string, password: string) => Promise<Result>;
   signOut: () => Promise<void>;
   /** The live sessions and recent sign-in activity (operators only). */
   getSessions: () => Promise<{ ok: true; data: SessionOverview } | Failure>;
@@ -77,7 +83,8 @@ export interface SessionOverview {
   recent: { at: number; type: string; sessionId: string | null; client: string | null; reason: string | null }[];
 }
 
-async function call<T = Record<string, unknown>>(path: string, body?: unknown, method = "POST"): Promise<{ ok: true; data: T } | Failure> {
+/** JSON to and from this server's API, same-origin cookies only. Also used by pages outside the store (accounts, the admin). */
+export async function call<T = Record<string, unknown>>(path: string, body?: unknown, method = "POST"): Promise<{ ok: true; data: T } | Failure> {
   try {
     const res = await fetch(path, {
       method,
@@ -172,6 +179,16 @@ export const useStore = create<Store>()(
           // The server said yes. Before changing anything on screen, ask whether this browser actually holds the session now. Safari drops a
           // Secure cookie on plain http://; resetting the store first would swap the form for a loading skeleton and remount it, losing the
           // typed token and any message, which looked like a dead page. Checked here, the form stays and can say what happened.
+          const check = await call<{ viewer?: Viewer }>("/api/operator/session", undefined, "GET");
+          if (!check.ok || check.data.viewer?.role !== "operator") return { ok: false, error: "", code: "session_not_kept", status: 200 };
+          set(fresh());
+          await get().init();
+          return { ok: true };
+        },
+
+        signInWithPassword: async (email, password) => {
+          const r = await call("/api/account/sign-in", { email, password });
+          if (!r.ok) return r;
           const check = await call<{ viewer?: Viewer }>("/api/operator/session", undefined, "GET");
           if (!check.ok || check.data.viewer?.role !== "operator") return { ok: false, error: "", code: "session_not_kept", status: 200 };
           set(fresh());

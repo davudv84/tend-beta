@@ -29,7 +29,7 @@ export default function View() {
     <Page>
       <h1 className="text-section text-balance">{t.signIn.title}</h1>
       <p className="mt-4 max-w-[46ch] text-lead text-pretty text-muted-foreground">{viewer?.public ? t.signIn.bodyPublic : t.signIn.bodyPrivate} {t.signIn.enterToken}</p>
-      <div className="mt-10 max-w-sm"><SignIn compact /></div>
+      <div className="mt-10 max-w-sm"><SignIn compact token /></div>
     </Page>
   );
 }

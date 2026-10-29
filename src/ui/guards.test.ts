@@ -108,8 +108,10 @@ test("the front page shows a visitor nothing about any assistant, and sends a si
 test("the whole application is one product: every screen sits in the one shell, with one set of destinations", () => {
   const walk = (dir: string): string[] => readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
   const pages = walk("src/app").filter((f) => f.endsWith("page.tsx") && !f.startsWith("src/app/api"));
-  const outside = pages.filter((f) => !f.startsWith("src/app/(next)/") && !["src/app/page.tsx", "src/app/prototype/page.tsx"].includes(f));
-  assert.deepEqual(outside, [], "every screen is in the redesigned group (the front page and the kept research prototype are the only others)");
+  // The account pages (sign-in, sign-up and the pages opened from mails) come before there is anything to navigate: one card, no shell.
+  const outside = pages.filter((f) => !f.startsWith("src/app/(next)/") && !f.startsWith("src/app/account/") && !["src/app/page.tsx", "src/app/prototype/page.tsx"].includes(f));
+  assert.deepEqual(outside, [], "every screen is in the redesigned group (the front page, the account pages and the kept research prototype are the only others)");
+  assert.match(src("src/app/account/layout.tsx"), /<AccountFrame>/, "the account pages share one frame");
   assert.equal(existsSync(path.join(root, "src/components/app-shell.tsx")), false, "the old navigation shell is gone");
   const shell = src("src/ui/shell.tsx");
   for (const href of ["/home", "/agents", "/oversight", "/timeline", "/policies", "/verification", "/integrations", "/settings"]) assert.ok(shell.includes(`"${href}"`), `the navigation reaches ${href}`);

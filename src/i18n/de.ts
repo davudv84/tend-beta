@@ -17,6 +17,7 @@ export const de: Dict = {
     title: "Tend – bestimmen, was Ihre KI-Assistenten dürfen",
     description: "Legen Sie fest, was jeder KI-Assistent darf, geben Sie heikle Aktionen selbst frei und sehen Sie, was wirklich passiert ist.",
     pages: {
+      admin: "Beta-Zugang", account: "Konto", 
       sanctuary: "KI-Welt", agents: "Assistenten", agent: "Assistent", reflections: "Rückblicke", checkIns: "Statusmeldungen", checkIn: "Statusmeldung",
       newCheckIn: "Neue Statusmeldung", connect: "Agent verbinden", integrations: "Integrationen", home: "Start", timeline: "Aktivität", research: "Forschung", oversight: "Freigaben", developers: "Entwickler", operator: "Admin-Anmeldung", labs: "Labs", policies: "Richtlinien", verification: "Prüfung", settings: "Einstellungen",
     },
@@ -108,6 +109,14 @@ export const de: Dict = {
     network: "Der Tend-Server ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     status: (n) => `Der Server antwortete mit ${n}.`,
     codes: {
+      invalid_credentials: "Diese E-Mail-Adresse und dieses Passwort passen zu keinem Konto.",
+      email_unverified: "Bestätigen Sie zuerst Ihre E-Mail-Adresse. Wir können den Link erneut senden.",
+      pending_approval: "Ihr Konto wartet auf Freigabe. Sie erhalten eine E-Mail, sobald es bereit ist.",
+      account_disabled: "Dieses Konto wurde gesperrt. Wenden Sie sich an den TEND-Admin.",
+      invalid_link: "Dieser Link ist nicht mehr gültig. Fordern Sie einen neuen an.",
+      invalid_email: "Geben Sie eine gültige E-Mail-Adresse ein.",
+      accounts_disabled: "Konten sind auf diesem Server nicht aktiviert.",
+      admin_required: "Nur der Admin kann das tun.",
       operator_required: "Melden Sie sich als Admin an, um Änderungen vorzunehmen. Besucher haben nur Lesezugriff.",
       bad_origin: "Anfragen von anderen Websites sind nicht erlaubt.",
       rate_limited: "Zu viele Anfragen. Bitte warten Sie einen Moment und versuchen Sie es erneut.",
@@ -664,6 +673,31 @@ export const de: Dict = {
     readOnly: "Melden Sie sich als Operator an, um zu sehen und zu ändern, was dieser Agent darf.",
   },
 
+  account: {
+    email: "E-Mail-Adresse",
+    password: "Passwort",
+    newPassword: "Neues Passwort",
+    passwordHint: (n: number) => `Mindestens ${n} Zeichen.`,
+    show: "Anzeigen",
+    hide: "Verbergen",
+    back: "Zurück zur Anmeldung",
+    signIn: { title: "Bei TEND anmelden", submit: "Anmelden", busy: "Anmelden …", forgot: "Passwort vergessen?", noAccount: "Neu bei TEND?", create: "Konto erstellen", admin: "Admin-Anmeldung", resend: "Bestätigungslink erneut senden", resent: "Falls die Adresse ein unbestätigtes Konto hat, ist ein neuer Link unterwegs." },
+    signUp: { title: "TEND-Konto erstellen", body: "TEND ist in der privaten Beta. Nachdem Sie Ihre E-Mail-Adresse bestätigt haben, gibt ein Admin den Zugang frei; Sie erhalten eine E-Mail.", submit: "Konto erstellen", busy: "Wird erstellt …", have: "Schon ein Konto?", sentTitle: "Posteingang prüfen", sent: (email: string) => `Falls ${email} verwendet werden kann, haben wir einen Bestätigungslink gesendet. Er gilt 24 Stunden.` },
+    verify: { title: "E-Mail-Adresse bestätigen", submit: "Bestätigen", busy: "Wird bestätigt …", doneTitle: "Adresse bestätigt", waiting: "Ein Admin prüft Ihren Zugang. Sie erhalten eine E-Mail, sobald Sie sich anmelden können.", ready: "Ihr Zugang ist bereit. Sie können sich jetzt anmelden.", missing: "Diese Seite braucht den Link aus Ihrer E-Mail. Öffnen Sie ihn erneut oder fordern Sie einen neuen an." },
+    forgot: { title: "Passwort zurücksetzen", body: "Geben Sie Ihre E-Mail-Adresse ein; wir senden einen Link, um ein neues Passwort zu wählen.", submit: "Link senden", busy: "Wird gesendet …", sentTitle: "Posteingang prüfen", sent: "Falls die Adresse ein Konto hat, ist ein Link unterwegs. Er funktioniert einmal, 30 Minuten lang." },
+    reset: { title: "Neues Passwort wählen", body: "Alle anderen Sitzungen Ihres Kontos werden abgemeldet.", submit: "Passwort speichern", busy: "Wird gespeichert …", doneTitle: "Passwort geändert", done: "Melden Sie sich mit dem neuen Passwort an." },
+    prompt: { title: "Zum Fortfahren anmelden", body: "Mit Ihrem TEND-Konto. Neu hier? Erstellen Sie eines; in der privaten Beta gibt ein Admin den Zugang frei.", signIn: "Anmelden", create: "Konto erstellen", token: "Stattdessen mit dem Admin-Token anmelden" },
+    admin: {
+      title: "Beta-Zugang",
+      description: "Personen, die sich registriert haben. Geben Sie ein Konto frei, sobald seine E-Mail-Adresse bestätigt ist; die Person erhält eine E-Mail. Sperren meldet sie sofort ab.",
+      none: "Noch hat sich niemand registriert.",
+      email: "Konto", created: "Registriert", status: "Status", agents: "Agenten",
+      states: { unverified: "E-Mail nicht bestätigt", pending: "Wartet auf Freigabe", approved: "Freigegeben", disabled: "Gesperrt" },
+      approve: "Freigeben", disable: "Sperren", enable: "Entsperren",
+      failed: "Das hat nicht geklappt",
+      only: "Nur der Admin kann diese Seite öffnen. Melden Sie sich mit dem Admin-Token an.",
+    },
+  },
   integrations: {
     title: "Integrationen",
     description: "Alle Wege, TEND vor einen Agenten zu schalten. Jeder Status stammt nur aus TENDs Prüfsuite: Verifiziert heißt, alle echten Tests sind bestanden. Ein Logo benennt nur das Produkt.",
@@ -1019,7 +1053,7 @@ export const de: Dict = {
   },
 
   ui: {
-    nav: { label: "Hauptnavigation", home: "Übersicht", assistants: "Agenten", approvals: "Freigaben", activity: "Aktivität", policies: "Richtlinien", verification: "Prüfung", integrations: "Integrationen", settings: "Einstellungen", more: "Mehr" },
+    nav: { label: "Hauptnavigation", home: "Übersicht", assistants: "Agenten", approvals: "Freigaben", activity: "Aktivität", policies: "Richtlinien", verification: "Prüfung", access: "Beta-Zugang", integrations: "Integrationen", settings: "Einstellungen", more: "Mehr" },
     groups: { monitor: "Überwachen", control: "Steuern", infrastructure: "Infrastruktur" },
     menu: "Menü",
     closeMenu: "Menü schließen",

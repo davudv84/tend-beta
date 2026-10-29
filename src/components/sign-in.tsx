@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { LockIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,14 +9,32 @@ import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
 import { useStore } from "@/lib/store";
 
-/** Operator sign-in. The token is exchanged for an HttpOnly cookie and not kept by the page. */
-export function SignIn({ compact }: { compact?: boolean }) {
+/** Sign-in. With accounts on it points to e-mail sign-in; `token` (the admin's page) shows the admin-token form, which is exchanged for an HttpOnly cookie and not kept by the page. */
+export function SignIn({ compact, token: tokenOnly }: { compact?: boolean; token?: boolean }) {
   const t = useT();
   const viewer = useStore((s) => s.viewer);
   const signIn = useStore((s) => s.signIn);
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [withToken, setWithToken] = useState(!!tokenOnly);
+
+  // With accounts on, people sign in with their e-mail address; the admin token stays one click away.
+  if (viewer?.accounts && !withToken)
+    return (
+      <div className={compact ? "grid gap-3" : "mx-auto grid max-w-sm gap-4 py-16"}>
+        <div>
+          {!compact && <LockIcon className="mb-5 size-5 text-faint" strokeWidth={1.5} />}
+          <h1 className={compact ? "text-title" : "text-h2"}>{t.account.prompt.title}</h1>
+          <p className="mt-2 text-small text-pretty text-muted-foreground">{t.account.prompt.body}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild className="h-11 rounded-full px-6 text-ui"><Link href="/account/sign-in">{t.account.prompt.signIn}</Link></Button>
+          <Button asChild variant="secondary" className="h-11 rounded-full border-border px-6 text-ui"><Link href="/account/sign-up">{t.account.prompt.create}</Link></Button>
+        </div>
+        {viewer.operatorAvailable && <button type="button" onClick={() => setWithToken(true)} className="justify-self-start text-caption text-faint hover:text-foreground">{t.account.prompt.token}</button>}
+      </div>
+    );
 
   if (viewer && !viewer.operatorAvailable)
     return <p className="text-small text-muted-foreground">{t.signIn.notConfigured[0]} <code className="font-mono text-meta">TEND_ADMIN_TOKEN</code>{t.signIn.notConfigured[1]}</p>;

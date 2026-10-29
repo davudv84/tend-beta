@@ -22,6 +22,7 @@ export const en = {
     title: "Tend — control what your AI assistants can do",
     description: "Choose what each AI assistant may do, approve sensitive actions yourself, and see what has really happened.",
     pages: {
+      admin: "Beta access", account: "Account", 
       sanctuary: "AI World", agents: "Assistants", agent: "Assistant", reflections: "Agent notes", checkIns: "Status reports", checkIn: "Status report",
       newCheckIn: "New status report", connect: "Connect an agent", integrations: "Integrations", home: "Home", timeline: "Activity", research: "Research", oversight: "Approvals", developers: "Developers", operator: "Operator sign-in", labs: "Labs", policies: "Policies", verification: "Verification", settings: "Settings",
     },
@@ -114,6 +115,14 @@ export const en = {
     network: "Couldn’t reach the Tend server. Check your connection and try again.",
     status: (n: number) => `The server answered ${n}.`,
     codes: {
+      invalid_credentials: "That e-mail address and password don’t match an account.",
+      email_unverified: "Confirm your e-mail address first. We can send the link again.",
+      pending_approval: "Your account is waiting for approval. You’ll get an e-mail when it’s ready.",
+      account_disabled: "This account has been disabled. Contact the TEND admin.",
+      invalid_link: "This link is not valid any more. Ask for a new one.",
+      invalid_email: "Enter a valid e-mail address.",
+      accounts_disabled: "Accounts are not enabled on this server.",
+      admin_required: "Only the admin can do this.",
       operator_required: "Sign in as an operator to make changes. Visitors have read-only access.",
       bad_origin: "Cross-site requests are not allowed.",
       rate_limited: "Too many requests. Wait a moment and try again.",
@@ -675,6 +684,31 @@ export const en = {
     readOnly: "Sign in as an operator to see and change what this agent may do.",
   },
 
+  account: {
+    email: "E-mail address",
+    password: "Password",
+    newPassword: "New password",
+    passwordHint: (n: number) => `At least ${n} characters.`,
+    show: "Show",
+    hide: "Hide",
+    back: "Back to sign in",
+    signIn: { title: "Sign in to TEND", submit: "Sign in", busy: "Signing in…", forgot: "Forgot password?", noAccount: "New to TEND?", create: "Create an account", admin: "Admin sign-in", resend: "Send the confirmation link again", resent: "If the address has an unconfirmed account, a new link is on its way." },
+    signUp: { title: "Create your TEND account", body: "TEND is in private beta. After you confirm your e-mail address, an admin approves your access; you’ll get an e-mail.", submit: "Create account", busy: "Creating…", have: "Already have an account?", sentTitle: "Check your inbox", sent: (email: string) => `If ${email} can be used, we sent a link to confirm it. The link works for 24 hours.` },
+    verify: { title: "Confirm your e-mail address", submit: "Confirm", busy: "Confirming…", doneTitle: "Address confirmed", waiting: "An admin will review your access. You’ll get an e-mail when you can sign in.", ready: "Your access is ready. You can sign in now.", missing: "This page needs the link from your e-mail. Open the link again, or ask for a new one." },
+    forgot: { title: "Reset your password", body: "Enter your e-mail address and we’ll send a link to choose a new password.", submit: "Send link", busy: "Sending…", sentTitle: "Check your inbox", sent: "If the address has an account, a link is on its way. It works once, for 30 minutes." },
+    reset: { title: "Choose a new password", body: "Every other session of your account will be signed out.", submit: "Save password", busy: "Saving…", doneTitle: "Password changed", done: "Sign in with your new password." },
+    prompt: { title: "Sign in to continue", body: "Use your TEND account. New here? Create one; access is approved by an admin during the private beta.", signIn: "Sign in", create: "Create an account", token: "Sign in with the admin token instead" },
+    admin: {
+      title: "Beta access",
+      description: "People who signed up. Approve an account after its e-mail address is confirmed; the person gets an e-mail. Disabling signs them out at once.",
+      none: "Nobody has signed up yet.",
+      email: "Account", created: "Signed up", status: "Status", agents: "Agents",
+      states: { unverified: "E-mail not confirmed", pending: "Waiting for approval", approved: "Approved", disabled: "Disabled" },
+      approve: "Approve", disable: "Disable", enable: "Enable",
+      failed: "That didn’t work",
+      only: "Only the admin can open this page. Sign in with the admin token.",
+    },
+  },
   integrations: {
     title: "Integrations",
     description: "Every way to put TEND in front of an agent. Statuses come only from TEND’s verification suite: Verified means every real test passed. A logo only names the product.",
@@ -1030,7 +1064,7 @@ export const en = {
   },
 
   ui: {
-    nav: { label: "Main", home: "Overview", assistants: "Agents", approvals: "Approvals", activity: "Activity", policies: "Policies", verification: "Verification", integrations: "Integrations", settings: "Settings", more: "More" },
+    nav: { label: "Main", home: "Overview", assistants: "Agents", approvals: "Approvals", activity: "Activity", policies: "Policies", verification: "Verification", access: "Beta access", integrations: "Integrations", settings: "Settings", more: "More" },
     groups: { monitor: "Monitor", control: "Control", infrastructure: "Infrastructure" },
     menu: "Menu",
     closeMenu: "Close menu",

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ActivityIcon, CircleCheckIcon, CpuIcon, FileTextIcon, LayoutGridIcon, LinkIcon, LogOutIcon, MenuIcon, ShieldCheckIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
+import { ActivityIcon, CircleCheckIcon, CpuIcon, FileTextIcon, LayoutGridIcon, LinkIcon, LogOutIcon, MenuIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, XIcon } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { LanguageSwitch } from "@/components/language-switch";
 import { Switch } from "@/components/ui/switch";
@@ -19,7 +19,7 @@ import { BrandMark } from "@/ui/brand-mark";
 import { useDocumentTheme } from "@/ui/theme";
 
 const THEMES: ThemePref[] = ["system", "light", "dark"];
-type NavKey = "home" | "assistants" | "approvals" | "activity" | "policies" | "verification" | "integrations" | "settings";
+type NavKey = "home" | "assistants" | "approvals" | "activity" | "policies" | "verification" | "integrations" | "settings" | "access";
 type Item = { key: NavKey; href: string; icon: typeof LayoutGridIcon; match: RegExp };
 const item = (key: NavKey, href: string, icon: Item["icon"], match: RegExp): Item => ({ key, href, icon, match });
 // Three groups, in the order of the job: watch what happens, decide what may happen, and the plumbing underneath.
@@ -30,6 +30,7 @@ const GROUPS: { key: "monitor" | "control" | "infrastructure"; items: Item[] }[]
   { key: "infrastructure", items: [item("verification", "/verification", ShieldCheckIcon, /^\/verification(\/|$)/), item("integrations", "/integrations", LinkIcon, /^\/(integrations|connect|developers)(\/|$)/)] },
 ];
 const SETTINGS = item("settings", "/settings", SlidersHorizontalIcon, /^\/settings(\/|$)/);
+const ACCESS = item("access", "/admin/users", UsersIcon, /^\/admin(\/|$)/);
 
 /** How many requests wait for this person: the one number the navigation shows. */
 function useWaiting() {
@@ -130,14 +131,16 @@ function GatewayStatus({ mode }: { mode: Mode }) {
 function Account({ mode }: { mode: Mode }) {
   const t = useT();
   const operator = useStore((s) => !!s.viewer?.canAct);
-  const canSignIn = useStore((s) => !!s.viewer?.operatorAvailable);
+  const canSignIn = useStore((s) => !!s.viewer?.operatorAvailable || !!s.viewer?.accounts);
+  const email = useStore((s) => s.viewer?.account?.email);
+  const accounts = useStore((s) => !!s.viewer?.accounts);
   const signOut = useStore((s) => s.signOut);
   return (
     <div className={cn("flex items-center gap-1 border-t border-border py-2.5", mode === "full" ? "px-3" : "justify-center px-0 lg:justify-start lg:px-3")}>
       <Link href="/settings" title={t.ui.nav.settings} className="flex min-w-0 flex-1 items-center gap-3 px-2 py-1 outline-none focus-visible:outline-2 focus-visible:outline-primary" aria-label={`${operator ? t.ui.operator : t.ui.visitor}. ${t.ui.nav.settings}`}>
-        <span aria-hidden className="grid size-7 shrink-0 place-items-center border border-border bg-background text-[11px] font-semibold">{operator ? "OP" : "—"}</span>
+        <span aria-hidden className="grid size-7 shrink-0 place-items-center border border-border bg-background text-[11px] font-semibold">{email ? email.slice(0, 2).toUpperCase() : operator ? "OP" : "—"}</span>
         <span className={cn("min-w-0", label(mode))}>
-          <span className="block truncate text-[13px] font-medium">{operator ? t.ui.operator : t.ui.visitor}</span>
+          <span className="block truncate text-[13px] font-medium">{email ?? (operator ? t.ui.operator : t.ui.visitor)}</span>
           <span className="block truncate text-[12px] text-muted-foreground">{operator ? t.ui.signedIn : t.ui.readOnly}</span>
         </span>
       </Link>
@@ -145,9 +148,15 @@ function Account({ mode }: { mode: Mode }) {
         <button type="button" onClick={() => void signOut()} aria-label={t.ui.signOut} title={t.ui.signOut} className={cn("grid size-8 shrink-0 place-items-center text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary", mode === "full" ? "" : "hidden lg:grid")}>
           <LogOutIcon className="size-4" strokeWidth={1.75} aria-hidden />
         </button>
-      ) : canSignIn ? <Link href="/operator" className={cn("px-2 text-[13px] font-medium text-primary hover:underline", label(mode))}>{t.ui.signIn}</Link> : null}
+      ) : canSignIn ? <Link href={accounts ? "/account/sign-in" : "/operator"} className={cn("px-2 text-[13px] font-medium text-primary hover:underline", label(mode))}>{t.ui.signIn}</Link> : null}
     </div>
   );
+}
+
+/** Beta access (approving accounts), for the admin only. */
+function AdminLink({ mode }: { mode: Mode }) {
+  const admin = useStore((s) => !!s.viewer?.admin && !!s.viewer?.accounts);
+  return admin ? <NavLink item={ACCESS} waiting={0} mode={mode} /> : null;
 }
 
 /** Everything the sidebar holds, so the desktop sidebar, the tablet rail and the phone drawer are one thing. */
@@ -169,6 +178,7 @@ function Sidebar({ mode, waiting }: { mode: Mode; waiting: number }) {
       </div>
       <div className="grid">
         <GatewayStatus mode={mode} />
+        <AdminLink mode={mode} />
         <NavLink item={SETTINGS} waiting={0} mode={mode} />
         <Account mode={mode} />
       </div>
