@@ -112,7 +112,7 @@ async function main() {
       await approver;
       const lines = r.text.split("\n").filter((l) => /^(ran|BLOCKED)/.test(l));
       must(r.code === 0 && lines.length === 4, r.text.slice(-300));
-      must(/^ran.*read_record/.test(lines[0]) && /^ran.*colleague@example\.com/.test(lines[1]) && /^ran.*gmail/.test(lines[2]) && /^BLOCKED.*delete_file/.test(lines[3]), lines.join(" | "));
+      must(/^ran.*read_record/.test(lines[0]) && /^ran.*colleague@example\.com/.test(lines[1]) && /^ran.*someone@example\.org/.test(lines[2]) && /^BLOCKED.*delete_file/.test(lines[3]), lines.join(" | "));
       return "read ran; email inside the domain ran; outside it waited and ran after approval; delete never";
     });
     await step("6. see every decision in the dashboard", async () => {

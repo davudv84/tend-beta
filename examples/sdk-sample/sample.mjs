@@ -41,14 +41,14 @@ const call = async (name, args) => {
 async function scripted() {
   await call("read_record", { id: "R-1" });                                            // policy: allow
   await call("send_email", { to: "colleague@example.com", subject: "Weekly report" }); // allowed: inside the approved domain
-  await call("send_email", { to: "someone@gmail.com", subject: "Customer list" });     // outside it: a person decides
+  await call("send_email", { to: "someone@example.org", subject: "Customer list" });     // outside it: a person decides
   await call("delete_file", { path: "customers.csv" });                                // never
 }
 
 async function withClaude() {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("--claude needs ANTHROPIC_API_KEY in the environment.");
   const tools = Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, input_schema: { type: "object", properties: Object.fromEntries(Object.keys(t.params).map((k) => [k, { type: "string", description: t.params[k] }])), required: Object.keys(t.params) } }));
-  const messages = [{ role: "user", content: "Read record R-1, email its owner the subject 'Your account', then also email bob@gmail.com the subject 'Customer list', and delete customers.csv." }];
+  const messages = [{ role: "user", content: "Read record R-1, email its owner the subject 'Your account', then also email bob@example.net the subject 'Customer list', and delete customers.csv." }];
   for (let turn = 0; turn < 8; turn++) {
     const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({ model: process.env.CLAUDE_MODEL ?? "claude-haiku-4-5", max_tokens: 600, system: "Use the tools to do what the user asks. If a tool result starts with 'Not done', do not retry it; say so.", tools, messages }) });
