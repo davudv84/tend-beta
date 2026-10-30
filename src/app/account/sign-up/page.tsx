@@ -6,6 +6,6 @@ import { SignUp } from "../forms";
 export const generateMetadata = pageTitle("account");
 
 export default async function Page() {
-  await connection(); // read TEND_ADMIN per request, not at build time
-  return <SignUp approval={config.approvalRequired} />;
+  await connection(); // read TEND_ADMIN and TEND_EMAIL_VERIFICATION per request, not at build time
+  return <SignUp approval={config.approvalRequired} verification={config.emailVerification} />;
 }

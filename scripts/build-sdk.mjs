@@ -2,6 +2,7 @@
 // Builds the files TEND serves to developers at /sdk/, so connecting an agent needs no access to this repository:
 //   /sdk/tend.mjs        connectTend, createGate, guardTool, notDone, runChatAgent, PROVIDERS, toRequest, startProxy; also the MCP proxy:
 //                        node tend.mjs -- <mcp server command>    (with TEND_URL and TEND_AGENT_KEY in the environment)
+//   /sdk/tend-hooks.mjs  Claude Code and Cursor hooks: node tend-hooks.mjs install claude-code|cursor --url <TEND address>
 //   /sdk/tend_gate.py    the standard-library Python client (Gate, guard_tool)
 //   /sdk/notes-server.mjs  the harmless MCP server, to try the proxy
 //   /sdk/sample.mjs      a sample agent with three tools behind TEND, scripted or driven by Claude (--claude)
@@ -46,6 +47,7 @@ export function files() {
   return {
     "tend.mjs": bundle(),
     "tend_gate.py": readFileSync(path.join(root, "examples/python/tend_gate.py"), "utf8"),
+    "tend-hooks.mjs": readFileSync(path.join(root, "examples/hooks/tend-hooks.mjs"), "utf8"),
     "notes-server.mjs": readFileSync(path.join(root, "examples/mcp-proxy/notes-server.mjs"), "utf8"),
     "sample.mjs": readFileSync(path.join(root, "examples/sdk-sample/sample.mjs"), "utf8"),
   };

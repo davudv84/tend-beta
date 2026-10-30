@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { toast } from "sonner";
 import { MessageSquareTextIcon, PauseIcon, PlayIcon } from "lucide-react";
 import { Gated, useReadOnlyReason } from "@/components/agent-callout";
+import { HOST_NAME, PresetPicker, ProtectionTest, hookOf } from "@/components/assistant-connect";
 import { CheckInRow, Feed } from "@/components/feed";
 import { ProtectionChecks } from "@/components/protection-checks";
 import { ToolPermissions } from "@/components/tool-permissions";
@@ -74,6 +75,7 @@ export default function View() {
   };
   const { connection, line, second, attention } = assistantStatus(t, agent, runs.get(agent.id), now);
   const connected = agent.origin === "connected";
+  const hook = hookOf(agent);
   const sectionClass = "mt-8 rounded-xl border border-border bg-background p-6";
 
   return (
@@ -104,6 +106,16 @@ export default function View() {
           <Link href={`/check-ins/new?agent=${agent.id}`} className="inline-flex h-11 items-center gap-2 rounded-full pr-3 text-ui text-muted-foreground transition-colors hover:text-foreground sm:pl-3"><MessageSquareTextIcon className="size-4" strokeWidth={1.75} aria-hidden /> {g.compose}</Link>
         </div>
       </header>
+
+      {connected && canAct && hook && (
+        <section id="a-assistant" aria-labelledby="a-assistant-title" className={cn(sectionClass, "scroll-mt-8")}>
+          <SectionHeader id="a-assistant-title" title={t.assistant.protection.title} />
+          <div className="mt-4 grid gap-8">
+            <ProtectionTest key={agent.id} agent={agent} hostName={HOST_NAME[hook]} />
+            <PresetPicker key={`p-${agent.id}`} agentId={agent.id} />
+          </div>
+        </section>
+      )}
 
       {connected && (
         <section aria-labelledby="a-tools" className={sectionClass}>

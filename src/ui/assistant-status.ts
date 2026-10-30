@@ -1,6 +1,7 @@
 import type { Dict } from "@/i18n";
 import { timeAgo } from "@/lib/format";
 import { connectionOf, protectionOf, type Connection } from "@/lib/home";
+import { presenceOf } from "@/lib/protection";
 import type { Agent } from "@/lib/types";
 import type { VerificationRun } from "@/lib/verification";
 
@@ -15,7 +16,9 @@ export function assistantStatus(t: Dict, agent: Agent, run: VerificationRun | nu
   const connection: Connection = connectionOf(agent, now);
   const protection = protectionOf(agent, run);
   const ago = agent.lastSeenAt ? timeAgo(agent.lastSeenAt, now) : "";
-  const line = connection === "connected" ? a.connection.connected(ago) : connection === "offline" ? a.connection.offline(ago) : a.connection[connection];
+  // Paused or switched off is said as such; otherwise what TEND actually heard: running, quiet, a session that ended, or nothing for a long time.
+  const presence = presenceOf(agent, now);
+  const line = connection === "paused" || connection === "disabled" ? a.connection[connection] : presence === "never" ? a.presence.never : a.presence[presence](ago);
   const second =
     protection.state === "not_run" ? a.protection.not_run
     : protection.state === "ran" ? a.protection.ran(timeAgo(protection.at, now), protection.outOfDate)

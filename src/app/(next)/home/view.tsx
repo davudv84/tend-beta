@@ -8,6 +8,7 @@ import { outcomeOf, visibleAgent } from "@/lib/activity";
 import { timeline } from "@/lib/derive";
 import { clock, timeAgo, useNow } from "@/lib/format";
 import { connectionOf, homeQueue, protectionOf, realAssistants } from "@/lib/home";
+import { presenceOf } from "@/lib/protection";
 import { useStore } from "@/lib/store";
 import type { CheckGroup, CheckStatus } from "@/lib/verification";
 import { AgentRow } from "@/ui/agent-row";
@@ -49,8 +50,9 @@ export default function View() {
   if (real.length === 0) return <FirstRun title={h.headline.first} body={h.sub.first} sample={agents.length > 0} />;
 
   // ---- the numbers, each from a named source ----
-  const connected = real.filter((a) => connectionOf(a, now) === "connected");
-  const offline = real.filter((a) => connectionOf(a, now) !== "connected");
+  // Running means TEND heard from it in the last few minutes (src/lib/protection.ts); registered alone is not running.
+  const connected = real.filter((a) => connectionOf(a, now) !== "paused" && connectionOf(a, now) !== "disabled" && presenceOf(a, now) === "running");
+  const offline = real.filter((a) => !connected.includes(a));
   const waiting = queue.waiting;
   const oldest = waiting.length ? Math.max(...waiting.map((r) => Math.floor((now - r.auth.createdAt) / 60_000))) : 0;
   const blocked = authorizations.filter((a) => a.createdAt > now - DAY && (a.status === "denied" || a.status === "rejected") && real.some((x) => x.id === a.agentId));

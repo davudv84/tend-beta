@@ -56,6 +56,14 @@ export const config = {
     if (vapidChecked?.key !== key) vapidChecked = { key, ok: vapidOk(publicKey, privateKey, subject) };
     return vapidChecked.ok ? { publicKey, privateKey, subject } : undefined;
   },
+  /**
+   * Whether a new account must confirm its e-mail address before it can sign in. TEND_EMAIL_VERIFICATION=0 turns that off: sign-up sends no
+   * confirmation mail and an unconfirmed account can sign in. The address is still stored as not confirmed, so removing the variable makes those
+   * accounts confirm it (their sessions end on the next request) instead of treating them as checked. Password reset still goes by mail.
+   */
+  get emailVerification() {
+    return process.env.TEND_EMAIL_VERIFICATION !== "0";
+  },
   /** Whether an account needs the admin's approval after confirming its address. */
   get approvalRequired() {
     return !this.adminDisabled;

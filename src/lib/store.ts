@@ -30,6 +30,8 @@ export interface Viewer {
   admin?: boolean;
   accounts?: boolean;
   approval?: boolean;
+  /** False when sign-up needs no confirmation mail (TEND_EMAIL_VERIFICATION=0). */
+  emailVerification?: boolean;
   account?: { email: string };
 }
 

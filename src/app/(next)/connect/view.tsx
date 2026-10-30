@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { redirect, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
@@ -53,6 +53,9 @@ export default function View() {
   const status = useStore((s) => s.status);
   const canAct = useStore((s) => !!s.viewer?.canAct);
   const readOnly = useReadOnlyReason();
+  const provider = useSearchParams().get("provider");
+  // Claude Code and Cursor connect through their own hooks, on a page of their own.
+  if (provider === "claudeCode" || provider === "cursor") redirect(`/connect/assistant?for=${provider}`);
   if (status === "signin") return <Page><SignIn compact /></Page>;
   if (!ready) return <PageSkeleton label={t.home.loading} />;
   if (!canAct)
@@ -93,6 +96,7 @@ function Flow() {
   const [policy, setPolicy] = useState<PolicyView | null>(null);
   const [after, setAfter] = useState(0);
   const [copied, setCopied] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const agent = agents.find((a) => a.id === agentId);
   const origin = useMemo(() => window.location.origin, []);
@@ -163,6 +167,30 @@ function Flow() {
       </header>
 
       {step === 1 && !entry && (
+        <div className="mt-12">
+          {/* Connect AI: the four ways most people start. Claude Code and Cursor connect through their own hooks on a page of their own. */}
+          <h2 className="text-h2 text-balance">{t.assistant.connectTitle}</h2>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            {(["claudeCode", "cursor"] as const).map((id) => (
+              <Link key={id} href={`/connect/assistant?for=${id}`} className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 outline-none transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-primary">
+                <IntegrationLogo entry={INTEGRATIONS.find((i) => i.id === id)!} className="size-9" />
+                <span className="min-w-0"><span className="block text-ui font-semibold">{INTEGRATIONS.find((i) => i.id === id)!.name}</span>
+                  <span className="mt-0.5 block text-small text-pretty text-muted-foreground">{t.assistant.options[id].body}</span>
+                  <span className={cn("mt-2 inline-block rounded-full border px-2 py-0.5 text-caption", id === "claudeCode" ? "border-primary/25 bg-primary/[0.07] text-primary" : "border-border text-muted-foreground")}>{id === "claudeCode" ? t.assistant.tested : t.assistant.docsOnly}</span></span>
+              </Link>
+            ))}
+            <button type="button" onClick={() => choose("openai")} className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left outline-none transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-primary">
+              <IntegrationLogo entry={INTEGRATIONS.find((i) => i.id === "openai")!} className="size-9" />
+              <span className="min-w-0"><span className="block text-ui font-semibold">{INTEGRATIONS.find((i) => i.id === "openai")!.name}</span><span className="mt-0.5 block text-small text-pretty text-muted-foreground">{t.assistant.options.openai.body}</span></span>
+            </button>
+            <button type="button" aria-expanded={showAll} onClick={() => setShowAll((v) => !v)} className="flex items-start gap-3 rounded-xl border border-dashed border-border bg-background p-4 text-left outline-none transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-primary">
+              <span className="min-w-0"><span className="block text-ui font-semibold">{t.assistant.options.other.name}</span><span className="mt-0.5 block text-small text-pretty text-muted-foreground">{t.assistant.options.other.body}</span></span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 1 && !entry && showAll && (
         <div className="mt-12">
           {heading(c.pick.title)}
           {lead(c.pick.body)}

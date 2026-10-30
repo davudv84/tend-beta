@@ -110,9 +110,14 @@ export async function deliver(outbox: Outbox, send: Send = sendMail) {
 }
 
 const sent = { ok: true, message: "If the address can be used, a mail is on its way. Check your inbox." };
+/** The answer when e-mail verification is off (config.emailVerification): the same for every address; the client signs in next. */
+const created = { ok: true, message: "If the address can be used, the account is ready. Sign in.", verification: false };
 
-/** Sign up. Always the same answer; what is mailed depends on the address (a link to confirm it, or a note that it already has an account). */
-export async function register(db: DB, req: Request, input: unknown, now = Date.now()): Promise<{ result: typeof sent; outbox: Outbox }> {
+/**
+ * Sign up. Always the same answer; what is mailed depends on the address (a link to confirm it, or a note that it already has an account).
+ * With e-mail verification off, a new account gets no mail and can sign in at once; its address stays recorded as not confirmed.
+ */
+export async function register(db: DB, req: Request, input: unknown, now = Date.now()): Promise<{ result: typeof sent | typeof created; outbox: Outbox }> {
   requireAccounts();
   const o = (input ?? {}) as { email?: unknown; password?: unknown };
   const email = cleanEmail(o.email);
@@ -126,24 +131,27 @@ export async function register(db: DB, req: Request, input: unknown, now = Date.
   const outbox: Outbox = [];
   const existing = await userByEmail(db, email);
   const mailOk = (await spend(db, `account:mail:${email}`, LIMITS.mailsPerAccountPerHour, { windowMs: HOUR, now })).ok;
+  const result = config.emailVerification ? sent : created;
   if (existing) {
-    if (mailOk && existing.email_verified_at === null) outbox.push(mails.verify(email, `${link}/account/verify#token=${await issueToken(db, existing.id, "verify", now)}`));
+    if (mailOk && existing.email_verified_at === null && config.emailVerification) outbox.push(mails.verify(email, `${link}/account/verify#token=${await issueToken(db, existing.id, "verify", now)}`));
     else if (mailOk) outbox.push(mails.exists(email, link));
-    return { result: sent, outbox };
+    return { result, outbox };
   }
   const id = `u_${randomUUID().replaceAll("-", "").slice(0, 20)}`, workspace = `ws_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
   const token = await db.tx(async (q) => {
     await q.run("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)", workspace, email, now);
     await q.run("INSERT INTO users (id, email, password_hash, workspace_id, created_at, password_changed_at) VALUES (?, ?, ?, ?, ?, ?)", id, email, hash, workspace, now, now);
     await audit(q, "account.registered", { userId: id, client, now });
-    return issueToken(q, id, "verify", now);
+    return config.emailVerification ? issueToken(q, id, "verify", now) : "";
   }).catch(async (e) => {
     // Two sign-ups with one address at the same moment: the second is answered like any existing address.
     if (String((e as Error).message).includes("users_email_key")) return null;
     throw e;
   });
   if (token) outbox.push(mails.verify(email, `${link}/account/verify#token=${token}`));
-  return { result: sent, outbox };
+  // Without a confirmation step, the admin (if approval is on) hears about the account now instead of after the address was confirmed.
+  else if (token === "" && config.adminEmail && config.approvalRequired) outbox.push(mails.waiting(config.adminEmail, email, link));
+  return { result, outbox };
 }
 
 /** With the admin turned off (config.adminDisabled) nobody can approve, so a confirmed address is enough: the account is approved here, on record. */
@@ -175,7 +183,7 @@ export async function resendVerification(db: DB, req: Request, input: unknown, n
   const email = cleanEmail((input as { email?: unknown } | null)?.email);
   const outbox: Outbox = [];
   const u = await userByEmail(db, email);
-  if (u && u.email_verified_at === null && (await spend(db, `account:mail:${email}`, LIMITS.mailsPerAccountPerHour, { windowMs: HOUR, now })).ok)
+  if (config.emailVerification && u && u.email_verified_at === null && (await spend(db, `account:mail:${email}`, LIMITS.mailsPerAccountPerHour, { windowMs: HOUR, now })).ok)
     outbox.push(mails.verify(email, `${base(req)}/account/verify#token=${await issueToken(db, u.id, "verify", now)}`));
   return { result: sent, outbox };
 }
@@ -206,7 +214,7 @@ export async function passwordSignIn(db: DB, req: Request, input: unknown, now =
   await spend(db, `account:fail:${client}`, LIMITS.signInFailuresPerMinute, { now, cost: -1 });
   await spend(db, `account:fail:${email}`, LIMITS.failuresPerAccountPerHour, { windowMs: HOUR, now, cost: -1 });
   if (u.disabled_at !== null) throw new HttpError(403, "account_disabled", "This account has been disabled. Contact the TEND admin.");
-  if (u.email_verified_at === null) throw new HttpError(403, "email_unverified", "Confirm your e-mail address first. We can send the link again.");
+  if (u.email_verified_at === null && config.emailVerification) throw new HttpError(403, "email_unverified", "Confirm your e-mail address first. We can send the link again.");
   if (u.approved_at === null && config.approvalRequired) throw new HttpError(403, "pending_approval", "Your account is waiting for approval. You’ll get an e-mail when it’s ready.");
   await signOut(db, req, now); // a sign-in replaces the session this browser already held
   return db.tx(async (q) => {
@@ -267,7 +275,7 @@ export async function setAccess(db: DB, req: Request, userId: string, action: un
     if (!u) throw new HttpError(404, "user_not_found", "No account with that id.");
     const outbox: Outbox = [];
     if (action === "approve") {
-      if (u.email_verified_at === null) throw new HttpError(409, "email_unverified", "This address is not confirmed yet, so it cannot be approved.");
+      if (u.email_verified_at === null && config.emailVerification) throw new HttpError(409, "email_unverified", "This address is not confirmed yet, so it cannot be approved.");
       if (u.approved_at === null) {
         await q.run("UPDATE users SET approved_at = ?, approved_by = ?, disabled_at = NULL WHERE id = ?", now, by, userId);
         await audit(q, "account.approved", { userId, sessionId: by, now });

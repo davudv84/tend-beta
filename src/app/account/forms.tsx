@@ -119,9 +119,11 @@ export function SignIn({ admin = true }: { admin?: boolean }) {
   );
 }
 
-export function SignUp({ approval = true }: { approval?: boolean }) {
+export function SignUp({ approval = true, verification = true }: { approval?: boolean; verification?: boolean }) {
   const t = useT();
   const a = t.account;
+  const router = useRouter();
+  const signIn = useStore((s) => s.signInWithPassword);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -132,14 +134,19 @@ export function SignUp({ approval = true }: { approval?: boolean }) {
     setBusy(true);
     setError(null);
     const r = await call("/api/account/register", { email, password });
+    if (!r.ok) { setBusy(false); return setError(errorText(t, r)); }
+    if (verification) { setBusy(false); return setSent(true); }
+    // No confirmation mail: sign in with what was just typed. The server's answer to sign-up is the same for every address, so a sign-in that
+    // fails here usually means the address already has an account with another password.
+    const s = await signIn(email, password);
+    if (s.ok) return router.push("/home");
     setBusy(false);
-    if (r.ok) setSent(true);
-    else setError(errorText(t, r));
+    setError(s.code === "invalid_credentials" ? a.signUp.signInFailed : errorText(t, s));
   };
   if (sent) return <Done title={a.signUp.sentTitle} body={a.signUp.sent(email.trim())}><Foot><A href="/account/sign-in">{a.back}</A></Foot></Done>;
   return (
     <>
-      <Title body={approval ? a.signUp.body : a.signUp.bodyOpen}>{a.signUp.title}</Title>
+      <Title body={!verification ? (approval ? a.signUp.bodyApproval : a.signUp.bodyInstant) : approval ? a.signUp.body : a.signUp.bodyOpen}>{a.signUp.title}</Title>
       <form onSubmit={submit} className="grid gap-4">
         <Field label={a.email} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <PasswordField label={a.password} hint={a.passwordHint(MIN)} autoComplete="new-password" value={password} onChange={setPassword} />

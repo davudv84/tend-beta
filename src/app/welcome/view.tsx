@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CopyIcon, InfoIcon, KeyRoundIcon, XIcon } from "lucide-react";
+import { ConnectHelp, HOST_NAME, InstallSteps, PresetPicker, ProtectionTest, isHook, type HookIntegration } from "@/components/assistant-connect";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { PushStatusLine, usePushState } from "@/components/notification-settings";
 import { SignIn } from "@/components/sign-in";
@@ -33,7 +34,7 @@ type Effect = "approve" | "allow" | "deny";
 interface Guide {
   available: true; step: Step; integration: string | null; agent: { id: string; name: string } | null;
   startedAt: number | null; completedAt: number | null; skippedAt: number | null;
-  checks: { agent: boolean; connectedAt: number | null; policy: Effect | null; test: { outcome: "ran" | "rejected" | "blocked"; at: number; authorizationId: string } | null; notifications: "enabled" | "later" | null };
+  checks: { agent: boolean; connectedAt: number | null; policy: Effect | null; preset: "balanced" | "strict" | "monitor" | null; test: { outcome: "ran" | "rejected" | "blocked"; at: number; authorizationId: string } | null; notifications: "enabled" | "later" | null };
 }
 type GuideResponse = Guide | { available: false };
 
@@ -215,6 +216,8 @@ function Flow({ initial }: { initial: Guide }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const first = useRef(true);
   const agent = useStore((s) => s.agents.find((a) => a.id === guide.agent?.id));
+  // Claude Code and Cursor connect through their hooks: an install command instead of the test script, presets instead of one test rule.
+  const hook = isHook(guide.integration) ? guide.integration : null;
 
   // Each step is a new page for a screen reader and the keyboard: focus moves to its heading. Not on first load.
   useEffect(() => {
@@ -244,9 +247,13 @@ function Flow({ initial }: { initial: Guide }) {
       <div key={step} className="animate-in fade-in-0 slide-in-from-bottom-1 duration-300 motion-reduce:animate-none">
         {step === "welcome" && <Welcome {...props} onNext={() => void go("connect")} />}
         {step === "connect" && <Connect {...props} guide={guide} save={save} keyValue={key} setKey={setKey} onBack={() => void go("welcome")} onNext={() => void go("verify")} />}
-        {step === "verify" && <Verify {...props} agent={agent} name={guide.agent?.name ?? ""} keyValue={key} setKey={setKey} onBack={() => void go("connect")} onNext={() => void go("policy")} />}
-        {step === "policy" && guide.agent && <Policy {...props} agentId={guide.agent.id} onBack={() => void go("verify")} onNext={() => void go("test")} />}
-        {step === "test" && <LiveTest {...props} agent={agent} onBack={() => void go("policy")} onNext={() => void go("notifications")} />}
+        {step === "verify" && <Verify {...props} hook={hook} agent={agent} name={guide.agent?.name ?? ""} keyValue={key} setKey={setKey} onBack={() => void go("connect")} onNext={() => void go("policy")} />}
+        {step === "policy" && guide.agent && (hook
+          ? <HookPolicy {...props} agentId={guide.agent.id} onBack={() => void go("verify")} onNext={() => void go("test")} />
+          : <Policy {...props} agentId={guide.agent.id} onBack={() => void go("verify")} onNext={() => void go("test")} />)}
+        {step === "test" && (hook && agent
+          ? <HookTest {...props} agent={agent} hook={hook} onBack={() => void go("policy")} onNext={() => void go("notifications")} />
+          : <LiveTest {...props} agent={agent} onBack={() => void go("policy")} onNext={() => void go("notifications")} />)}
         {step === "notifications" && <Notify {...props} onBack={() => void go("test")} onDone={(choice) => void go("done", { notifications: choice })} />}
         {step === "done" && <Done {...props} guide={guide} setGuide={setGuide} onBack={() => void go("test")} onFinish={async () => { setSaving(true); if (await save({ action: "complete" })) router.push("/home"); else setSaving(false); }} />}
       </div>
@@ -368,7 +375,13 @@ function Connect({ headingRef, busy, guide, save, keyValue, setKey, onBack, onNe
           <div><button type="submit" disabled={working || !name.trim()} className={primary}><KeyRoundIcon className="size-4" aria-hidden />{working ? c.creating : c.create}</button></div>
         </form>
       )}
-      {guide.agent && (
+      {guide.agent && entry && isHook(entry.id) && (
+        <div className="mt-8 grid gap-6">
+          <p className="flex items-center gap-3 text-[15px]"><span aria-hidden className="grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><CheckIcon className="size-3" strokeWidth={3} /></span>{guide.agent.name}</p>
+          <InstallSteps integration={entry.id} keyValue={keyValue} onNewKey={() => void newKey()} busy={working} />
+        </div>
+      )}
+      {guide.agent && !(entry && isHook(entry.id)) && (
         <div className="mt-8 grid gap-8">
           <p className="flex items-center gap-3 text-[15px]"><span aria-hidden className="grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><CheckIcon className="size-3" strokeWidth={3} /></span>{guide.agent.name}</p>
           <section aria-labelledby="ob-key" className="grid gap-3">
@@ -418,8 +431,8 @@ function useElapsed() {
   return s;
 }
 
-function Verify({ headingRef, busy, agent, name, keyValue, setKey, onBack, onNext }: StepProps & {
-  agent: Agent | undefined; name: string; keyValue: string | null; setKey: (k: string) => void; onBack: () => void; onNext: () => void;
+function Verify({ headingRef, busy, hook, agent, name, keyValue, setKey, onBack, onNext }: StepProps & {
+  hook: HookIntegration | null; agent: Agent | undefined; name: string; keyValue: string | null; setKey: (k: string) => void; onBack: () => void; onNext: () => void;
 }) {
   const t = useT();
   const v = t.onboarding.verify;
@@ -440,26 +453,29 @@ function Verify({ headingRef, busy, agent, name, keyValue, setKey, onBack, onNex
   };
   return (
     <>
-      <StepHeader step="verify" title={v.title} body={v.body} headingRef={headingRef} />
-      <div className="mt-10 grid gap-3">
-        <CodeBlock id="verify" label="Terminal" shown={VERIFY_COMMAND} text={VERIFY_COMMAND} copy={copy} />
-        <p className="text-[13px] text-muted-foreground">{v.expect}</p>
-      </div>
+      <StepHeader step="verify" title={v.title} body={hook ? undefined : v.body} headingRef={headingRef} />
+      {!hook && (
+        <div className="mt-10 grid gap-3">
+          <CodeBlock id="verify" label="Terminal" shown={VERIFY_COMMAND} text={VERIFY_COMMAND} copy={copy} />
+          <p className="text-[13px] text-muted-foreground">{v.expect}</p>
+        </div>
+      )}
       <div role="status" aria-live="polite" className={cn("mt-8 flex items-start gap-3 rounded-xl border px-4 py-4 transition-colors duration-300", seen ? "border-primary/30 bg-primary/[0.05]" : "border-border")}>
         {seen ? (
           <><span aria-hidden className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground"><CheckIcon className="size-3" strokeWidth={3} /></span>
-            <p className="text-[14px] text-pretty">{v.connected(name, time(t, seen))}</p></>
+            <p className="text-[14px] text-pretty">{hook ? `${t.assistant.verify.done(time(t, seen))} ${t.assistant.verify.next(HOST_NAME[hook])}` : v.connected(name, time(t, seen))}</p></>
         ) : (
           <><span aria-hidden className="relative mt-1.5 grid size-2.5 shrink-0 place-items-center"><span className="absolute inline-flex size-full rounded-full bg-primary/40 motion-safe:animate-ping" /><span className="relative size-2 rounded-full bg-primary" /></span>
-            <p className="text-[14px] text-muted-foreground tabular-nums">{elapsed < 3 ? v.waiting : v.waitingFor(elapsed)}</p></>
+            <p className="text-[14px] text-muted-foreground tabular-nums">{hook ? t.assistant.verify.waiting : elapsed < 3 ? v.waiting : v.waitingFor(elapsed)}</p></>
         )}
       </div>
       {stuck && (
         <section aria-labelledby="ob-help" className="mt-6 rounded-xl border border-border px-4 py-4">
           <h2 id="ob-help" className="text-[14px] font-semibold">{v.helpTitle}</h2>
-          <ul className="mt-2 grid gap-2 text-[13px] text-pretty text-muted-foreground">{v.help.map((h) => <li key={h} className="flex gap-2.5"><span aria-hidden className="mt-[7px] size-1 shrink-0 rounded-full bg-faint" />{h}</li>)}</ul>
+          {hook ? <div className="mt-1"><ConnectHelp integration={hook} open /></div>
+            : <ul className="mt-2 grid gap-2 text-[13px] text-pretty text-muted-foreground">{v.help.map((h) => <li key={h} className="flex gap-2.5"><span aria-hidden className="mt-[7px] size-1 shrink-0 rounded-full bg-faint" />{h}</li>)}</ul>}
           <button type="button" onClick={() => void newKey()} className={cn(secondary, "mt-4")}><KeyRoundIcon className="size-4" aria-hidden />{t.onboarding.connect.newKey}</button>
-          {freshKey && keyValue && <div className="mt-4"><CodeBlock id="env2" label={t.onboarding.connect.keyTitle} shown={maskedEnv(origin)} text={envCommand(origin, keyValue)} copy={copy} /></div>}
+          {freshKey && keyValue && <div className="mt-4">{hook ? <InstallSteps integration={hook} keyValue={keyValue} onNewKey={() => void newKey()} /> : <CodeBlock id="env2" label={t.onboarding.connect.keyTitle} shown={maskedEnv(origin)} text={envCommand(origin, keyValue)} copy={copy} />}</div>}
         </section>
       )}
       <Actions onBack={onBack}>
@@ -541,6 +557,36 @@ function Policy({ headingRef, busy, agentId, onBack, onNext }: StepProps & { age
         {saved === choice
           ? <button type="button" disabled={busy} onClick={onNext} className={primary}>{t.onboarding.continue}<ArrowRightIcon className="size-4" aria-hidden /></button>
           : <button type="button" disabled={working || !view} onClick={() => void save()} className={primary}>{working ? p.saving : p.save}</button>}
+      </Actions>
+    </>
+  );
+}
+
+/** The rule step for an assistant connected through hooks: a preset, saved and read back. Continue once one is saved. */
+function HookPolicy({ headingRef, busy, agentId, onBack, onNext }: StepProps & { agentId: string; onBack: () => void; onNext: () => void }) {
+  const t = useT();
+  const [saved, setSaved] = useState<string | null>(null);
+  return (
+    <>
+      <StepHeader step="policy" title={t.assistant.presets.title} headingRef={headingRef} />
+      <div className="mt-10"><PresetPicker agentId={agentId} onSaved={setSaved} titled={false} /></div>
+      <Actions onBack={onBack}>
+        <button type="button" disabled={busy || !saved} onClick={onNext} className={primary}>{t.onboarding.continue}<ArrowRightIcon className="size-4" aria-hidden /></button>
+      </Actions>
+    </>
+  );
+}
+
+/** The live test for an assistant connected through hooks: the person's real assistant runs the harmless test commands. */
+function HookTest({ headingRef, busy, agent, hook, onBack, onNext }: StepProps & { agent: Agent; hook: HookIntegration; onBack: () => void; onNext: () => void }) {
+  const t = useT();
+  const [controlled, setControlled] = useState(false);
+  return (
+    <>
+      <StepHeader step="test" title={t.assistant.protection.title} headingRef={headingRef} />
+      <div className="mt-10"><ProtectionTest agent={agent} hostName={HOST_NAME[hook]} onEvidence={setControlled} /></div>
+      <Actions onBack={onBack}>
+        <button type="button" disabled={busy || !controlled} onClick={onNext} className={primary}>{t.onboarding.continue}<ArrowRightIcon className="size-4" aria-hidden /></button>
       </Actions>
     </>
   );
@@ -679,11 +725,11 @@ function Done({ headingRef, busy, guide, setGuide, onBack, onFinish }: StepProps
         <CheckRow state="done">{d.checks.account}</CheckRow>
         <CheckRow state={c.agent ? "done" : "todo"}>{guide.agent ? d.checks.agent(guide.agent.name) : d.missing}</CheckRow>
         <CheckRow state={c.connectedAt ? "done" : "todo"}>{c.connectedAt ? d.checks.connected(time(t, c.connectedAt)) : t.onboarding.steps.verify}</CheckRow>
-        <CheckRow state={c.policy ? "done" : "todo"}>{c.policy ? d.checks.policy(opt[c.policy].name) : t.onboarding.steps.policy}</CheckRow>
+        <CheckRow state={c.policy || c.preset ? "done" : "todo"}>{c.preset ? d.checks.preset(t.assistant.presets[c.preset].name) : c.policy ? d.checks.policy(opt[c.policy].name) : t.onboarding.steps.policy}</CheckRow>
         <CheckRow state={c.test ? "done" : "todo"}>{c.test ? d.checks.test[c.test.outcome] : t.onboarding.steps.test}</CheckRow>
         <CheckRow state="done">{d.checks.push[c.notifications ?? "none"]}</CheckRow>
       </ul>
-      {c.test && <p className="mt-6 text-[14px] text-pretty text-muted-foreground">{d.next}</p>}
+      {c.test && <p className="mt-6 text-[14px] text-pretty text-muted-foreground">{c.preset && guide.agent ? d.nextHook(guide.integration === "cursor" ? "Cursor" : "Claude Code") : d.next}</p>}
       <Actions onBack={onBack}>
         <button type="button" disabled={busy || !c.test} onClick={onFinish} className={primary}>{busy ? d.opening : d.open}<ArrowRightIcon className="size-4" aria-hidden /></button>
       </Actions>

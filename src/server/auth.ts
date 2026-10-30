@@ -62,6 +62,8 @@ export interface Viewer {
   accounts?: boolean;
   /** Whether a confirmed account still waits for the admin's approval (false with TEND_ADMIN=0). */
   approval?: boolean;
+  /** False when sign-up needs no confirmation mail (TEND_EMAIL_VERIFICATION=0). */
+  emailVerification?: boolean;
   /** The signed-in user, when it is an account rather than the admin token. */
   account?: { email: string };
 }

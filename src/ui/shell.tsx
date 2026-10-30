@@ -138,9 +138,9 @@ function Account({ mode }: { mode: Mode }) {
   const signOut = useStore((s) => s.signOut);
   return (
     <div className={cn("flex items-center gap-1 border-t border-border py-2.5", mode === "full" ? "px-3" : "justify-center px-0 lg:justify-start lg:px-3")}>
-      <Link href="/settings" title={t.ui.nav.settings} className="flex min-w-0 flex-1 items-center gap-3 px-2 py-1 outline-none focus-visible:outline-2 focus-visible:outline-primary" aria-label={`${operator ? t.ui.operator : t.ui.visitor}. ${t.ui.nav.settings}`}>
+      <Link href="/settings" title={email ?? t.ui.nav.settings} className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-2 py-1 outline-none focus-visible:outline-2 focus-visible:outline-primary" aria-label={`${operator ? t.ui.operator : t.ui.visitor}. ${t.ui.nav.settings}`}>
         <span aria-hidden className="grid size-7 shrink-0 place-items-center border border-border bg-background text-[11px] font-semibold">{email ? email.slice(0, 2).toUpperCase() : operator ? "OP" : "—"}</span>
-        <span className={cn("min-w-0", label(mode))}>
+        <span className={cn("min-w-0 flex-1", label(mode))}>
           <span className="block truncate text-[13px] font-medium">{email ?? (operator ? t.ui.operator : t.ui.visitor)}</span>
           <span className="block truncate text-[12px] text-muted-foreground">{operator ? t.ui.signedIn : t.ui.readOnly}</span>
         </span>
@@ -177,7 +177,8 @@ function Sidebar({ mode, waiting, container }: { mode: Mode; waiting: number; co
           ))}
         </nav>
       </div>
-      <div className="grid">
+      {/* One column no wider than the sidebar, so a long address truncates instead of widening it. */}
+      <div className="grid grid-cols-[minmax(0,1fr)]">
         <GatewayStatus mode={mode} />
         <NotificationCenter variant="nav" compact={mode !== "full"} container={container} />
         <AdminLink mode={mode} />
@@ -262,7 +263,7 @@ export function UiShell({ children }: { children: React.ReactNode }) {
     <div ref={setRoot} className="ui-next min-h-dvh md:grid md:grid-cols-[64px_minmax(0,1fr)] lg:grid-cols-[232px_minmax(0,1fr)]" data-theme={prefs.theme}>
       <a href="#main" className="sr-only z-50 bg-surface px-3 py-2 text-small focus:not-sr-only focus:fixed focus:top-3 focus:left-3">{t.ui.skip}</a>
 
-      <aside className="sticky top-0 hidden h-dvh border-r border-border bg-[#faf9f7] md:block dark:bg-sunken/50"><Sidebar mode="responsive" waiting={waiting} container={root} /></aside>
+      <aside className="sticky top-0 hidden h-dvh min-w-0 border-r border-border bg-[#faf9f7] md:block dark:bg-sunken/50"><Sidebar mode="responsive" waiting={waiting} container={root} /></aside>
 
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur md:hidden">
         <Link href="/home" aria-label="TEND" className="flex items-center gap-3"><BrandMark className="size-6 text-primary" /><span className="text-[15px] font-semibold tracking-[0.16em]">TEND</span></Link>

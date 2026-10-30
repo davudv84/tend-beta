@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useT } from "@/i18n/client";
 import { clock } from "@/lib/format";
-import { connectionOf, protectionOf } from "@/lib/home";
+import { protectionOf } from "@/lib/home";
+import { presenceOf } from "@/lib/protection";
 import type { Agent } from "@/lib/types";
 import type { VerificationRun } from "@/lib/verification";
 import { assistantStatus } from "@/ui/assistant-status";
@@ -15,9 +16,10 @@ export function AgentRow({ agent: a, run, now }: { agent: Agent; run: Verificati
   const o = t.home.overview;
   const p = protectionOf(a, run);
   const st = assistantStatus(t, a, run, now);
+  const presence = presenceOf(a, now);
   const badge: [Tone, string] =
     a.status === "paused" || !a.integrationEnabled ? ["danger", o.badge.paused]
-    : connectionOf(a, now) !== "connected" ? ["neutral", o.badge.disconnected]
+    : presence !== "running" ? ["neutral", o.badge[presence]]
     : p.state === "attention" ? ["attention", o.badge.attention]
     : p.state === "ran" ? ["good", o.badge.verified]
     : ["neutral", o.badge.unverified];

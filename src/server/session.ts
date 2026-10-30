@@ -113,7 +113,7 @@ export async function currentSession(q: Q, req: Request, now = Date.now()): Prom
     : undefined;
   const account = !reason && row.user_id !== null ? await q.get<AccountRow>("SELECT workspace_id, email, email_verified_at, approved_at, disabled_at, password_changed_at FROM users WHERE id = ?", row.user_id) : undefined;
   const accountReason = reason || row.user_id === null ? undefined
-    : !account ? "account_gone" : account.disabled_at !== null ? "account_disabled" : account.email_verified_at === null ? "email_unverified"
+    : !account ? "account_gone" : account.disabled_at !== null ? "account_disabled" : account.email_verified_at === null && config.emailVerification ? "email_unverified"
     : account.approved_at === null ? "not_approved" : Number(account.password_changed_at) > Number(row.created_at) ? "password_changed" : undefined;
   // A session issued under another admin token is ended for good, so putting the old token back cannot bring it back to life.
   if (reason === "admin_token_changed") await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL", Math.round(now), id);
@@ -181,6 +181,6 @@ export async function viewerOf(q: Q, req: Request): Promise<Viewer> {
   const s = await currentSession(q, req);
   return {
     role: s ? "operator" : "visitor", canAct: !!s, public: config.public, operatorAvailable: !!config.adminToken, demo: config.demo,
-    workspace: s?.workspace ?? DEFAULT_WORKSPACE, admin: !!s?.admin, accounts: config.accounts, approval: config.approvalRequired, ...(s?.email && { account: { email: s.email } }),
+    workspace: s?.workspace ?? DEFAULT_WORKSPACE, admin: !!s?.admin, accounts: config.accounts, approval: config.approvalRequired, emailVerification: config.emailVerification, ...(s?.email && { account: { email: s.email } }),
   };
 }

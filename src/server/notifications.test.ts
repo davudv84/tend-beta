@@ -2,12 +2,13 @@
 // repeats into one, what resolves an approval, and that nothing crosses from one workspace to another.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { claimToken } from "./authz.ts";
+import { presetRules } from "../lib/agent-presets.ts";
+import { claimToken, requestAuthorization, spendApproved } from "./authz.ts";
 import { memoryDb, type DB } from "./db.ts";
 import { executeTool, requestExecution } from "./gateway.ts";
 import { createTestNotification, listNotifications, markRead, pushEndpointOk, removeSubscription, saveSubscription, setPrefs } from "./notifications.ts";
 import { onboardingView, shouldOnboard, updateOnboarding } from "./onboarding.ts";
-import { decide, getAgent, insertAgent, insertEvent, registerAgent, setPolicy } from "./repo.ts";
+import { decide, getAgent, ingestEvents, insertAgent, insertEvent, registerAgent, setPolicy } from "./repo.ts";
 import type { Session } from "./session.ts";
 
 process.env.TEND_DEMO = "0";
@@ -155,6 +156,29 @@ test("the setup guide: shown to new accounts, resumable, skippable, and complete
   await updateOnboarding(db, ben, { action: "skip" });
   assert.equal(await shouldOnboard(db, ben), false);
   assert.ok((await onboardingView(db, ben)).available);
+  await db.close();
+});
+
+test("an assistant connected through hooks completes the guide with its own test commands, under a preset", async () => {
+  const { db, ana } = await world();
+  const { agent: a } = await registerAgent(db, { name: "Claude Code", model: "Claude Code", provider: "Anthropic" }, "s", "w1");
+  await setPolicy(db, a.id, presetRules("balanced"), "enforce");
+  const agent = (await getAgent(db, a.id))!;
+  await updateOnboarding(db, ana, { action: "progress", step: "test", agentId: agent.id });
+  assert.equal((await guide(db, ana)).checks.preset, "balanced");
+  const shell = (command: string) => ({ tool: "shell", action: "Bash", detail: `Run: ${command}`, args: { command } });
+  assert.equal(await code(requestAuthorization(db, agent, shell("echo tend-blocked-test"), null, Date.now(), { spend: true })), "ok");
+  assert.equal((await guide(db, ana)).checks.test?.outcome, "blocked", "the blocked test command was refused by the preset");
+  const asked = await requestAuthorization(db, agent, shell("echo tend-approval-test"), null, Date.now(), { spend: true });
+  assert.equal(asked.view.status, "pending");
+  await decide(db, asked.view.id, "approved", undefined, ana.id);
+  await spendApproved(db, agent, asked.view.id, shell("echo tend-approval-test"));
+  assert.equal((await guide(db, ana)).checks.test, null, "spent, but the assistant has not reported running it");
+  await ingestEvents(db, agent, [{ type: "tool.called", data: { tool: "shell", action: "Bash", outcome: "success", authorizationId: asked.view.id } }]);
+  assert.equal((await guide(db, ana)).checks.test?.outcome, "ran");
+  assert.equal(await code(requestAuthorization(db, agent, shell("echo tend-approval-test && rm -rf ~"), null, Date.now(), { spend: true })), "ok");
+  const sneaky = (await db.get<{ status: string }>("SELECT status FROM authorizations WHERE detail = ?", "Run: echo tend-approval-test && rm -rf ~"))!;
+  assert.equal(sneaky.status, "pending", "a command that only starts like a test command gains nothing: it still needs a person");
   await db.close();
 });
 

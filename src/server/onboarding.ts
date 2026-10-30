@@ -2,6 +2,7 @@
 // they set up. Everything the checklist says is worked out from that agent's real records every time it is asked: whether TEND has seen an
 // authenticated call, the policy actually saved, and the test action's outcome as the gateway recorded it. Setup counts as completed only
 // when the server has seen TEND decide a real test action; a person who does not want to finish skips it, which is recorded as a skip.
+import { presetOf } from "../lib/agent-presets.ts";
 import { INTEGRATIONS } from "../lib/integrations-catalog.ts";
 import { TEST_TOOL } from "../lib/onboarding.ts";
 import type { Q } from "./db.ts";
@@ -18,15 +19,22 @@ type Outcome = "ran" | "rejected" | "blocked";
 
 /** The test action's latest decided outcome for this agent, from its authorizations and the gateway's own record of running it. */
 async function testOutcome(q: Q, agentId: string): Promise<{ outcome: Outcome; at: number; authorizationId: string } | null> {
-  const a = await q.get<{ id: string; status: string; created_at: number; decided_at: number | null; consumed_at: number | null }>(
-    "SELECT id, status, created_at, decided_at, consumed_at FROM authorizations WHERE agent_id = ? AND tool = ? ORDER BY created_at DESC LIMIT 1", agentId, TEST_TOOL);
+  // The test action is the gateway's test ping (the test script), or one of the harmless test commands an assistant connected through hooks
+  // is asked to run (src/lib/agent-presets.ts TEST_COMMANDS: the hook files them as shell requests whose detail is "Run: <command>").
+  const a = await q.get<{ id: string; tool: string; status: string; created_at: number; decided_at: number | null; consumed_at: number | null }>(
+    `SELECT id, tool, status, created_at, decided_at, consumed_at FROM authorizations
+     WHERE agent_id = ? AND (tool = ? OR (tool = 'shell' AND detail IN ('Run: echo tend-activity-test', 'Run: echo tend-blocked-test', 'Run: echo tend-approval-test')))
+     ORDER BY created_at DESC LIMIT 1`, agentId, TEST_TOOL);
   if (!a) return null;
   if (a.status === "denied") return { outcome: "blocked", at: a.created_at, authorizationId: a.id };
   if (a.status === "rejected") return { outcome: "rejected", at: a.decided_at ?? a.created_at, authorizationId: a.id };
   if (a.status !== "consumed") return null;
-  // Spent is not proof it ran: only TEND's own record of the run is (actor system, via gateway, success).
+  // Spent is not proof it ran. For the test ping, TEND's gateway ran it and recorded that (actor system, via gateway). For an assistant's own
+  // tool, the assistant ran it, so the proof is its post-tool hook's report linked to this authorization.
   const ran = await q.get<{ at: number }>(
-    "SELECT at FROM events WHERE agent_id = ? AND type = 'tool.called' AND actor = 'system' AND (data::jsonb->>'via') = 'gateway' AND (data::jsonb->>'authorizationId') = ? AND (data::jsonb->>'outcome') = 'success' LIMIT 1",
+    a.tool === TEST_TOOL
+      ? "SELECT at FROM events WHERE agent_id = ? AND type = 'tool.called' AND actor = 'system' AND (data::jsonb->>'via') = 'gateway' AND (data::jsonb->>'authorizationId') = ? AND (data::jsonb->>'outcome') = 'success' LIMIT 1"
+      : "SELECT at FROM events WHERE agent_id = ? AND type = 'tool.called' AND actor = 'agent' AND (data::jsonb->>'authorizationId') = ? AND (data::jsonb->>'outcome') = 'success' LIMIT 1",
     agentId, a.id);
   return ran ? { outcome: "ran", at: ran.at, authorizationId: a.id } : null;
 }
@@ -42,12 +50,18 @@ function testRule(policy: string) {
   }
 }
 
+/** The ready-made policy for coding assistants that the saved rules are, if they are exactly one (src/lib/agent-presets.ts). */
+function presetOfSaved(policy: string) {
+  try { return presetOf(JSON.parse(policy)); } catch { return null; }
+}
+
 export async function onboardingView(q: Q, s: Session) {
   if (!s.userId) return { available: false as const };
   const row = await q.get<Row>("SELECT * FROM onboarding WHERE user_id = ?", s.userId);
   // Only an agent of this workspace counts, whatever the row says.
   const agent = row?.agent_id ? await q.get<AgentRow>("SELECT id, profile, last_seen_at, policy, enforcement FROM agents WHERE id = ? AND workspace_id = ? AND origin = 'connected'", row.agent_id, s.workspace) : undefined;
   const effect = agent && agent.enforcement === "enforce" ? testRule(agent.policy) : null;
+  const preset = agent && agent.enforcement === "enforce" ? presetOfSaved(agent.policy) : null;
   const test = agent ? await testOutcome(q, agent.id) : null;
   return {
     available: true as const,
@@ -61,6 +75,7 @@ export async function onboardingView(q: Q, s: Session) {
       agent: !!agent,
       connectedAt: agent?.last_seen_at ?? null,
       policy: effect,
+      preset,
       test,
       notifications: row?.notifications ?? null,
     },

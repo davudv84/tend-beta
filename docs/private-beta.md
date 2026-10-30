@@ -30,6 +30,7 @@ TEND_EMAIL_FROM=     TEND <beta@your-domain.com>
 TEND_APP_URL=        https://tend-beta.vercel.app      (the exact address the project gets; no trailing slash)
 TEND_ADMIN_EMAIL=    your address, to hear when someone waits for approval (optional)
 TEND_ADMIN=0         optional: no admin and no approval step; confirming the e-mail address is enough (see .env.example)
+TEND_EMAIL_VERIFICATION=0  optional: no confirmation e-mail; a new account signs in at once (see .env.example)
 TEND_VAPID_PUBLIC_KEY / TEND_VAPID_PRIVATE_KEY / TEND_VAPID_SUBJECT
                      optional: browser notifications (`node scripts/vapid-keys.mjs` prints a pair). Without them notifications are
                      listed inside TEND only, and Settings says browser notifications are not set up.
