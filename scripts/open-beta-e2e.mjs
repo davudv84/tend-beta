@@ -76,6 +76,8 @@ async function main() {
       check((await call("POST", "/api/v1/demo/reset", { cookie: cookieOf(wes) })).status === 404, "nor the admin-only demo reset");
       const page = await call("GET", "/account/sign-in");
       check(page.status === 200 && !page.text.includes('href="/operator"'), "the sign-in page has no admin link");
+      const front = await call("GET", "/");
+      check(front.status === 200 && front.text.includes('href="/account/sign-in"') && !front.text.includes('href="/operator"'), "the front page's Sign in goes to the account sign-in, not the removed admin page");
       check((await call("GET", "/api/v1/state")).status === 401 && (await call("GET", "/api/v1/events?since=0")).status === 401, "signed out, the dashboard data is refused");
 
       console.log("\n-- Ana: sign up, confirm, sign in");
@@ -124,6 +126,23 @@ async function main() {
       const spent = await call("POST", `/api/v1/authorizations/${ask.body.id}/spend`, { key, body: { tool: "send_email", action: "send", resource: "team" } });
       const again = await call("POST", `/api/v1/authorizations/${ask.body.id}/spend`, { key, body: { tool: "send_email", action: "send", resource: "team" } });
       check(spent.status === 200 && spent.body.authorized === true && again.status >= 400, "the approval is spent once, never twice");
+
+      console.log("\n-- the remaining routes: guarded, and inside each workspace");
+      await signUp("cy@example.com");
+      const r1 = await call("POST", "/api/account/resend", { body: { email: "cy@example.com" } }), r2 = await call("POST", "/api/account/resend", { body: { email: "nobody-here@example.com" } });
+      check(r1.status === 202 && JSON.stringify(r1.body) === JSON.stringify(r2.body), "a new confirmation link: the same answer for any address");
+      check((await call("GET", "/api/v1/check-ins")).status === 200, "the check-in protocol is public (no data in it)");
+      check((await call("POST", "/api/v1/check-ins", { body: { answers: {} } })).status === 401, "posting a check-in needs an agent key");
+      for (const [m, p, body] of [["GET", "/api/v1/integrations/status"], ["POST", "/api/v1/policy-simulations", { rules: [] }], ["POST", "/api/v1/sample-agent", { step: "start" }]])
+        check((await call(m, p, { body })).status === 403, `${p}: refused signed out`);
+      const sim = (who) => call("POST", "/api/v1/policy-simulations", { cookie: who, body: { agentId: id, rules: [{ tool: "send_email", action: "send", effect: "allow" }] } });
+      const simA = await sim(A), simB = await sim(B);
+      check(simA.status === 200 && simB.status === 404, `a policy simulation works on Ana's own agent, and Ben's attempt on it is not found (${simA.status} / ${simB.status})`);
+      const claude = (await call("POST", "/api/v1/agents", { cookie: A, body: { name: "Claude helper", model: "claude-haiku-4-5", provider: "Anthropic" } })).body.agent.id;
+      const stA = await call("GET", "/api/v1/integrations/status", { cookie: A }), stB = await call("GET", "/api/v1/integrations/status", { cookie: B });
+      check(stA.status === 200 && stA.text.includes(claude) && stB.status === 200 && !stB.text.includes(claude), "integration status shows only the caller's own agents");
+      check((await call("POST", "/api/v1/sample-agent", { cookie: B, body: { step: "start" } })).status === 200, "the browser sample agent runs for a signed-in account");
+      check((await call("POST", "/api/v1/demo/check-ins", { cookie: B, body: {} })).status === 404, "the admin-only demo check-ins do not exist");
     } finally {
       await server.stop();
     }

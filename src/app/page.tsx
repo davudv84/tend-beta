@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { getT } from "@/i18n/server";
+import { config } from "@/server/config";
 import { getDb } from "@/server/db";
 import { isOperator } from "@/server/session";
 import { Page } from "@/ui/page";
@@ -29,7 +30,7 @@ export default async function FrontPage() {
             ))}
           </ul>
           <div className="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3">
-            <Button asChild className="h-12 rounded-full px-7 text-ui"><Link href="/operator">{w.signIn}</Link></Button>
+            <Button asChild className="h-12 rounded-full px-7 text-ui"><Link href={config.accounts ? "/account/sign-in" : "/operator"}>{w.signIn}</Link></Button>
             <Link href="/prototype" className="rounded-md text-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{w.prototype}</Link>
           </div>
         </Page>

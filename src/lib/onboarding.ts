@@ -30,8 +30,10 @@ export function testState(agent: Agent | undefined, auths: Authorization[], even
     case "approved": return { kind: "approved", auth };
     case "rejected": return { kind: "rejected", auth };
     case "consumed": {
-      // Only the gateway's own record of this authorization counts as proof that Tend ran it.
-      const event = events.find((e) => e.type === "tool.called" && e.authorizationId === auth.id && e.via === "gateway");
+      // Only the gateway's own record of this authorization counts as proof that Tend ran it. A single-use authorization runs at most once,
+      // so its success is the answer; a later refused replay (already_consumed) is recorded too, and must not hide that it ran.
+      const ofAuth = events.filter((e) => e.type === "tool.called" && e.authorizationId === auth.id && e.via === "gateway");
+      const event = ofAuth.find((e) => e.outcome === "success") ?? ofAuth[0];
       if (!event) return { kind: "running", auth };
       return event.outcome === "success" ? { kind: "verified", auth, event } : { kind: "failed", auth, event };
     }

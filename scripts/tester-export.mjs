@@ -31,7 +31,7 @@ export const FINDINGS = [
   ["a private key", /BEGIN [A-Z ]*PRIVATE KEY/],
   ["a database URL with a password and a remote host", /postgres(?:ql)?:\/\/[^:\s'"/]+:[^@\s'"$]+@(?!localhost|127\.0\.0\.1|\[::1\])[^\s'"/$]+/],
   ["a personal e-mail address", /[A-Za-z0-9._%+-]+@(?:gmail|outlook|hotmail|icloud|yahoo)\.com/i],
-  ["a local home path", /\/Users\/[a-z]+/i],
+  ["a local home path", /\/Users\/[a-z]+/], // macOS homes are always /Users/<name>; case-insensitive, it flagged API paths like /api/admin/users/x
 ];
 
 /** Pure: which tracked paths are exported. */

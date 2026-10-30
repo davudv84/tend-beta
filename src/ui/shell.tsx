@@ -191,7 +191,8 @@ export function Preferences() {
   const t = useT();
   const [prefs, setPrefs] = useUiPrefs();
   const operator = useStore((s) => !!s.viewer?.canAct);
-  const canSignIn = useStore((s) => !!s.viewer?.operatorAvailable);
+  const canSignIn = useStore((s) => !!s.viewer?.operatorAvailable || !!s.viewer?.accounts);
+  const accounts = useStore((s) => !!s.viewer?.accounts);
   const signOut = useStore((s) => s.signOut);
   const status = useStore((s) => s.status);
   const syncedAt = useStore((s) => s.syncedAt);
@@ -229,7 +230,7 @@ export function Preferences() {
       </div>
       <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
         <LanguageSwitch />
-        {!operator && canSignIn && <Link href="/operator" className="rounded-md text-muted-foreground transition-colors hover:text-foreground">{t.ui.signIn}</Link>}
+        {!operator && canSignIn && <Link href={accounts ? "/account/sign-in" : "/operator"} className="rounded-md text-muted-foreground transition-colors hover:text-foreground">{t.ui.signIn}</Link>}
         {operator && (
           <button type="button" onClick={() => void signOut()} className="inline-flex items-center gap-1.5 rounded-md text-muted-foreground transition-colors hover:text-foreground">
             <LogOutIcon className="size-4" strokeWidth={1.75} aria-hidden />

@@ -33,6 +33,8 @@ test("verified only when Tend's own gateway record shows success for this very a
   assert.equal(kind(agent(), [done], [call({ via: undefined })]), "running", "an agent's own report is not proof");
   assert.equal(kind(agent(), [done], [call({ authorizationId: "other" })]), "running", "another authorization's outcome is not proof");
   assert.equal(kind(agent(), [done], [call({ type: "task.completed" })]), "running");
+  // Found by the QA run: the agent replayed its spent token, the gateway refused and recorded it, and the screen said the action had not run.
+  assert.equal(kind(agent(), [done], [call({ id: "e2", outcome: "denied" }), call()]), "verified", "a refused replay, newest first, does not hide the run");
 });
 
 test("only this agent's test requests made after it was created count, and the newest wins", () => {
