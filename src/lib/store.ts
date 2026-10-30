@@ -29,6 +29,7 @@ export interface Viewer {
   workspace?: string;
   admin?: boolean;
   accounts?: boolean;
+  approval?: boolean;
   account?: { email: string };
 }
 

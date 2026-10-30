@@ -79,7 +79,7 @@ export default function View() {
           <Card>
             <CardHeader title={g.tabs.security} sub={g.securitySub} />
             <dl className="border-t border-border">
-              {fact(g.adminToken, viewer?.operatorAvailable ? <Badge tone="good">{g.configured}</Badge> : <Badge tone="attention">{g.notConfigured}</Badge>)}
+              {viewer?.approval !== false && fact(g.adminToken, viewer?.operatorAvailable ? <Badge tone="good">{g.configured}</Badge> : <Badge tone="attention">{g.notConfigured}</Badge>)}
               {fact(g.signedInAs, operator ? t.ui.operator : t.ui.visitor)}
               {fact(g.session, g.sessionValue)}
               {fact(g.requestExpiry, g.expiryValue)}

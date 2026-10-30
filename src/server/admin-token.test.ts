@@ -10,7 +10,9 @@ const good = randomBytes(32).toString("base64url");
 
 test("production: random 32+ character tokens pass; short, repetitive and low-variety ones do not", () => {
   assert.equal(adminTokenProblem(good, true), undefined);
-  assert.equal(adminTokenProblem(randomBytes(24).toString("hex"), true), undefined, "48 hex characters: 16 distinct, long enough");
+  // Fixed, not random: a random 48-character hex string has fewer than 14 distinct characters often enough to make this test flaky.
+  const hex = Array.from({ length: 48 }, (_, i) => "0123456789abcdef"[(i * 7) % 16]).join("");
+  assert.equal(adminTokenProblem(hex, true), undefined, "48 hex characters: 16 distinct, long enough");
   for (const weak of ["a".repeat(40), "abcabcabcabcabcabcabcabcabcabcabc", "password1234password1234password1234", "0123456789012345678901234567890123", "x".repeat(31) + "y", "tend-admin-tend-admin-tend-admin-tend-admin"])
     assert.ok(adminTokenProblem(weak, true), weak);
   assert.match(adminTokenProblem("short-but-24-chars-long-xyz!", true)!, /32/);

@@ -29,6 +29,7 @@ RESEND_API_KEY=      re_…
 TEND_EMAIL_FROM=     TEND <beta@your-domain.com>
 TEND_APP_URL=        https://tend-beta.vercel.app      (the exact address the project gets; no trailing slash)
 TEND_ADMIN_EMAIL=    your address, to hear when someone waits for approval (optional)
+TEND_ADMIN=0         optional: no admin and no approval step; confirming the e-mail address is enough (see .env.example)
 ```
 
 Then `npm run beta:check` must print no FAIL. (It also checks the three older instances in `beta-envs/`; delete those folders if you use this one only.)

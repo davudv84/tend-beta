@@ -181,6 +181,6 @@ export async function viewerOf(q: Q, req: Request): Promise<Viewer> {
   const s = await currentSession(q, req);
   return {
     role: s ? "operator" : "visitor", canAct: !!s, public: config.public, operatorAvailable: !!config.adminToken, demo: config.demo,
-    workspace: s?.workspace ?? DEFAULT_WORKSPACE, admin: !!s?.admin, accounts: config.accounts, ...(s?.email && { account: { email: s.email } }),
+    workspace: s?.workspace ?? DEFAULT_WORKSPACE, admin: !!s?.admin, accounts: config.accounts, approval: config.approvalRequired, ...(s?.email && { account: { email: s.email } }),
   };
 }

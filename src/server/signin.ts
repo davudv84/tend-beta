@@ -23,6 +23,7 @@ const note = (db: DB, ...a: Parameters<typeof audit> extends [unknown, ...infer 
 export async function signIn(db: DB, req: Request, input: unknown, now = Date.now(), wait: (ms: number) => Promise<unknown> = sleep) {
   const client = clientIp(req);
   const known = client !== "unknown";
+  if (config.adminDisabled) throw new HttpError(404, "not_found", "Not found.");
   if (!config.adminToken) {
     await note(db, "signin.failed", { client, reason: "operator_disabled", now });
     throw new HttpError(403, "operator_disabled", config.adminTokenWeak ? "The server’s TEND_ADMIN_TOKEN is too weak, so operator sign-in is disabled. It needs at least 32 random characters." : "Operator access isn’t configured. Set TEND_ADMIN_TOKEN on the server.");

@@ -26,7 +26,7 @@ export function SignIn({ compact, token: tokenOnly }: { compact?: boolean; token
         <div>
           {!compact && <LockIcon className="mb-5 size-5 text-faint" strokeWidth={1.5} />}
           <h1 className={compact ? "text-title" : "text-h2"}>{t.account.prompt.title}</h1>
-          <p className="mt-2 text-small text-pretty text-muted-foreground">{t.account.prompt.body}</p>
+          <p className="mt-2 text-small text-pretty text-muted-foreground">{viewer.approval === false ? t.account.prompt.bodyOpen : t.account.prompt.body}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild className="h-11 rounded-full px-6 text-ui"><Link href="/account/sign-in">{t.account.prompt.signIn}</Link></Button>

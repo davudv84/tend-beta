@@ -134,8 +134,9 @@ export async function requireOperator(req: Request, db: Q): Promise<Session> {
   return s;
 }
 
-/** The admin token's session only: approving accounts, the demo. */
+/** The admin token's session only: approving accounts, the demo. With the admin turned off (TEND_ADMIN=0) these routes do not exist. */
 export async function requireAdmin(req: Request, db: Q): Promise<Session> {
+  if (config.adminDisabled) throw new HttpError(404, "not_found", "Not found.");
   const s = await requireOperator(req, db);
   if (!s.admin) throw new HttpError(403, "admin_required", "Only the admin can do this.");
   return s;

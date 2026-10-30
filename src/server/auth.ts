@@ -60,6 +60,8 @@ export interface Viewer {
   admin?: boolean;
   /** Whether e-mail accounts are enabled on this server (sign-up and sign-in pages). */
   accounts?: boolean;
+  /** Whether a confirmed account still waits for the admin's approval (false with TEND_ADMIN=0). */
+  approval?: boolean;
   /** The signed-in user, when it is an account rather than the admin token. */
   account?: { email: string };
 }

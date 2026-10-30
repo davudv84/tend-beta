@@ -77,7 +77,7 @@ function Done({ icon = "mail", title, body, children }: { icon?: "mail" | "check
 const Foot = ({ children }: { children: React.ReactNode }) => <p className="mt-6 border-t border-border pt-5 text-center text-small text-muted-foreground">{children}</p>;
 const A = ({ href, children }: { href: string; children: React.ReactNode }) => <Link href={href} className="text-primary underline-offset-4 hover:underline">{children}</Link>;
 
-export function SignIn() {
+export function SignIn({ admin = true }: { admin?: boolean }) {
   const t = useT();
   const a = t.account;
   const router = useRouter();
@@ -114,12 +114,12 @@ export function SignIn() {
         <Submit busy={busy} label={a.signIn.submit} busyLabel={a.signIn.busy} />
       </form>
       <Foot>{a.signIn.noAccount} <A href="/account/sign-up">{a.signIn.create}</A></Foot>
-      <p className="mt-3 text-center text-caption"><Link href="/operator" className="text-faint hover:text-foreground">{a.signIn.admin}</Link></p>
+      {admin && <p className="mt-3 text-center text-caption"><Link href="/operator" className="text-faint hover:text-foreground">{a.signIn.admin}</Link></p>}
     </>
   );
 }
 
-export function SignUp() {
+export function SignUp({ approval = true }: { approval?: boolean }) {
   const t = useT();
   const a = t.account;
   const [email, setEmail] = useState("");
@@ -139,7 +139,7 @@ export function SignUp() {
   if (sent) return <Done title={a.signUp.sentTitle} body={a.signUp.sent(email.trim())}><Foot><A href="/account/sign-in">{a.back}</A></Foot></Done>;
   return (
     <>
-      <Title body={a.signUp.body}>{a.signUp.title}</Title>
+      <Title body={approval ? a.signUp.body : a.signUp.bodyOpen}>{a.signUp.title}</Title>
       <form onSubmit={submit} className="grid gap-4">
         <Field label={a.email} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <PasswordField label={a.password} hint={a.passwordHint(MIN)} autoComplete="new-password" value={password} onChange={setPassword} />

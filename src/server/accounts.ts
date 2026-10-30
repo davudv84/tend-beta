@@ -3,7 +3,8 @@
 //
 // Life of an account: register → verify the e-mail address (a one-time link) → the admin approves it → sign in. A session is issued only
 // to a verified, approved, enabled account, and every request re-checks all three (session.ts), so disabling or a password reset takes
-// effect at once.
+// effect at once. With the admin turned off (TEND_ADMIN=0) the approval is automatic: confirming the address (or, for an account confirmed
+// earlier, the next correct sign-in) approves it, recorded as `approved_by = 'automatic'`.
 //
 // What a caller can learn: nothing about which addresses have accounts. Registering, asking for a new link and asking for a reset all give
 // the same answer whatever the address; a wrong address and a wrong password give the same error, after the same password work. Only someone
@@ -145,7 +146,13 @@ export async function register(db: DB, req: Request, input: unknown, now = Date.
   return { result: sent, outbox };
 }
 
-/** Confirms the address. The admin is told (if TEND_ADMIN_EMAIL is set) that someone waits for approval. */
+/** With the admin turned off (config.adminDisabled) nobody can approve, so a confirmed address is enough: the account is approved here, on record. */
+async function autoApprove(q: Q, userId: string, now: number) {
+  if (await q.run("UPDATE users SET approved_at = ?, approved_by = 'automatic' WHERE id = ? AND approved_at IS NULL", now, userId))
+    await audit(q, "account.approved", { userId, reason: "automatic", now });
+}
+
+/** Confirms the address. The admin is told (if TEND_ADMIN_EMAIL is set) that someone waits for approval; without approval the account is ready. */
 export async function verifyEmail(db: DB, req: Request, input: unknown, now = Date.now()) {
   requireAccounts();
   return db.tx(async (q) => {
@@ -155,9 +162,10 @@ export async function verifyEmail(db: DB, req: Request, input: unknown, now = Da
     if (u.email_verified_at === null) {
       await q.run("UPDATE users SET email_verified_at = ? WHERE id = ?", now, userId);
       await audit(q, "account.verified", { userId, now });
-      if (config.adminEmail && u.approved_at === null) outbox.push(mails.waiting(config.adminEmail, u.email, base(req)));
+      if (config.adminEmail && config.approvalRequired && u.approved_at === null) outbox.push(mails.waiting(config.adminEmail, u.email, base(req)));
     }
-    return { result: { ok: true, approved: u.approved_at !== null }, outbox };
+    if (!config.approvalRequired) await autoApprove(q, userId, now);
+    return { result: { ok: true, approved: u.approved_at !== null || !config.approvalRequired }, outbox };
   });
 }
 
@@ -199,9 +207,11 @@ export async function passwordSignIn(db: DB, req: Request, input: unknown, now =
   await spend(db, `account:fail:${email}`, LIMITS.failuresPerAccountPerHour, { windowMs: HOUR, now, cost: -1 });
   if (u.disabled_at !== null) throw new HttpError(403, "account_disabled", "This account has been disabled. Contact the TEND admin.");
   if (u.email_verified_at === null) throw new HttpError(403, "email_unverified", "Confirm your e-mail address first. We can send the link again.");
-  if (u.approved_at === null) throw new HttpError(403, "pending_approval", "Your account is waiting for approval. You’ll get an e-mail when it’s ready.");
+  if (u.approved_at === null && config.approvalRequired) throw new HttpError(403, "pending_approval", "Your account is waiting for approval. You’ll get an e-mail when it’s ready.");
   await signOut(db, req, now); // a sign-in replaces the session this browser already held
   return db.tx(async (q) => {
+    // An account confirmed while approval was still required, waiting for an admin who is now turned off: it is ready.
+    if (u.approved_at === null) await autoApprove(q, u.id, now);
     const s = await createSession(q, { now, client, userId: u.id });
     await audit(q, "signin.succeeded", { sessionId: s.id, client, userId: u.id, now });
     return s;

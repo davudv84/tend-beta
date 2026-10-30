@@ -17,8 +17,21 @@ let warned = "";
 
 /** Server configuration, read from the environment on every access so tests can override it. */
 export const config = {
+  /**
+   * TEND_ADMIN=0 turns the admin off without deleting anything: no admin-token sign-in (any admin session ends on its next request), the
+   * /operator and /admin pages and every admin endpoint answer 404, the dashboard is never public, and a confirmed e-mail address is enough
+   * to use an account (accounts.ts approves it automatically). Remove the variable to bring the admin back; nothing else changes.
+   */
+  get adminDisabled() {
+    return process.env.TEND_ADMIN === "0";
+  },
+  /** Whether an account needs the admin's approval after confirming its address. */
+  get approvalRequired() {
+    return !this.adminDisabled;
+  },
   /** Enables operator sign-in. A missing or weak token (see adminTokenProblem) means nobody can sign in. */
   get adminToken() {
+    if (this.adminDisabled) return "";
     const t = process.env.TEND_ADMIN_TOKEN ?? "";
     const problem = t ? adminTokenProblem(t) : undefined;
     if (problem && warned !== t) {
@@ -29,11 +42,13 @@ export const config = {
   },
   /** True when a token is set but refused as weak, so sign-in can say why instead of "not configured". */
   get adminTokenWeak() {
+    if (this.adminDisabled) return false;
     const t = process.env.TEND_ADMIN_TOKEN ?? "";
     return t.length > 0 && !!adminTokenProblem(t) && t.length >= 24;
   },
   /** Whether visitors can view the dashboard without signing in. Defaults to on when no admin token is set. */
   get public() {
+    if (this.adminDisabled) return false;
     const v = process.env.TEND_PUBLIC;
     return v ? v === "1" || v === "true" : !this.adminToken;
   },
