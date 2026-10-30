@@ -30,7 +30,13 @@ TEND_EMAIL_FROM=     TEND <beta@your-domain.com>
 TEND_APP_URL=        https://tend-beta.vercel.app      (the exact address the project gets; no trailing slash)
 TEND_ADMIN_EMAIL=    your address, to hear when someone waits for approval (optional)
 TEND_ADMIN=0         optional: no admin and no approval step; confirming the e-mail address is enough (see .env.example)
+TEND_VAPID_PUBLIC_KEY / TEND_VAPID_PRIVATE_KEY / TEND_VAPID_SUBJECT
+                     optional: browser notifications (`node scripts/vapid-keys.mjs` prints a pair). Without them notifications are
+                     listed inside TEND only, and Settings says browser notifications are not set up.
 ```
+
+A new account starts in the setup guide (`/welcome`): connect an agent, check the connection, set one rule and watch TEND decide a
+real test action. It can be skipped, and restarted from Settings → Account. Accounts that already had a connected agent are not sent there.
 
 Then `npm run beta:check` must print no FAIL. (It also checks the three older instances in `beta-envs/`; delete those folders if you use this one only.)
 

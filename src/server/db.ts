@@ -238,6 +238,59 @@ export const MIGRATIONS: string[] = [
      RETURN NEW;
    END $fn$;
    CREATE TRIGGER events_chain BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION events_chain();`,
+  // First-run setup (onboarding.ts): one row per account, the step it reached and the agent it set up. Completion is only recorded once the
+  // server has seen the agent's test action run through the gateway; the checklist itself is always worked out from the agent's real records.
+  // Notifications (notifications.ts): written in the same transaction as the event they are about, one per workspace and dedup key, so a
+  // repeated event raises a count instead of a new row. Browser push subscriptions belong to one account; the endpoint is kept to deliver to it
+  // and looked up by its hash. Preferences say which kinds are also sent to the browser; every kind is always listed in the app.
+  `CREATE TABLE onboarding (
+     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     step TEXT NOT NULL CHECK (step IN ('welcome', 'connect', 'verify', 'policy', 'test', 'notifications', 'done')),
+     integration TEXT,
+     agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+     notifications TEXT CHECK (notifications IN ('enabled', 'later')),
+     started_at BIGINT NOT NULL,
+     updated_at BIGINT NOT NULL,
+     completed_at BIGINT,
+     skipped_at BIGINT
+   );
+   CREATE TABLE notifications (
+     id TEXT PRIMARY KEY,
+     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+     kind TEXT NOT NULL CHECK (kind IN ('approval', 'blocked', 'alert', 'failed', 'expired', 'test')),
+     agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+     subject TEXT,
+     dedup_key TEXT NOT NULL,
+     count INTEGER NOT NULL DEFAULT 1,
+     created_at BIGINT NOT NULL,
+     updated_at BIGINT NOT NULL,
+     read_at BIGINT,
+     resolved_at BIGINT,
+     push TEXT NOT NULL DEFAULT 'none' CHECK (push IN ('none', 'queued', 'sending', 'sent', 'skipped')),
+     UNIQUE (workspace_id, dedup_key)
+   );
+   CREATE INDEX notifications_workspace ON notifications(workspace_id, updated_at DESC);
+   CREATE INDEX notifications_push_queued ON notifications(created_at) WHERE push = 'queued';
+   CREATE TABLE push_subscriptions (
+     id TEXT PRIMARY KEY,
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     endpoint_hash TEXT NOT NULL UNIQUE,
+     endpoint TEXT NOT NULL,
+     p256dh TEXT NOT NULL,
+     auth TEXT NOT NULL,
+     locale TEXT NOT NULL DEFAULT 'en',
+     created_at BIGINT NOT NULL,
+     last_sent_at BIGINT,
+     failures INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE INDEX push_subscriptions_user ON push_subscriptions(user_id);
+   CREATE TABLE notification_prefs (
+     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     approval INTEGER NOT NULL DEFAULT 1,
+     blocked INTEGER NOT NULL DEFAULT 1,
+     alert INTEGER NOT NULL DEFAULT 1,
+     updated_at BIGINT NOT NULL
+   );`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */

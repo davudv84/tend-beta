@@ -10,6 +10,7 @@ import { sweepExpired, TTL } from "./authz.ts";
 import { hashKey, newKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError, spend } from "./http.ts";
+import { notifyFor } from "./notifications.ts";
 import { parsePolicy, policyProblem } from "./policy.ts";
 import { DEFAULT_WORKSPACE } from "./session.ts";
 
@@ -95,7 +96,10 @@ export async function insertEvent(q: Q, e: NewEvent): Promise<WireEvent> {
   const at = ms(e.at ?? Date.now());
   const r = await q.get<{ seq: number }>("INSERT INTO events (id, agent_id, type, at, actor, data, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING seq",
     id, e.agentId, e.type, at, e.actor, JSON.stringify(e.data ?? {}), e.idempotencyKey ?? null);
-  return { seq: r!.seq, id, agentId: e.agentId, type: e.type, at, actor: e.actor, data: (e.data ?? {}) as Record<string, unknown> };
+  const wire: WireEvent = { seq: r!.seq, id, agentId: e.agentId, type: e.type, at, actor: e.actor, data: (e.data ?? {}) as Record<string, unknown> };
+  // Every event passes here, so this is the one place notifications come from: same transaction, nothing to forget on another path.
+  await notifyFor(q, wire);
+  return wire;
 }
 
 /** Appends many events in order, a few hundred per statement (seeding). */

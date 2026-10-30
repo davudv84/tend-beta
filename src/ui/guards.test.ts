@@ -109,8 +109,10 @@ test("the whole application is one product: every screen sits in the one shell, 
   const walk = (dir: string): string[] => readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
   const pages = walk("src/app").filter((f) => f.endsWith("page.tsx") && !f.startsWith("src/app/api"));
   // The account pages (sign-in, sign-up and the pages opened from mails) come before there is anything to navigate: one card, no shell.
-  const outside = pages.filter((f) => !f.startsWith("src/app/(next)/") && !f.startsWith("src/app/account/") && !["src/app/page.tsx", "src/app/prototype/page.tsx"].includes(f));
-  assert.deepEqual(outside, [], "every screen is in the redesigned group (the front page, the account pages and the kept research prototype are the only others)");
+  // So does the first-run setup guide (/welcome): a focused sequence of steps with its own frame and a way out to Home.
+  const outside = pages.filter((f) => !f.startsWith("src/app/(next)/") && !f.startsWith("src/app/account/") && !["src/app/page.tsx", "src/app/prototype/page.tsx", "src/app/welcome/page.tsx"].includes(f));
+  assert.deepEqual(outside, [], "every screen is in the redesigned group (the front page, the account pages, the setup guide and the kept research prototype are the only others)");
+  assert.match(src("src/app/welcome/view.tsx"), /useDocumentTheme\(/, "the setup guide follows the one theme hook");
   assert.match(src("src/app/account/layout.tsx"), /<AccountFrame>/, "the account pages share one frame");
   assert.equal(existsSync(path.join(root, "src/components/app-shell.tsx")), false, "the old navigation shell is gone");
   const shell = src("src/ui/shell.tsx");
@@ -157,7 +159,10 @@ test("Policies, Verification and Settings only use the real, tested actions: no 
   assert.match(settings, /shown once|once/i, "a new key is shown once");
 });
 
-test("the settings screen stays within what exists: no organization, team or notification controls without a backend", () => {
+test("the settings screen stays within what exists: no organization or team controls, and notification controls only with their backend", () => {
   const settings = src("src/app/(next)/settings/view.tsx");
-  assert.equal(/team member|invite|organi[sz]ation|notification/i.test(settings), false);
+  assert.equal(/team member|invite|organi[sz]ation/i.test(settings), false);
+  // Notification settings exist because the server stores preferences and browser subscriptions (src/server/notifications.ts).
+  assert.match(settings, /<NotificationSettings \/>/);
+  for (const r of ["notifications/preferences", "notifications/subscriptions", "notifications/test"]) assert.ok(existsSync(path.join(root, `src/app/api/v1/${r}/route.ts`)), `${r} is served`);
 });

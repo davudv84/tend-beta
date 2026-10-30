@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -49,6 +50,9 @@ export default function View() {
   const [logLimit, setLogLimit] = useState(30);
   const [disabling, setDisabling] = useState<Agent | null>(null);
   const [samples, setSamples] = useState(false);
+  // A notification links here with ?request=<id>: that request is scrolled to and marked. Answering it still goes through its own card.
+  const asked = useSearchParams().get("request");
+  const focus = asked && /^az_[a-f0-9]{24}$/.test(asked) ? asked : null;
 
   // Like Home, this screen is about real assistants; invented sample assistants are opt-in.
   const pool = useMemo(() => (samples ? agents : realAssistants(agents)), [agents, samples]);
@@ -114,8 +118,14 @@ export default function View() {
           <section aria-labelledby="ap-wait">
             <h2 id="ap-wait" className="text-[17px] font-semibold">{g.waitingTitle}</h2>
             <p className="mt-1 text-[14px] text-muted-foreground">{g.waitingSub}</p>
+            {focus && !queue.waiting.some((r) => r.auth.id === focus) && <p role="status" className="mt-4 rounded-lg border border-border bg-sunken/60 px-4 py-3 text-[14px] text-muted-foreground">{g.requestGone}</p>}
             {queue.waiting.length ? (
-              <ul className="mt-4 grid gap-4">{queue.waiting.map((r) => <li key={r.auth.id}><AnswerCard request={r} now={now} onAnswered={() => undefined} /></li>)}</ul>
+              <ul className="mt-4 grid gap-4">{queue.waiting.map((r) => (
+                <li key={r.auth.id} id={`request-${r.auth.id}`} ref={r.auth.id === focus ? (el) => el?.scrollIntoView({ block: "center" }) : undefined}
+                  className={r.auth.id === focus ? "rounded-xl outline-2 outline-offset-4 outline-primary" : undefined}>
+                  <AnswerCard request={r} now={now} onAnswered={() => undefined} />
+                </li>
+              ))}</ul>
             ) : <Card className="mt-4"><p className="px-6 py-8 text-center text-[14px] text-muted-foreground">{g.nothingWaiting}</p></Card>}
           </section>
           <section aria-labelledby="ap-hist">

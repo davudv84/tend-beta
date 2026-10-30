@@ -16,6 +16,7 @@
     "e2e:connect": "node scripts/connect-e2e.mjs",
     "e2e:accounts": "node scripts/accounts-e2e.mjs",
     "e2e:open-beta": "node scripts/open-beta-e2e.mjs",
+    "e2e:onboarding": "node scripts/onboarding-notify-e2e.mjs",
     "qa:inventory": "node scripts/qa-inventory.mjs",
     "qa:agent": "node scripts/qa-agent.mjs",
     "onboarding:test": "node scripts/onboarding-test.mjs",

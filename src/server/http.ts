@@ -3,6 +3,7 @@ import { currentSession, type Session } from "./session.ts";
 import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { spend } from "./limits.ts";
+import { takePushDue } from "./push-due.ts";
 
 export { spend };
 
@@ -21,12 +22,34 @@ export class HttpError extends Error {
 export const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   Response.json(data, { status, headers: { "cache-control": "no-store", ...headers } });
 
+/**
+ * Runs work once the response is on its way (Next's after(), which a serverless platform waits for), so a slow push service never delays an
+ * agent's answer. Outside a request (tests, scripts) it simply runs. Failures are logged without detail and never reach the caller.
+ */
+export async function afterResponse(task: () => Promise<unknown>) {
+  const run = () => task().catch((e) => console.error("[tend] background delivery failed:", (e as Error).message));
+  try {
+    const { after } = await import("next/server.js");
+    after(run);
+  } catch {
+    void run();
+  }
+}
+
+/** Browser notifications queued by this request (push-due.ts) go out after the response. A refusal (403) can queue one too: a block is stored. */
+async function deliverQueued() {
+  if (takePushDue() && config.vapid) await afterResponse(async () => (await import("./push.ts")).flushPush(await (await import("./db.ts")).getDb()));
+}
+
 /** Wraps a route handler: known errors become JSON, unknown ones are logged and hidden. */
 export function route<C>(fn: (req: Request, ctx: C) => Promise<Response> | Response) {
   return async (req: Request, ctx: C) => {
     try {
-      return await fn(req, ctx);
+      const res = await fn(req, ctx);
+      await deliverQueued();
+      return res;
     } catch (e) {
+      await deliverQueued();
       if (e instanceof HttpError) return json({ error: e.code, message: e.message, ...e.extra }, e.status, e.status === 429 ? { "retry-after": String(e.extra?.retryAfter ?? 10) } : {});
       console.error("[tend] unhandled error", e);
       return json({ error: "internal_error", message: "Something went wrong on the server." }, 500);

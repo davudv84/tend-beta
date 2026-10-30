@@ -1,3 +1,4 @@
+import { createECDH } from "node:crypto";
 import path from "node:path";
 
 /**
@@ -14,6 +15,25 @@ export function adminTokenProblem(t: string, production = process.env.NODE_ENV =
   return undefined;
 }
 let warned = "";
+let vapidChecked: { key: string; ok: boolean } | undefined;
+
+/** True when the VAPID settings are usable: the public key is the private key's, and the subject is a contact. Says why once otherwise. */
+function vapidOk(publicKey: string, privateKey: string, subject: string) {
+  const pub = Buffer.from(publicKey, "base64url"), priv = Buffer.from(privateKey, "base64url");
+  let problem = !/^(mailto:|https:\/\/)/.test(subject) ? "TEND_VAPID_SUBJECT must start with mailto: or https://"
+    : pub.length !== 65 || pub[0] !== 4 ? "TEND_VAPID_PUBLIC_KEY is not an uncompressed P-256 public key" : priv.length !== 32 ? "TEND_VAPID_PRIVATE_KEY is not a P-256 private key" : "";
+  if (!problem) {
+    try {
+      const ecdh = createECDH("prime256v1");
+      ecdh.setPrivateKey(priv);
+      if (!ecdh.getPublicKey().equals(pub)) problem = "TEND_VAPID_PUBLIC_KEY does not belong to TEND_VAPID_PRIVATE_KEY";
+    } catch {
+      problem = "TEND_VAPID_PRIVATE_KEY is not a P-256 private key";
+    }
+  }
+  if (problem) console.error(`[tend] browser notifications are off: ${problem}.`);
+  return !problem;
+}
 
 /** Server configuration, read from the environment on every access so tests can override it. */
 export const config = {
@@ -24,6 +44,17 @@ export const config = {
    */
   get adminDisabled() {
     return process.env.TEND_ADMIN === "0";
+  },
+  /**
+   * Browser notifications (push.ts): a VAPID key pair (base64url, as scripts/vapid-keys.mjs prints it) and a contact (mailto: or https:) for
+   * push services. Missing or inconsistent: undefined, and TEND says browser notifications are not set up. The private key is never logged.
+   */
+  get vapid(): { publicKey: string; privateKey: string; subject: string } | undefined {
+    const publicKey = process.env.TEND_VAPID_PUBLIC_KEY?.trim() ?? "", privateKey = process.env.TEND_VAPID_PRIVATE_KEY?.trim() ?? "", subject = process.env.TEND_VAPID_SUBJECT?.trim() ?? "";
+    if (!publicKey || !privateKey || !subject) return undefined;
+    const key = `${publicKey}|${privateKey}|${subject}`;
+    if (vapidChecked?.key !== key) vapidChecked = { key, ok: vapidOk(publicKey, privateKey, subject) };
+    return vapidChecked.ok ? { publicKey, privateKey, subject } : undefined;
   },
   /** Whether an account needs the admin's approval after confirming its address. */
   get approvalRequired() {

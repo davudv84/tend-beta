@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { ActivityIcon, CircleCheckIcon, CpuIcon, FileTextIcon, LayoutGridIcon, LinkIcon, LogOutIcon, MenuIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, XIcon } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { LanguageSwitch } from "@/components/language-switch";
+import { NotificationCenter, useNotificationPolling } from "@/components/notification-center";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/i18n/client";
 import { connectionOf, homeQueue, otherRequests, realAssistants } from "@/lib/home";
@@ -160,7 +161,7 @@ function AdminLink({ mode }: { mode: Mode }) {
 }
 
 /** Everything the sidebar holds, so the desktop sidebar, the tablet rail and the phone drawer are one thing. */
-function Sidebar({ mode, waiting }: { mode: Mode; waiting: number }) {
+function Sidebar({ mode, waiting, container }: { mode: Mode; waiting: number; container?: HTMLElement | null }) {
   const t = useT();
   return (
     <div className="flex h-full flex-col justify-between">
@@ -178,6 +179,7 @@ function Sidebar({ mode, waiting }: { mode: Mode; waiting: number }) {
       </div>
       <div className="grid">
         <GatewayStatus mode={mode} />
+        <NotificationCenter variant="nav" compact={mode !== "full"} container={container} />
         <AdminLink mode={mode} />
         <NavLink item={SETTINGS} waiting={0} mode={mode} />
         <Account mode={mode} />
@@ -251,6 +253,7 @@ export function UiShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [root, setRoot] = useState<HTMLElement | null>(null);
   useDocumentTheme(prefs.theme);
+  useNotificationPolling();
   // A drawer that opened on one page must not stay open on the next.
   const [seen, setSeen] = useState(path);
   if (seen !== path) { setSeen(path); setOpen(false); }
@@ -259,10 +262,12 @@ export function UiShell({ children }: { children: React.ReactNode }) {
     <div ref={setRoot} className="ui-next min-h-dvh md:grid md:grid-cols-[64px_minmax(0,1fr)] lg:grid-cols-[232px_minmax(0,1fr)]" data-theme={prefs.theme}>
       <a href="#main" className="sr-only z-50 bg-surface px-3 py-2 text-small focus:not-sr-only focus:fixed focus:top-3 focus:left-3">{t.ui.skip}</a>
 
-      <aside className="sticky top-0 hidden h-dvh border-r border-border bg-[#faf9f7] md:block dark:bg-sunken/50"><Sidebar mode="responsive" waiting={waiting} /></aside>
+      <aside className="sticky top-0 hidden h-dvh border-r border-border bg-[#faf9f7] md:block dark:bg-sunken/50"><Sidebar mode="responsive" waiting={waiting} container={root} /></aside>
 
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur md:hidden">
         <Link href="/home" aria-label="TEND" className="flex items-center gap-3"><BrandMark className="size-6 text-primary" /><span className="text-[15px] font-semibold tracking-[0.16em]">TEND</span></Link>
+        <div className="flex items-center">
+        <NotificationCenter variant="icon" container={root} />
         <Dialog.Root open={open} onOpenChange={setOpen}>
           <Dialog.Trigger aria-label={t.ui.menu} className="relative grid size-10 place-items-center text-foreground outline-none focus-visible:outline-2 focus-visible:outline-primary">
             <MenuIcon className="size-5" strokeWidth={1.75} aria-hidden />
@@ -273,10 +278,11 @@ export function UiShell({ children }: { children: React.ReactNode }) {
             <Dialog.Content aria-describedby={undefined} className="fixed inset-y-0 left-0 z-50 w-[288px] max-w-[85vw] border-r border-border bg-[#faf9f7] outline-none dark:bg-sunken">
               <Dialog.Title className="sr-only">{t.ui.menu}</Dialog.Title>
               <Dialog.Close aria-label={t.ui.closeMenu} className="absolute top-3 right-3 z-10 grid size-9 place-items-center text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"><XIcon className="size-5" strokeWidth={1.75} aria-hidden /></Dialog.Close>
-              <Sidebar mode="full" waiting={waiting} />
+              <Sidebar mode="full" waiting={waiting} container={root} />
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
+        </div>
       </header>
 
       <main id="main" className="min-w-0">{children}</main>

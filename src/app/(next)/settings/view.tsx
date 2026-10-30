@@ -1,20 +1,62 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckIcon, CopyIcon } from "lucide-react";
+import { NotificationSettings } from "@/components/notification-settings";
 import { SignIn } from "@/components/sign-in";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
+import { dateTime } from "@/lib/format";
 import { realAssistants } from "@/lib/home";
-import { useStore, type SessionOverview } from "@/lib/store";
+import { call, useStore, type SessionOverview } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Page, PageSkeleton } from "@/ui/page";
 import { Badge, Card, CardHeader, buttonClass } from "@/ui/primitives";
 import { Preferences } from "@/ui/shell";
 
-type Tab = "security" | "keys" | "account";
+type Tab = "security" | "keys" | "notifications" | "account";
+const TABS: Tab[] = ["security", "keys", "notifications", "account"];
+
+/** Where the setup guide stands for this account (GET /api/v1/onboarding), for the Account tab. */
+type Guide = { available: false } | { available: true; completedAt: number | null; skippedAt: number | null; startedAt: number | null };
+
+function SetupGuide() {
+  const t = useT();
+  const o = t.onboarding.settings;
+  const router = useRouter();
+  const [guide, setGuide] = useState<Guide | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void call<Guide>("/api/v1/onboarding", undefined, "GET").then((r) => { if (live && r.ok) setGuide(r.data); });
+    return () => { live = false; };
+  }, []);
+  if (!guide) return null;
+  if (!guide.available) return <p className="border-t border-border px-6 py-4 text-[13px] text-muted-foreground">{o.noAccount}</p>;
+  const status = guide.completedAt ? o.status.done(dateTime(guide.completedAt)) : guide.skippedAt ? o.status.skipped(dateTime(guide.skippedAt)) : guide.startedAt ? o.status.active : o.status.none;
+  const restart = async () => {
+    setBusy(true);
+    const r = await call("/api/v1/onboarding", { action: "restart" });
+    setBusy(false);
+    if (!r.ok) return toast.error(o.failed, { description: errorText(t, r) });
+    router.push("/welcome");
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
+      <div className="min-w-0">
+        <p className="text-[14px] font-medium">{o.title} · <span className="font-normal text-muted-foreground">{status}</span></p>
+        <p className="mt-0.5 max-w-[56ch] text-[13px] text-muted-foreground">{o.sub} {o.restartNote}</p>
+      </div>
+      <div className="flex gap-2">
+        {!guide.completedAt && guide.startedAt && <Link href="/welcome" className={buttonClass()}>{o.resume}</Link>}
+        <button type="button" disabled={busy} onClick={() => void restart()} className={buttonClass("secondary")}>{o.restart}</button>
+      </div>
+    </div>
+  );
+}
 
 /** Only what the backend supports: security facts, per-agent keys, and the operator's own account and preferences. */
 export default function View() {
@@ -31,7 +73,9 @@ export default function View() {
   const getSessions = useStore((s) => s.getSessions);
   const signOutEverywhere = useStore((s) => s.signOutEverywhere);
   const [overview, setOverview] = useState<SessionOverview | null>(null);
-  const [tab, setTab] = useState<Tab>("security");
+  // A link may open a tab directly (/settings?tab=notifications, from the notification panel).
+  const asked = useSearchParams().get("tab") as Tab | null;
+  const [tab, setTab] = useState<Tab>(asked && TABS.includes(asked) ? asked : "security");
   const [fresh, setFresh] = useState<{ id: string; key: string; revoked?: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -63,7 +107,7 @@ export default function View() {
     setFresh({ id, key: "", revoked: true });
   };
   const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); setCopied(true); } catch { toast.error(t.connect.s3.copyFailed); } };
-  const tabs: [Tab, string][] = [["security", g.tabs.security], ["keys", g.tabs.keys], ["account", g.tabs.account]];
+  const tabs: [Tab, string][] = TABS.map((k) => [k, g.tabs[k]]);
   const fact = (label: string, value: React.ReactNode) => <div className="flex items-start justify-between gap-6 border-t border-border px-6 py-4 first:border-t-0"><dt className="text-[14px] text-muted-foreground">{label}</dt><dd className="text-right text-[14px] font-medium">{value}</dd></div>;
 
   return (
@@ -163,10 +207,13 @@ export default function View() {
           </Card>
         )}
 
+        {tab === "notifications" && (operator ? <NotificationSettings /> : <Card><p className="px-6 py-5 text-[14px] text-muted-foreground">{t.tools.readOnly}</p></Card>)}
+
         {tab === "account" && (
           <Card>
             <CardHeader title={g.tabs.account} sub={g.accountSub} />
             <div className="border-t border-border px-6 py-6"><Preferences /></div>
+            {operator && <SetupGuide />}
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border px-6 py-4 text-[14px]">
               <Link href="/labs" className="font-medium text-primary hover:underline">{t.ui.footer.labs}</Link>
               <Link href="/developers" className="font-medium text-primary hover:underline">{t.ui.footer.developers}</Link>

@@ -57,6 +57,20 @@ export function connectCommand(url: string, key: string) {
   return `TEND_URL=${url} TEND_AGENT_KEY=${key} node --input-type=module <<'TEND_TEST'\n${TEST_SCRIPT}\nTEND_TEST`;
 }
 
+/**
+ * The setup guide's commands. The key appears in exactly one of them, the export line copied once when the key is shown; the other two read
+ * it from the terminal's environment, so they can be shown, copied and re-run without the key ever being on screen again.
+ */
+export function envCommand(url: string, key: string) {
+  if (!URL_OK.test(url)) throw new Error("not a plain http(s) address");
+  if (!KEY_OK.test(key)) throw new Error("not a Tend agent key");
+  return `export TEND_URL=${url}\nexport TEND_AGENT_KEY=${key}`;
+}
+export const maskedEnv = (url: string) => envCommand(url, `tend_sk_${"x".repeat(24)}`).replace(/tend_sk_x{24}/, "tend_sk_••••••••");
+/** One authenticated call and nothing else: how the guide checks that the agent's key reaches this server. */
+export const VERIFY_COMMAND = `curl -sS -H "Authorization: Bearer $TEND_AGENT_KEY" "$TEND_URL/api/v1/agent/inbox"`;
+export const TEST_COMMAND = `node --input-type=module <<'TEND_TEST'\n${TEST_SCRIPT}\nTEND_TEST`;
+
 /** The same command with the key hidden, for showing on screen. */
 export const maskedCommand = (url: string) => connectCommand(url, `tend_sk_${"x".repeat(24)}`).replace(/tend_sk_x{24}/, "tend_sk_••••••••");
 
