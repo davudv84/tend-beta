@@ -25,7 +25,8 @@ check(!h.get("x-powered-by"), "no X-Powered-By");
 
 for (const p of ["/api/v1/state", "/api/v1/events?since=0", "/api/v1/central-policies", "/api/admin/users", "/api/admin/audit"]) {
   const r = await get(p);
-  check([401, 403].includes(r.status), `signed out, ${p} is refused (${r.status})`);
+  const want = adminOff && p.startsWith("/api/admin/") ? [404] : [401, 403]; // with the admin off, its routes do not exist
+  check(want.includes(r.status), `signed out, ${p} is refused (${r.status})`);
 }
 for (const [p, body] of [["/api/v1/authorize", { tool: "t", action: "call" }], ["/api/v1/authorizations", { tool: "t", action: "call" }], ["/api/v1/events", { type: "tool.called", data: {} }]]) {
   const none = await post(p, body), bad = await post(p, body, { authorization: `Bearer tend_sk_${"x".repeat(32)}` });
