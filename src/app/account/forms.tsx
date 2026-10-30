@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { CheckIcon, MailIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,10 @@ import { useT } from "@/i18n/client";
 import { call, useStore } from "@/lib/store";
 
 const MIN = 10; // accounts.ts PASSWORD.min
+/** Seconds before another confirmation mail can be asked for. The server has its own limit (three mails per address an hour). */
+const RESEND_COOLDOWN = 60;
+/** Tells a sign-up page open in another tab of this browser that the address was just confirmed, so it continues at once. */
+const ACCOUNT_CHANNEL = "tend-account";
 
 /** The one-time token from a mail link. It is in the fragment (#token=…), so it never reaches a server log or a Referer header. */
 function useLinkToken() {
@@ -143,7 +147,7 @@ export function SignUp({ approval = true, verification = true }: { approval?: bo
     setBusy(false);
     setError(s.code === "invalid_credentials" ? a.signUp.signInFailed : errorText(t, s));
   };
-  if (sent) return <Done title={a.signUp.sentTitle} body={a.signUp.sent(email.trim())}><Foot><A href="/account/sign-in">{a.back}</A></Foot></Done>;
+  if (sent) return <VerifyInline email={email.trim()} password={password} onChange={() => setSent(false)} />;
   return (
     <>
       <Title body={!verification ? (approval ? a.signUp.bodyApproval : a.signUp.bodyInstant) : approval ? a.signUp.body : a.signUp.bodyOpen}>{a.signUp.title}</Title>
@@ -155,6 +159,101 @@ export function SignUp({ approval = true, verification = true }: { approval?: bo
       </form>
       <Foot>{a.signUp.have} <A href="/account/sign-in">{a.signIn.submit}</A></Foot>
     </>
+  );
+}
+
+/**
+ * After sign-up: the same card says what to do next, and continues by itself. The address is confirmed through the mailed link, on this or any
+ * device; this page then signs in with the password that was just typed here (kept only in this page's memory), which the server allows only
+ * once the address is confirmed. Until then every protected page and API refuses the account, exactly as before.
+ */
+function VerifyInline({ email, password, onChange }: { email: string; password: string; onChange: () => void }) {
+  const t = useT();
+  const a = t.account.signUp;
+  const router = useRouter();
+  const signIn = useStore((s) => s.signInWithPassword);
+  const [state, setState] = useState<"waiting" | "continuing" | "approval" | "stopped">("waiting");
+  // The cooldown is a moment in time, not a count of ticks: a hidden tab (the person is in their mail app) runs timers late.
+  const [resendAt, setResendAt] = useState(() => Date.now() + RESEND_COOLDOWN * 1000);
+  const [now, setNow] = useState(() => Date.now());
+  const cooldown = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const checking = useRef(false);
+  const [started] = useState(() => Date.now());
+
+  /** One check: a sign-in that succeeds only once the address is confirmed. Anything but "not confirmed yet" ends the checking. */
+  const check = useCallback(async () => {
+    if (checking.current) return "busy" as const;
+    checking.current = true;
+    const r = await signIn(email, password);
+    checking.current = false;
+    if (r.ok) { setState("continuing"); router.push("/home"); return "done" as const; }
+    if (r.code === "email_unverified") return "wait" as const;
+    if (r.code === "rate_limited") return "slow" as const;
+    setState(r.code === "pending_approval" ? "approval" : "stopped");
+    return "done" as const;
+  }, [email, password, signIn, router]);
+
+  // Checks every few seconds, then less often; stops after 30 minutes. Sooner when this tab is looked at again or another tab confirmed.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>, alive = true;
+    const loop = async () => {
+      if (!alive) return;
+      const waited = Date.now() - started;
+      if (waited > 30 * 60_000) return setState((s) => (s === "waiting" ? "stopped" : s));
+      const r = document.hidden ? "wait" : await check();
+      if (!alive || r === "done") return;
+      timer = setTimeout(loop, r === "slow" ? 60_000 : waited < 60_000 ? 3_000 : waited < 5 * 60_000 ? 6_000 : 15_000);
+    };
+    timer = setTimeout(loop, 3_000);
+    const now = () => { if (!document.hidden) void check(); };
+    document.addEventListener("visibilitychange", now);
+    let channel: BroadcastChannel | null = null;
+    try { channel = new BroadcastChannel(ACCOUNT_CHANNEL); channel.onmessage = now; } catch {}
+    return () => { alive = false; clearTimeout(timer); document.removeEventListener("visibilitychange", now); channel?.close(); };
+  }, [check, started]);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, [cooldown]);
+
+  const resend = async () => {
+    setBusy(true);
+    const r = await call("/api/account/resend", { email });
+    setBusy(false);
+    if (!r.ok) return setNote({ text: errorText(t, r), error: true });
+    setNote({ text: a.resent });
+    const t0 = Date.now();
+    setNow(t0);
+    setResendAt(t0 + RESEND_COOLDOWN * 1000);
+  };
+
+  return (
+    <div>
+      <Title body={a.verifyBody(email)}>{a.verifyTitle}</Title>
+      <p role="status" aria-live="polite" className="flex items-center gap-3 rounded-xl border border-border px-4 py-3 text-small">
+        {state === "continuing" ? <CheckIcon className="size-4 shrink-0 text-primary" aria-hidden />
+          : state === "waiting" ? <span aria-hidden className="relative grid size-2.5 shrink-0 place-items-center"><span className="absolute inline-flex size-full rounded-full bg-primary/40 motion-safe:animate-ping" /><span className="relative size-2 rounded-full bg-primary" /></span>
+          : <MailIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
+        <span className="text-pretty">{state === "continuing" ? a.continuing : state === "approval" ? t.account.verify.waiting : state === "stopped" ? a.stopped : a.waiting}</span>
+      </p>
+      {state !== "continuing" && (
+        <div className="mt-5 grid gap-2">
+          <Button type="button" variant="secondary" disabled={busy || cooldown > 0} onClick={() => void resend()} className="h-11 w-full rounded-full border-border text-ui tabular-nums">
+            {cooldown > 0 ? a.resendIn(cooldown) : a.resend}
+          </Button>
+          {note ? <p role={note.error ? "alert" : "status"} className={note.error ? "text-small text-destructive" : "text-caption text-muted-foreground"}>{note.text}</p>
+            : <p className="text-caption text-faint">{a.resendLimit}</p>}
+        </div>
+      )}
+      <Foot>
+        {state === "stopped" ? <A href="/account/sign-in">{t.account.signIn.submit}</A>
+          : <button type="button" onClick={onChange} className="text-primary underline-offset-4 hover:underline">{a.change}</button>}
+      </Foot>
+    </div>
   );
 }
 
@@ -174,8 +273,16 @@ export function Verify() {
     if (!r.ok) return setError(errorText(t, r));
     forgetLink();
     setDone(r.data);
+    // A sign-up page waiting in another tab of this browser continues now instead of at its next check.
+    try { const c = new BroadcastChannel(ACCOUNT_CHANNEL); c.postMessage("verified"); c.close(); } catch {}
   };
-  if (done) return <Done icon="check" title={a.verify.doneTitle} body={done.approved ? a.verify.ready : a.verify.waiting}><Foot><A href="/account/sign-in">{a.back}</A></Foot></Done>;
+  if (done)
+    return (
+      <Done icon="check" title={a.verify.doneTitle} body={done.approved ? a.verify.readyAuto : a.verify.waiting}>
+        {done.approved && <Button asChild className="mt-2 h-11 w-full rounded-full text-ui"><Link href="/home">{a.verify.continue}</Link></Button>}
+        <Foot><A href="/account/sign-in">{a.back}</A></Foot>
+      </Done>
+    );
   return (
     <>
       <Title body={token ? undefined : a.verify.missing}>{a.verify.title}</Title>
