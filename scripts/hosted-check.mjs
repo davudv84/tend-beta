@@ -13,7 +13,8 @@ const post = (p, body, headers = {}) => fetch(base + p, { method: "POST", header
 const health = await (await get("/api/health")).json();
 check(health.ok && health.storage === "postgres" && health.schema >= 11, `health: ${JSON.stringify(health)}`);
 const viewer = (await (await get("/api/operator/session")).json()).viewer;
-check(viewer.public === false && viewer.demo === false && viewer.accounts === true && viewer.operatorAvailable === true, `private, no demo, accounts on, admin sign-in available: ${JSON.stringify(viewer)}`);
+const adminOff = viewer.approval === false; // TEND_ADMIN=0: no admin sign-in, no approval step
+check(viewer.public === false && viewer.demo === false && viewer.accounts === true && viewer.operatorAvailable === !adminOff, `private, no demo, accounts on, admin ${adminOff ? "turned off" : "sign-in available"}: ${JSON.stringify(viewer)}`);
 
 const home = await get("/");
 const h = home.headers;
@@ -33,7 +34,8 @@ for (const [p, body] of [["/api/v1/authorize", { tool: "t", action: "call" }], [
 const cross = await post("/api/account/sign-in", { email: "a@example.com", password: "whatever-long" }, { origin: "https://evil.example", "sec-fetch-site": "cross-site" });
 check(cross.status === 403, `a cross-site sign-in is refused (${cross.status})`);
 const admin = await post("/api/operator/session", { token: "not-the-admin-token-not-the-admin-token" });
-check(admin.status === 401 && !admin.headers.get("set-cookie"), `a wrong admin token: 401, no cookie (${admin.status})`);
+check(admin.status === (adminOff ? 404 : 401) && !admin.headers.get("set-cookie"), `a wrong admin token: ${adminOff ? 404 : 401}, no cookie (${admin.status})`);
+if (adminOff) for (const p of ["/operator", "/admin/users"]) check((await get(p)).status === 404, `${p} is not found while the admin is off`);
 const wrong = await (await post("/api/account/sign-in", { email: "nobody-here@example.com", password: "wrong password here" })).json();
 check(wrong.error === "invalid_credentials", `sign-in with an unknown address: invalid_credentials (${wrong.error})`);
 const forgot1 = await post("/api/account/forgot", { email: "nobody-here@example.com" }), forgot2 = await post("/api/account/forgot", { email: "also-nobody@example.com" });
