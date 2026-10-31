@@ -34,7 +34,8 @@
 
 # Local tool state
 .claude-flow/
-.claude/
+.claude/*
+!.claude/skills/
 
 # Logs and OS files
 npm-debug.log*
