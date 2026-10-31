@@ -18,7 +18,7 @@ import type { Agent } from "../lib/types";
 import { hashKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError } from "./http.ts";
-import { evaluateEffective, fingerprint, ID, parseAuthRequest, type AuthRequest } from "./policy.ts";
+import { evaluateEffective, fingerprint, ID, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
 import { agentBudget, agentRow, centralOf, insertEvent, toAgent } from "./repo.ts";
 
 export const TTL = { request: 10 * 60_000, approval: 5 * 60_000, token: 60_000 };
@@ -110,6 +110,8 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
     const central = await centralOf(q, a);
     const d = evaluateEffective(toAgent(a), a.policy, central?.policy, r);
     const source = d.source === "central" && central ? { policySource: "central", centralPolicyId: central.id, centralVersion: central.version } : {};
+    const rule = ruleBehind(d, a.policy, central?.policy, r);
+    const why = { reason: d.reason, ...(rule && { rule }), ...source };
     // With spend, an action the policy allows is authorized and spent in this one transaction: there is no token to lose or replay.
     const status: Status = d.effect === "allow" ? (spend ? "consumed" : "approved") : d.effect === "approve" ? "pending" : "denied";
     const id = `az_${randomUUID().replaceAll("-", "").slice(0, 24)}`;
@@ -123,8 +125,8 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
     if (status === "pending") await q.run("INSERT INTO reviews (id, agent_id, status) VALUES (?, ?, 'pending')", id, agent.id);
     const stored = (await q.get<Row>("SELECT * FROM authorizations WHERE id = ?", id))!;
     await insertEvent(q, status === "denied"
-      ? { agentId: agent.id, type: "authorization.denied", actor: "system", at: now, data: { authorizationId: id, ...bound(r), reason: d.reason, ...source } }
-      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), status: status === "consumed" ? "approved" : status, reason: d.reason, approval: status === "pending", expiresAt: view(stored).expiresAt, ...source } });
+      ? { agentId: agent.id, type: "authorization.denied", actor: "system", at: now, data: { authorizationId: id, ...bound(r), ...why } }
+      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), status: status === "consumed" ? "approved" : status, approval: status === "pending", expiresAt: view(stored).expiresAt, ...why } });
     if (status === "consumed") await insertEvent(q, { agentId: agent.id, type: "authorization.consumed", actor: "system", at: now, data: { authorizationId: id, ...bound(r) } });
     return { view: view(stored), created: true };
   });

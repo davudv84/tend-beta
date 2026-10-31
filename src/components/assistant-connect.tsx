@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { CheckIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
-import { PRESETS, presetOf, presetRules, TEST_COMMANDS, type PresetId } from "@/lib/agent-presets";
+import { coverageOf, PRESETS, type Covered, presetOf, presetRules, TEST_COMMANDS, type PresetId } from "@/lib/agent-presets";
 import { useNow } from "@/lib/format";
 import type { PolicyView, RuleLike } from "@/lib/permissions";
 import { evidenceOf, pendingTest, type Check } from "@/lib/protection";
@@ -107,7 +107,7 @@ export function ConnectHelp({ integration, open }: { integration: HookIntegratio
 const savedPreset = (v: PolicyView | null) => (v && v.enforcement === "enforce" ? presetOf(v.rules) : null);
 
 /** Balanced, Strict or Monitor only, saved as the agent's policy and read back from the server. */
-export function PresetPicker({ agentId, onSaved, titled = true }: { agentId: string; onSaved?: (p: PresetId | null) => void; titled?: boolean }) {
+export function PresetPicker({ agentId, onSaved, titled = true, coverage }: { agentId: string; onSaved?: (p: PresetId | null) => void; titled?: boolean; coverage?: HookIntegration }) {
   const t = useT();
   const p = t.assistant.presets;
   const getPolicy = useStore((s) => s.getPolicy);
@@ -159,6 +159,61 @@ export function PresetPicker({ agentId, onSaved, titled = true }: { agentId: str
         <button type="button" disabled={busy || !view || saved === choice} onClick={() => void save()} className={buttonClass()}>{busy ? p.saving : p.save}</button>
         <p role="status" className="text-[13px] text-muted-foreground">{saved && saved === choice ? p.saved(p[saved].name) : ""}</p>
       </div>
+      {coverage && view && <Coverage view={view} integration={coverage} />}
+    </div>
+  );
+}
+
+const SHOWN = 6;
+
+/**
+ * What the saved rules enforce, what they only record, and what TEND cannot reach at all, so nobody reads more protection into it than
+ * there is. Read from the saved rules (the same ones the server decides with); the last group is the same for every policy.
+ */
+export function Coverage({ view, integration }: { view: PolicyView; integration: HookIntegration }) {
+  const t = useT();
+  const c = t.assistant.coverage;
+  const central = view.central;
+  // An unreadable policy, the agent's own or the central one, makes the server deny every call (fail closed): say exactly that.
+  const unreadable = !view.valid || (central && !central.valid);
+  const { enforced, monitored, unruled } = coverageOf(unreadable ? [] : view.rules, unreadable ? [] : central?.rules);
+  const kinds = unruled.map((k) => c.kinds[k]).join(", ");
+  const say = (r: Covered, text: string) => (r.from === "central" ? `${text} · ${c.fromCentral}` : text);
+  return (
+    <section aria-labelledby={`coverage-${integration}`} className="mt-5 grid gap-3">
+      <div>
+        <h3 id={`coverage-${integration}`} className="text-[15px] font-semibold">{c.title}</h3>
+        <p className="mt-1 text-[13px] text-pretty text-muted-foreground">{c.intro(HOST_NAME[integration])}</p>
+        {central && <p className="mt-1 text-[13px] text-pretty text-muted-foreground">{c.central}</p>}
+      </div>
+      <CoverageGroup title={c.enforced} sub={c.enforcedSub} empty={c.enforcedNone}
+        items={unreadable ? [c.blocksAll] : [...enforced.map((r) => say(r, t.timelinePage.rule(r))), ...(kinds ? [c.unruled(kinds)] : [])]} />
+      <CoverageGroup title={c.monitored} sub={c.monitoredSub} empty={c.monitoredNone} items={monitored.map((r) =>
+        // A catch-all "allow" next to stricter rules for the same kind lets through only what those rules don't catch.
+        say(r, r.action === "*" && !r.when && enforced.some((e) => e.tool === r.tool) ? c.rest(c.kinds[r.tool]) : t.timelinePage.rule(r)))} />
+      <CoverageGroup title={c.outside} sub={c.outsideSub} items={[...c.outsideItems, ...(integration === "cursor" ? [c.cursor] : [])]} />
+      <p className="text-[13px] text-pretty text-muted-foreground">{c.footer}</p>
+    </section>
+  );
+}
+
+function CoverageGroup({ title, sub, items, empty }: { title: string; sub: string; items: string[]; empty?: string }) {
+  const t = useT();
+  const li = (x: string, i: number) => <li key={i} className="flex gap-2.5"><span aria-hidden className="mt-[7px] size-1 shrink-0 rounded-full bg-faint" /><span className="min-w-0 break-words">{x}</span></li>;
+  return (
+    <div className="rounded-xl border border-border px-4 py-3.5">
+      <h4 className="text-[14px] font-semibold">{title}</h4>
+      <p className="mt-0.5 text-[13px] text-pretty text-muted-foreground">{sub}</p>
+      {items.length ? (
+        <>
+          <ul className="mt-2.5 grid gap-1.5 text-[13px]">{items.slice(0, SHOWN).map(li)}</ul>
+          {items.length > SHOWN && (
+            <Disclosure summary={t.home.more(items.length - SHOWN)} className="mt-1.5">
+              <ul className="grid gap-1.5 pt-1 text-[13px]">{items.slice(SHOWN).map((x, i) => li(x, i + SHOWN))}</ul>
+            </Disclosure>
+          )}
+        </>
+      ) : <p className="mt-2.5 text-[13px]">{empty}</p>}
     </div>
   );
 }

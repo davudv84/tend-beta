@@ -1,3 +1,5 @@
+import type { RuleLike } from "./permissions";
+
 export type Provider = "Anthropic" | "OpenAI" | "Google" | "Custom";
 
 export interface Agent {
@@ -111,8 +113,10 @@ export interface LogEntry {
   type: LogType;
   /** English, for the API and old snapshots. The interface builds its own sentence from `type` and `args`. */
   summary: string;
-  args?: { perm?: string; adj?: string; target?: "request" | "checkIn"; version?: number; tool?: string; action?: string; policy?: string; count?: number; blocked?: boolean; resource?: string; reason?: string };
+  args?: { perm?: string; adj?: string; target?: "request" | "checkIn"; version?: number; tool?: string; action?: string; policy?: string; count?: number; blocked?: boolean; resource?: string; reason?: string; rule?: RuleLike };
   note?: string;
+  /** For authorizations: the exact request as the agent sent it ("Run: git push"). */
+  detail?: string;
   checkInId?: string;
   /** Alerts: the tool call that triggered them. */
   eventId?: string;
@@ -183,6 +187,8 @@ export interface Authorization {
   status: AuthorizationStatus;
   /** Policy reason code (policy_allowed, approval_required, policy_denied, …) or why it ended. */
   reason?: string;
+  /** The policy rule that decided it, as recorded when it was asked (requests from before this was recorded have none). */
+  rule?: RuleLike;
   createdAt: number;
   /** Pending: when the request lapses. Approved: when the approval lapses. */
   expiresAt?: number;

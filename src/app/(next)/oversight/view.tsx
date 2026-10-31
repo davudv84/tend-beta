@@ -114,7 +114,7 @@ export default function View() {
           )}
         </TabsContent>
 
-        <TabsContent value="authorizations" className="grid gap-8">
+        <TabsContent value="authorizations" className="grid grid-cols-[minmax(0,1fr)] gap-8">
           <section aria-labelledby="ap-wait">
             <h2 id="ap-wait" className="text-[17px] font-semibold">{g.waitingTitle}</h2>
             <p className="mt-1 text-[14px] text-muted-foreground">{g.waitingSub}</p>
@@ -142,9 +142,9 @@ export default function View() {
                           <tr key={a.id}>
                             <td className="px-6 py-3.5 whitespace-nowrap text-muted-foreground tabular-nums">{clock(a.decidedAt ?? a.createdAt)}</td>
                             <td className="px-6 py-3.5 font-medium">{nameOf(a.agentId)}</td>
-                            <td className="px-6 py-3.5 font-mono text-[13px]">{a.tool}.{a.action}</td>
+                            <td className="px-6 py-3.5 font-mono text-[13px] [overflow-wrap:anywhere]">{a.detail ? <>{a.detail}<span className="mt-0.5 block text-[12px] text-faint">{a.tool}.{a.action}</span></> : `${a.tool}.${a.action}`}</td>
                             <td className="px-6 py-3.5"><Badge tone={o === "blocked" || o === "rejected" ? "danger" : "neutral"}>{t.timelinePage.outcome[o as keyof typeof t.timelinePage.outcome] ?? a.status}</Badge></td>
-                            <td className="px-6 py-3.5 text-muted-foreground">{a.reason ? t.timelinePage.reasons[a.reason] ?? a.reason : ""}</td>
+                            <td className="px-6 py-3.5 text-muted-foreground">{(a.status === "approved" || a.status === "rejected") && a.reason === "approval_required" ? t.timelinePage.by.person : a.rule ? t.timelinePage.rule(a.rule) : a.reason ? t.timelinePage.reasons[a.reason] ?? a.reason : ""}</td>
                           </tr>
                         );
                       })}

@@ -1149,10 +1149,16 @@ export const de: Dict = {
           case "delete_test_file": return `${assistant} möchte die Testdatei „${item}“ löschen`;
           case "pay_invoice": return `${assistant} möchte die Rechnung ${item} bezahlen`;
           case "test_ping": return `${assistant} möchte eine harmlose Testnachricht senden`;
+          case "shell": return `${assistant} möchte einen Befehl ausführen`;
+          case "file.write": return `${assistant} möchte eine Datei ändern`;
+          case "file.read": return `${assistant} möchte eine Datei lesen`;
+          case "web": return `${assistant} möchte eine Webadresse öffnen`;
+          case "mcp": return `${assistant} möchte das Werkzeug „${action}“ verwenden`;
+          case "agent": return `${assistant} möchte einen Hilfsagenten starten`;
           default: return `${assistant} möchte „${tool}“ ausführen (${action})`;
         }
       },
-      kind: { read: "Liest Informationen", write: "Ändert Informationen", spend: "Gibt Geld aus", test: "Ein harmloser Test", unknown: "Eine Art von Aktion, die Tend nicht kennt" },
+      kind: { read: "Liest Informationen", write: "Ändert Informationen", spend: "Gibt Geld aus", test: "Ein harmloser Test", run: "Führt etwas auf Ihrem Computer aus", web: "Greift auf das Internet zu", unknown: "Eine Art von Aktion, die Tend nicht kennt" },
       asked: (ago) => `Angefragt ${ago}`,
       lapsesIn: (min) => `Verfällt in ${min} Min.`,
       allow: "Einmal erlauben",
@@ -1170,6 +1176,9 @@ export const de: Dict = {
       details: "Details",
       rows: { assistant: "Agent", action: "Aktion", item: "Gegenstand", detail: "Einzelheit", id: "Anfrage", asked: "Angefragt", lapses: "Verfällt" },
       technical: "In der technischen Ansicht öffnen",
+      exact: "Die genaue Anfrage",
+      why: "Warum Sie gefragt werden",
+      whyAlways: "Ihre Regeln erlauben das, aber TEND fragt bei dieser Art von Aktion immer einen Menschen.",
     },
     more: (n) => `${n} weitere anzeigen`,
     fewer: "Weniger anzeigen",
@@ -1454,6 +1463,33 @@ export const de: Dict = {
       replaces: (n) => `Das ersetzt die ${n} aktuellen ${n === 1 ? "Regel" : "Regeln"} des Agenten.`,
       failed: "Die Regeln konnten nicht gespeichert werden.",
     },
+    coverage: {
+      title: "Was TEND abdeckt",
+      intro: (host) => `TEND entscheidet nur über die Werkzeugaufrufe, die ${host} durch die von TEND installierten Hooks leitet. Diese Liste ergibt sich aus den oben gespeicherten Regeln.`,
+      enforced: "Durchgesetzt",
+      enforcedSub: "Wird vor der Ausführung geprüft. TEND kann diese Aufrufe stoppen oder anhalten.",
+      enforcedNone: "Nichts. Jeder Aufruf läuft, das ist also Beobachtung, kein Schutz.",
+      unruled: (kinds) => `Andere ${kinds}: blockiert, weil keine Regel sie abdeckt.`,
+      kinds: { shell: "Befehle", "file.write": "Dateiänderungen", "file.read": "Lesezugriffe auf Dateien", web: "Webanfragen", mcp: "MCP-Werkzeugaufrufe", agent: "Hilfsagenten" },
+      monitored: "Beobachtet",
+      monitoredSub: "Läuft ohne Rückfrage. TEND zeichnet die Anfrage auf, und der Agent meldet, wie sie ausging.",
+      monitoredNone: "Nichts läuft, ohne dass eine Regel es erlaubt.",
+      rest: (kinds) => `Alle anderen ${kinds} laufen und werden aufgezeichnet`,
+      outside: "Außerhalb von TENDs Kontrolle",
+      outsideSub: "Das kann TEND weder sehen noch stoppen.",
+      outsideItems: [
+        "Alles, was nicht durch die Hooks läuft: andere Apps und Agenten, Befehle, die Sie selbst eingeben, und Arbeit, bevor TEND verbunden war.",
+        "Werden die Hooks entfernt oder abgeschaltet (etwa mit disableAllHooks oder einer geänderten Einstellungsdatei), sieht TEND nichts. Der Modus zum Umgehen der Berechtigungen wurde mit TEND nicht getestet.",
+        "Regeln über Befehlstext prüfen den Text, nicht die Wirkung. Ein Skript, ein Alias oder eine Variable kann dasselbe tun, ohne auf das Muster zu passen.",
+        "Ist ein Aufruf erlaubt, wird nicht Schritt für Schritt geprüft, was er startet (ein Skript, eine Installation, einen Build).",
+        "Wie ein beobachteter Aufruf ausging, meldet der Agent selbst. Stürzt er ab oder geht die Meldung verloren, hat TEND nur die Anfrage.",
+      ],
+      cursor: "Cursor: Kein echter Cursor-Lauf hat bestätigt, dass Dateiänderungen vor der Ausführung gestoppt werden können.",
+      central: "Für diesen Agenten gilt zusätzlich eine zentrale Richtlinie. Mit „zentrale Richtlinie“ markierte Zeilen stammen daraus; wo beide Richtlinien greifen, entscheidet die strengere Regel.",
+      fromCentral: "zentrale Richtlinie",
+      blocksAll: "Eine gespeicherte Richtlinie ist nicht lesbar, deshalb blockiert TEND jeden Aufruf dieses Agenten.",
+      footer: "Keine Einrichtung schließt jede Lücke. Sehen Sie TEND als Kontrollpunkt für die Aufrufe, die es sieht, nicht als vollständigen Schutz.",
+    },
     protection: {
       title: "Meinen Schutz testen",
       sub: (host) => `Nutzt Ihr echtes ${host}: drei harmlose echo-Befehle. Auf Ihrem Computer ändert sich nichts.`,
@@ -1706,7 +1742,27 @@ export const de: Dict = {
   },
 
   timelinePage: {
-    reasons: { policy_allowed: "Von der Richtlinie des Agenten erlaubt", approval_required: "Diese Aktion braucht eine Freigabe", no_policy: "Nicht auf der Erlaubnisliste des Agenten", policy_denied: "Durch eine Regel blockiert", agent_paused: "Der Agent ist pausiert", integration_disabled: "Der Zugang des Agenten ist abgeschaltet", invalid_policy: "Die Richtlinie war nicht lesbar", missing_permission: "Berechtigung nicht erteilt", unknown_agent: "Unbekannter Agent", expired: "Die Anfrage ist abgelaufen" } as Record<string, string>,
+    reasons: { policy_allowed: "Von der Richtlinie des Agenten erlaubt", approval_required: "Diese Aktion braucht eine Freigabe", no_policy: "Nicht auf der Erlaubnisliste des Agenten", policy_denied: "Durch eine Regel blockiert", agent_paused: "Der Agent ist pausiert", integration_disabled: "Der Zugang des Agenten ist abgeschaltet", invalid_policy: "Die Richtlinie war nicht lesbar", missing_permission: "Berechtigung nicht erteilt", unknown_agent: "Unbekannter Agent", expired: "Die Anfrage ist abgelaufen", no_authorization: "Lief, ohne TEND vorher zu fragen", key_revoked: "Der Schlüssel des Agenten wurde widerrufen" } as Record<string, string>,
+    rule: (r) => {
+      const noun: Record<string, string> = { shell: "Befehle", "file.write": "Dateiänderungen", "file.read": "Lesezugriffe auf Dateien", web: "Webanfragen", mcp: "MCP-Werkzeugaufrufe", agent: "Hilfsagenten" };
+      const field: Record<string, string> = { command: "Befehl", path: "Pfad", url: "Adresse", tool: "Werkzeugname" };
+      const what = noun[String(r?.tool)] ?? `Aufrufe von „${r?.tool}“`;
+      const conds = Object.entries(r?.when ?? {});
+      const [k, c] = conds[0] ?? [];
+      const [op, v] = Object.entries(c && typeof c === "object" ? c : {})[0] ?? [];
+      const test = ({ contains: `„${v}“ enthält`, startsWith: `mit „${v}“ beginnt`, endsWith: `auf „${v}“ endet`, equals: `genau „${v}“ ist` } as Record<string, string>)[String(op)] ?? `${op} „${v}“`;
+      const subject = k && op
+        ? (r.tool === "shell" && k === "command" && op === "contains" ? `Befehle mit „${v}“` : `${what}, deren ${field[k] ?? k} ${test}`)
+        : r?.action && r.action !== "*" ? `${what} über „${r.action}“` : `Alle ${what}`;
+      const scope = (r?.resourcePrefix ? ` für Einträge, die mit „${r.resourcePrefix}“ beginnen` : "") + (conds.length > 1 ? " (mit weiteren Bedingungen)" : "");
+      const does = ({ approve: "warten auf einen Menschen", deny: "werden blockiert", allow: "laufen und werden aufgezeichnet" } as Record<string, string>)[String(r?.effect)] ?? "";
+      return `${subject}${scope}${subject.includes(", deren") || scope ? "," : ""} ${does}`.trim();
+    },
+    by: { person: "Von einem Menschen entschieden", agent: "Vom Agenten nach der Ausführung gemeldet" },
+    live: "Live-Ansicht",
+    reconnecting: "Verbindung wird wiederhergestellt …",
+    liveNote: "Neue Aktivität erscheint hier, sobald sie passiert.",
+    updated: (time) => `Zuletzt aktualisiert ${time}`,
     eyebrow: "Verlauf",
     title: "Aktivität",
     description: "Was Ihre Agenten angefragt haben und was passiert ist. Nichts wird weggelassen.",

@@ -1,6 +1,6 @@
 // English interface text. The source of truth for the dictionary's shape: `de.ts` must match it key for key.
 // Stored data (agent names, task titles, reports, notes) and technical identifiers are never translated.
-import type { Choice, Risk } from "../lib/permissions";
+import type { Choice, Risk, RuleLike } from "../lib/permissions";
 import type { RequestKind } from "../lib/home";
 import type { CheckGroup, CheckId, CheckStatus, Fact } from "../lib/verification";
 type Facts = Record<string, Fact>;
@@ -1160,10 +1160,16 @@ export const en = {
           case "delete_test_file": return `${assistant} wants to delete the test file “${item}”`;
           case "pay_invoice": return `${assistant} wants to pay invoice ${item}`;
           case "test_ping": return `${assistant} wants to send a harmless test message`;
+          case "shell": return `${assistant} wants to run a command`;
+          case "file.write": return `${assistant} wants to change a file`;
+          case "file.read": return `${assistant} wants to read a file`;
+          case "web": return `${assistant} wants to open a web address`;
+          case "mcp": return `${assistant} wants to use the tool “${action}”`;
+          case "agent": return `${assistant} wants to start a helper agent`;
           default: return `${assistant} wants to run “${tool}” (${action})`;
         }
       },
-      kind: { read: "Looks at information", write: "Changes information", spend: "Spends money", test: "A harmless test", unknown: "A kind of action Tend doesn’t recognise" } satisfies Record<RequestKind, string>,
+      kind: { read: "Looks at information", write: "Changes information", spend: "Spends money", test: "A harmless test", run: "Runs something on your computer", web: "Reaches the internet", unknown: "A kind of action Tend doesn’t recognise" } satisfies Record<RequestKind, string>,
       asked: (ago: string) => `Asked ${ago}`,
       lapsesIn: (min: number) => `Lapses in ${min} min`,
       allow: "Allow once",
@@ -1181,6 +1187,9 @@ export const en = {
       details: "Details",
       rows: { assistant: "Agent", action: "Action", item: "Item", detail: "Detail", id: "Request", asked: "Asked", lapses: "Lapses" },
       technical: "Open in the technical view",
+      exact: "The exact request",
+      why: "Why you are asked",
+      whyAlways: "Your rules allow this, but TEND always asks a person for this kind of action.",
     },
     more: (n: number) => `Show ${n} more`,
     fewer: "Show fewer",
@@ -1465,6 +1474,33 @@ export const en = {
       replaces: (n: number) => `This replaces the agent's ${n} current ${n === 1 ? "rule" : "rules"}.`,
       failed: "The rules could not be saved.",
     },
+    coverage: {
+      title: "What TEND covers",
+      intro: (host: string) => `TEND decides only on the tool calls that ${host} passes through the hooks TEND installed. This list is read from the rules saved above.`,
+      enforced: "Enforced",
+      enforcedSub: "Checked before they run. TEND can stop or hold these.",
+      enforcedNone: "Nothing. Every call runs, so this is monitoring, not protection.",
+      unruled: (kinds: string) => `Other ${kinds}: blocked, because no rule covers them.`,
+      kinds: { shell: "commands", "file.write": "file changes", "file.read": "file reads", web: "web requests", mcp: "MCP tool calls", agent: "helper agents" } as Record<string, string>,
+      monitored: "Monitored",
+      monitoredSub: "Run without asking. TEND records the request, and the agent reports how it ended.",
+      monitoredNone: "Nothing runs without a rule saying so.",
+      rest: (kinds: string) => `Other ${kinds} run and are recorded`,
+      outside: "Outside TEND’s control",
+      outsideSub: "TEND cannot see or stop these.",
+      outsideItems: [
+        "Anything that does not go through the hooks: other apps and agents, commands you type yourself, and work done before TEND was connected.",
+        "If the hooks are removed or switched off (for example disableAllHooks, or an edited settings file), TEND sees nothing. Bypass-permissions mode has not been tested with TEND.",
+        "Rules about command text match the text, not what it does. A script, an alias or a variable can do the same thing without matching the pattern.",
+        "Once a call is allowed, what it starts (a script, an install, a build) is not checked step by step.",
+        "How a monitored call ended is the agent’s own report. If the agent crashes or the report is lost, TEND only has the request.",
+      ],
+      cursor: "Cursor: no real Cursor run has confirmed that file edits can be stopped before they happen.",
+      central: "This agent also has a central policy. Lines marked “central policy” come from it; where both policies apply, the stricter rule decides.",
+      fromCentral: "central policy",
+      blocksAll: "A saved policy can’t be read, so TEND blocks every call from this agent.",
+      footer: "No setup closes every gap. Treat TEND as a checkpoint for the calls it sees, not as complete protection.",
+    },
     protection: {
       title: "Test my protection",
       sub: (host: string) => `Uses your real ${host}: three harmless echo commands. Nothing on your computer changes.`,
@@ -1719,7 +1755,30 @@ export const en = {
   },
 
   timelinePage: {
-    reasons: { policy_allowed: "Allowed by the agent’s policy", approval_required: "This action needs approval", no_policy: "Not on the agent’s allow-list", policy_denied: "Blocked by a rule", agent_paused: "The agent is paused", integration_disabled: "The agent’s access is switched off", invalid_policy: "The policy could not be read", missing_permission: "Permission not granted", unknown_agent: "Unknown agent", expired: "The request expired" } as Record<string, string>,
+    reasons: { policy_allowed: "Allowed by the agent’s policy", approval_required: "This action needs approval", no_policy: "Not on the agent’s allow-list", policy_denied: "Blocked by a rule", agent_paused: "The agent is paused", integration_disabled: "The agent’s access is switched off", invalid_policy: "The policy could not be read", missing_permission: "Permission not granted", unknown_agent: "Unknown agent", expired: "The request expired", no_authorization: "It ran without asking TEND first", key_revoked: "The agent’s key was revoked" } as Record<string, string>,
+    /** One saved policy rule in words: what it covers and what it does ("Commands containing “git push” wait for a person"). */
+    rule: (r: RuleLike) => {
+      const noun: Record<string, string> = { shell: "commands", "file.write": "file changes", "file.read": "file reads", web: "web requests", mcp: "MCP tool calls", agent: "helper agents" };
+      const field: Record<string, string> = { command: "command", path: "path", url: "address", tool: "tool name" };
+      const what = noun[String(r?.tool)] ?? `calls to “${r?.tool}”`;
+      const big = what[0].toUpperCase() + what.slice(1);
+      const conds = Object.entries(r?.when ?? {});
+      const [k, c] = conds[0] ?? [];
+      const [op, v] = Object.entries(c && typeof c === "object" ? c : {})[0] ?? [];
+      const ing = ({ contains: "containing", startsWith: "starting with", endsWith: "ending with", equals: "exactly" } as Record<string, string>)[String(op)] ?? String(op);
+      const verb = ({ contains: "contains", startsWith: "starts with", endsWith: "ends with", equals: "is" } as Record<string, string>)[String(op)] ?? String(op);
+      const subject = k && op
+        ? (r.tool === "shell" && k === "command" ? `Commands ${ing} “${v}”` : `${big} whose ${field[k] ?? k} ${verb} “${v}”`)
+        : r?.action && r.action !== "*" ? `${big} through “${r.action}”` : `All ${what}`;
+      const scope = (r?.resourcePrefix ? ` on items starting with “${r.resourcePrefix}”` : "") + (conds.length > 1 ? " (with more conditions)" : "");
+      const does = ({ approve: "wait for a person", deny: "are blocked", allow: "run and are recorded" } as Record<string, string>)[String(r?.effect)] ?? "";
+      return `${subject}${scope} ${does}`.trim();
+    },
+    by: { person: "Decided by a person", agent: "Reported by the agent after it ran" },
+    live: "Live",
+    reconnecting: "Reconnecting…",
+    liveNote: "New activity appears here as it happens.",
+    updated: (time: string) => `Last update ${time}`,
     eyebrow: "Timeline",
     title: "Activity",
     description: "What your agents asked for, and what happened. Nothing is summarized away.",

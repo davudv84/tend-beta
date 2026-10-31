@@ -1,6 +1,7 @@
 // The event log is the source of truth. This reducer turns events into the state the UI reads.
 // The server uses it to build snapshots and the browser uses it to apply new events, so they agree.
 import { needsReview } from "./contract.ts";
+import type { RuleLike } from "./permissions";
 import type { Adjustment, Agent, Ask, Authorization, AuthorizationStatus, CheckIn, LogEntry, LogType, QuestionId, QuestionResponse, ReviewRequest, ReviewStatus, Task, TaskEvent, ToolOutcome } from "./types";
 
 export const AGENT_EVENT_TYPES = ["task.started", "task.completed", "task.failed", "tool.called", "agent.idle", "agent.disconnected", "review.requested", "config.acknowledged"] as const;
@@ -45,6 +46,12 @@ const LIMIT = { checkIns: 1500, log: 600, taskEvents: 500, requests: 300, author
 
 const source = (a: Actor): CheckIn["source"] => (a === "simulation" ? "simulated" : a === "agent" ? "agent" : "manual");
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+/** A recorded policy rule, kept only if it has the shape of one. */
+const ruleOf = (v: unknown): RuleLike | undefined => {
+  const r = v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  if (!r || typeof r.tool !== "string" || typeof r.action !== "string" || !["allow", "approve", "deny"].includes(r.effect as string)) return undefined;
+  return { tool: r.tool, action: r.action, effect: r.effect as RuleLike["effect"], ...(typeof r.resourcePrefix === "string" && { resourcePrefix: r.resourcePrefix }), ...(typeof r.when === "object" && r.when !== null && { when: r.when as Record<string, unknown> }) };
+};
 
 /** Applies events (in seq order) and returns a new projection. Arrays are copied once per call. */
 export function applyEvents(p: Projection, events: WireEvent[]): Projection {
@@ -79,7 +86,7 @@ export function applyEvents(p: Projection, events: WireEvent[]): Projection {
       if (i >= 0) return (list[i] = { ...list[i], ...patch(list[i]) });
     }
   };
-  const authArgs = (d: Record<string, unknown>) => ({ tool: str(d.tool), action: str(d.action), resource: str(d.resource), reason: str(d.reason) });
+  const authArgs = (d: Record<string, unknown>) => ({ tool: str(d.tool), action: str(d.action), resource: str(d.resource), reason: str(d.reason), rule: ruleOf(d.rule) });
 
   for (const e of events) {
     if (known.has(e.id)) continue;
@@ -111,18 +118,18 @@ export function applyEvents(p: Projection, events: WireEvent[]): Projection {
         const status: AuthorizationStatus = e.type === "authorization.denied" ? "denied" : d.status === "approved" ? "approved" : "pending";
         freshAuths.push({
           id, agentId: e.agentId, tool: str(d.tool) ?? "", action: str(d.action) ?? "", status, createdAt: e.at, alerts: 0,
-          ...(str(d.resource) && { resource: str(d.resource) }), ...(str(d.detail) && { detail: str(d.detail) }), ...(str(d.reason) && { reason: str(d.reason) }),
+          ...(str(d.resource) && { resource: str(d.resource) }), ...(str(d.detail) && { detail: str(d.detail) }), ...(str(d.reason) && { reason: str(d.reason) }), ...(ruleOf(d.rule) && { rule: ruleOf(d.rule) }),
           ...(Number(d.expiresAt) && status !== "denied" && { expiresAt: Number(d.expiresAt) }), ...(status !== "pending" && { decidedAt: e.at }),
         });
         const a = authArgs(d);
-        log(e, status === "denied" ? "authorization_denied" : "authorization_requested", `${name(e.agentId)} asked to run ${a.tool} · ${a.action}: ${status}`, { args: a, ...(str(d.detail) && { note: str(d.detail) }) });
+        log(e, status === "denied" ? "authorization_denied" : "authorization_requested", `${name(e.agentId)} asked to run ${a.tool} · ${a.action}: ${status}`, { args: a, ...(str(d.detail) && { note: str(d.detail), detail: str(d.detail) }) });
         break;
       }
       case "authorization.consumed": case "authorization.expired": case "authorization.cancelled": {
         const status = e.type.slice("authorization.".length) as AuthorizationStatus;
         const az = patchAuth(str(d.authorizationId) ?? "", () => ({ status, closedAt: e.at }));
         const a = { ...authArgs(d), ...(az && { tool: az.tool, action: az.action, resource: az.resource }) };
-        log(e, `authorization_${status}` as LogType, `Authorization for ${a.tool} · ${a.action} ${status}`, { args: a, ...(az?.detail && { note: az.detail }) });
+        log(e, `authorization_${status}` as LogType, `Authorization for ${a.tool} · ${a.action} ${status}`, { args: a, ...(az?.detail && { note: az.detail, detail: az.detail }) });
         break;
       }
       case "review.decided": {
@@ -133,7 +140,7 @@ export function applyEvents(p: Projection, events: WireEvent[]): Projection {
         }));
         if (az) {
           log(e, `authorization_${status}`, `${status === "approved" ? "Approved" : "Rejected"} ${name(e.agentId)}’s request to run ${az.tool} · ${az.action}`,
-            { args: { tool: az.tool, action: az.action, resource: az.resource }, ...(str(d.note) && { note: str(d.note) }) });
+            { args: { tool: az.tool, action: az.action, resource: az.resource }, ...(str(d.note) && { note: str(d.note) }), ...(az.detail && { detail: az.detail }) });
           break;
         }
         const hit = findReview(str(d.reviewId) ?? "");

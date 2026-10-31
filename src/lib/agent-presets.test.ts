@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { evaluate, parsePolicy } from "../server/policy.ts";
-import { PRESETS, presetOf, presetRules } from "./agent-presets.ts";
+import { coverageOf, isTestRule, PRESETS, presetOf, presetRules } from "./agent-presets.ts";
 
 const agent = { status: "active" as const, integrationEnabled: true, permissions: [] };
 const decide = (id: (typeof PRESETS)[number], tool: string, args: Record<string, string>) => evaluate(agent, presetRules(id), { tool, action: "Bash", resource: null, detail: null, args }).effect;
@@ -43,4 +43,33 @@ test("the test commands only ever make a command stricter, in every preset", () 
     assert.equal(decide(id, "shell", { command: "echo tend-approval-test && rm -rf ~" }), "approve", `${id}: a prefix gains nothing`);
     if (id !== "monitor") assert.equal(decide(id, "shell", { command: "echo tend-activity-test && sudo x" }), "approve", `${id}: there is no allow rule a prefix could use`);
   }
+});
+
+test("coverage: Balanced holds risky commands and web/MCP calls, records the rest, and leaves the test rules out", () => {
+  const c = coverageOf(presetRules("balanced"));
+  assert.ok(c.enforced.every((r) => r.effect !== "allow") && c.monitored.every((r) => r.effect === "allow"));
+  assert.ok(c.enforced.some((r) => r.tool === "web" && r.effect === "approve" && !r.when));
+  assert.ok(c.enforced.some((r) => r.tool === "shell" && r.effect === "deny" && (r.when as { command?: { contains?: string } }).command?.contains === ".ssh/"));
+  assert.equal(c.enforced[0].effect, "deny", "blocks are listed first");
+  assert.ok(!c.enforced.some(isTestRule) && !c.monitored.some(isTestRule));
+  assert.deepEqual(c.unruled, []);
+});
+
+test("coverage: Monitor only enforces nothing, and a kind without a catch-all rule falls to the default block", () => {
+  assert.deepEqual(coverageOf(presetRules("monitor")).enforced, []);
+  const c = coverageOf([{ tool: "shell", action: "*", effect: "allow" }]);
+  assert.deepEqual(c.unruled, ["file.write", "file.read", "web", "mcp", "agent"]);
+});
+
+test("coverage: a central policy's rules count too, marked as central, and a kind either policy catches is not left to the default", () => {
+  const c = coverageOf([{ tool: "shell", action: "*", effect: "allow" }], [{ tool: "web", action: "*", effect: "deny" }, { tool: "shell", action: "*", effect: "approve", when: { command: { contains: "deploy" } } }]);
+  assert.deepEqual(c.enforced.map((r) => [r.tool, r.effect, r.from]), [["web", "deny", "central"], ["shell", "approve", "central"]]);
+  assert.deepEqual(c.monitored.map((r) => [r.tool, r.from]), [["shell", "agent"]]);
+  assert.deepEqual(c.unruled, ["file.write", "file.read", "mcp", "agent"]);
+});
+
+test("coverage: a rule overridden by a stricter one with the same scope (from either policy) is not listed", () => {
+  const c = coverageOf([{ tool: "mcp", action: "*", effect: "approve" }, { tool: "web", action: "*", effect: "allow" }], [{ tool: "mcp", action: "*", effect: "deny" }, { tool: "web", action: "*", effect: "approve" }]);
+  assert.deepEqual(c.enforced.map((r) => [r.tool, r.effect, r.from]), [["mcp", "deny", "central"], ["web", "approve", "central"]]);
+  assert.deepEqual(c.monitored, []);
 });

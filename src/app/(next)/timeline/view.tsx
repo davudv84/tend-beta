@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { useT } from "@/i18n/client";
 import { GROUPS, inGroup, visibleAgent, type Group } from "@/lib/activity";
 import { timeline, type EventKind } from "@/lib/derive";
-import { dayLabel, useNow } from "@/lib/format";
+import { clock, dayLabel, useNow } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { DecisionTable } from "@/ui/decision-table";
@@ -26,6 +26,8 @@ export default function View() {
   const checkIns = useStore((s) => s.checkIns);
   const log = useStore((s) => s.log);
   const taskEvents = useStore((s) => s.taskEvents);
+  const status = useStore((s) => s.status);
+  const syncedAt = useStore((s) => s.syncedAt);
   const now = useNow();
   const [group, setGroup] = useState<Group>("all");
   const [agent, setAgent] = useState("all");
@@ -65,6 +67,13 @@ export default function View() {
     <>
       <h1 className="text-[40px] leading-[1.1] font-semibold tracking-[-0.03em]">{g.title}</h1>
       <p className="mt-3 max-w-[70ch] text-[15px] text-pretty text-muted-foreground">{g.description}</p>
+      {/* The store follows the server's event stream; this says whether it is following right now, and when it last heard. */}
+      <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-small text-muted-foreground">
+        <Dot tone={status === "live" ? "sage" : "amber"} pulse={status === "live"} />
+        <span className="font-medium text-foreground">{status === "live" ? g.live : g.reconnecting}</span>
+        <span>· {g.liveNote}</span>
+        {syncedAt > 0 && <span className="text-faint">· {g.updated(clock(syncedAt))}</span>}
+      </p>
 
       <Card className="mt-8">
         <div className="flex flex-col gap-4 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">

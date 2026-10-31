@@ -480,3 +480,41 @@ test("in enforce mode, running a policy-governed tool without an authorization i
   assert.deepEqual(await report(c, { ...PAY, outcome: "denied" }), []);
   await c.db.close();
 });
+
+test("the rule that decided a request is recorded with it, reaches the operator's screen, and never a visitor's", async () => {
+  const { presetRules } = await import("../lib/agent-presets.ts");
+  const { forViewer } = await import("./redact.ts");
+  const { db, agent } = await setup(presetRules("balanced"));
+  const ask = (command: string) => requestAuthorization(db, agent, { tool: "shell", action: "Bash", detail: `Run: ${command}`, args: { command } }, null);
+  assert.equal((await ask("git push origin main")).view.status, "pending");
+  assert.equal((await ask("cat ~/.ssh/id_rsa")).view.status, "denied");
+  assert.equal((await ask("ls")).view.status, "approved");
+  const [push, ls] = await evs(db, "authorization.requested");
+  assert.deepEqual(push.rule, { tool: "shell", action: "*", effect: "approve", when: { command: { contains: "git push" } } });
+  assert.deepEqual(ls.rule, { tool: "shell", action: "*", effect: "allow" });
+  assert.deepEqual((await evs(db, "authorization.denied"))[0].rule, { tool: "shell", action: "*", effect: "deny", when: { command: { contains: ".ssh/" } } });
+
+  const events = await eventsAfter(db, 0, 1000);
+  const p = applyEvents(emptyProjection(), events);
+  assert.equal(p.authorizations.find((a) => a.status === "pending")?.rule?.effect, "approve", "the operator's screen gets the rule");
+  const VISITOR = { role: "visitor" as const, canAct: false, public: true, operatorAvailable: true, demo: false };
+  for (const e of events.filter((x) => x.type.startsWith("authorization."))) assert.equal(forViewer(e, VISITOR)?.data.rule, undefined, "a visitor never sees policy rules");
+
+  // A paused agent is denied by its state, not by a rule: nothing is attributed to a rule that did not decide.
+  await control(db, agent.id, "pause");
+  await ask("ls -la");
+  assert.equal((await evs(db, "authorization.denied")).at(-1).rule, undefined);
+});
+
+test("with a central policy, the recorded rule is the one that decided: the central rule where it wins, the agent's own where it is stricter", async () => {
+  const { createCentralPolicy, assignCentralPolicy } = await import("./repo.ts");
+  const { db, agent } = await setup([{ tool: "shell", action: "*", effect: "allow" }, { tool: "shell", action: "*", effect: "deny", when: { command: { contains: "rm " } } }]);
+  const central = await createCentralPolicy(db, { name: "Baseline", rules: [{ tool: "shell", action: "*", effect: "approve" }] });
+  await assignCentralPolicy(db, central.id, { assign: [agent.id] });
+  const ask = (command: string) => requestAuthorization(db, agent, { tool: "shell", action: "Bash", detail: `Run: ${command}`, args: { command } }, null);
+  assert.equal((await ask("ls")).view.status, "pending");
+  assert.equal((await ask("rm x")).view.status, "denied");
+  const [requested] = await evs(db, "authorization.requested"), [denied] = await evs(db, "authorization.denied");
+  assert.deepEqual([requested.rule, requested.policySource], [{ tool: "shell", action: "*", effect: "approve" }, "central"]);
+  assert.deepEqual([denied.rule, denied.policySource], [{ tool: "shell", action: "*", effect: "deny", when: { command: { contains: "rm " } } }, undefined]);
+});

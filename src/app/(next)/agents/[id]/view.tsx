@@ -112,7 +112,7 @@ export default function View() {
           <SectionHeader id="a-assistant-title" title={t.assistant.protection.title} />
           <div className="mt-4 grid gap-8">
             <ProtectionTest key={agent.id} agent={agent} hostName={HOST_NAME[hook]} />
-            <PresetPicker key={`p-${agent.id}`} agentId={agent.id} />
+            <PresetPicker key={`p-${agent.id}`} agentId={agent.id} coverage={hook} />
           </div>
         </section>
       )}

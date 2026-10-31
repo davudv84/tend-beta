@@ -10,11 +10,14 @@ import type { CheckResult, VerificationRun } from "./verification.ts";
 
 // ---- what kind of request it is ----------------------------------------------------------------------------------
 
-export type RequestKind = "read" | "write" | "spend" | "test" | "unknown";
+export type RequestKind = "read" | "write" | "spend" | "test" | "run" | "web" | "unknown";
 
 /** The tools Tend's gateway knows, and what each does. A test keeps this equal to the gateway's own catalog. */
 const KINDS: Record<string, RequestKind> = { list_notes: "read", read_note: "read", write_note: "write", read_test_file: "read", write_test_file: "write", delete_test_file: "write", pay_invoice: "spend", test_ping: "test" };
-export const requestKind = (tool: string): RequestKind => KINDS[tool] ?? "unknown";
+/** The kinds a coding assistant's hook files its tool calls under (examples/hooks/tend-hooks.mjs); the assistant's own tool name is the action. */
+const HOOK_KINDS: Record<string, RequestKind> = { shell: "run", "file.write": "write", "file.read": "read", web: "web", mcp: "run", agent: "run" };
+export const fromHook = (tool: string) => Object.hasOwn(HOOK_KINDS, tool);
+export const requestKind = (tool: string): RequestKind => KINDS[tool] ?? HOOK_KINDS[tool] ?? "unknown";
 
 /**
  * Spending needs a second explicit confirmation. An action Tend does not recognise does not: it is shown with its exact content and a

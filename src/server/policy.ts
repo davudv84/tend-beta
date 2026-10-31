@@ -216,15 +216,30 @@ export function evaluate(agent: Pick<Agent, "status" | "integrationEnabled" | "p
   if (agent.status === "paused") return { effect: "deny", reason: "agent_paused" };
   const parsed = parsePolicy(rawPolicy);
   if (!parsed.ok) return { effect: "deny", reason: "invalid_policy" };
-  const hits = parsed.rules.filter((r) =>
-    r.tool === req.tool && (r.action === "*" || r.action === req.action) && (r.resourcePrefix === undefined || (req.resource !== null && req.resource.startsWith(r.resourcePrefix)))
-    && conditionsHold(r.when, req.args ?? null));
-  if (!hits.length) return { effect: "deny", reason: "no_policy" };
-  const rule = hits.reduce((a, b) => (specificity(b) > specificity(a) || (specificity(b) === specificity(a) && strength[b.effect] > strength[a.effect]) ? b : a));
+  const rule = decidingRule(parsed.rules, req);
+  if (!rule) return { effect: "deny", reason: "no_policy" };
   if (rule.effect === "deny") return { effect: "deny", reason: "policy_denied" };
   if (rule.permission && !agent.permissions.includes(rule.permission)) return { effect: "deny", reason: "missing_permission" };
   const effect = rule.effect === "allow" && NEVER_AUTOMATIC.has(req.tool) ? "approve" : rule.effect;
   return { effect, reason: effect === "allow" ? "policy_allowed" : "approval_required" };
+}
+
+/** The rule that decides a request: among the matching rules the most specific, the stricter one at equal specificity. */
+export function decidingRule(rules: Rule[], req: AuthRequest): Rule | undefined {
+  const hits = rules.filter((r) =>
+    r.tool === req.tool && (r.action === "*" || r.action === req.action) && (r.resourcePrefix === undefined || (req.resource !== null && req.resource.startsWith(r.resourcePrefix)))
+    && conditionsHold(r.when, req.args ?? null));
+  return hits.length ? hits.reduce((a, b) => (specificity(b) > specificity(a) || (specificity(b) === specificity(a) && strength[b.effect] > strength[a.effect]) ? b : a)) : undefined;
+}
+
+/**
+ * The rule behind an effective decision, recorded with the request so a person sees which of their rules decided it. Only decisions a rule
+ * made have one (not a paused agent, a switched-off integration or "no rule covers it"); it is the same evaluation, read again.
+ */
+export function ruleBehind(d: EffectiveDecision, rawPolicy: unknown, central: unknown, req: AuthRequest): Rule | undefined {
+  if (!["policy_allowed", "approval_required", "policy_denied", "missing_permission"].includes(d.reason)) return undefined;
+  const parsed = parsePolicy(d.source === "central" ? central : rawPolicy);
+  return parsed.ok ? decidingRule(parsed.rules, req) : undefined;
 }
 
 export type EffectiveDecision = Decision & { source: "agent" | "central" };

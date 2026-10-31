@@ -62,3 +62,13 @@ test("German uses German quotation marks and spacing", () => {
   assert.equal(DICTS.de.pct(42), "42 %");
   assert.equal(DICTS.en.pct(42), "42%");
 });
+
+test("a recorded policy rule reads as one plain sentence in both languages", () => {
+  const push = { tool: "shell", action: "*", effect: "approve" as const, when: { command: { contains: "git push" } } };
+  const env = { tool: "file.write", action: "*", effect: "approve" as const, when: { path: { contains: ".env" } } };
+  assert.equal(DICTS.en.timelinePage.rule(push), "Commands containing “git push” wait for a person");
+  assert.equal(DICTS.en.timelinePage.rule(env), "File changes whose path contains “.env” wait for a person");
+  assert.equal(DICTS.en.timelinePage.rule({ tool: "web", action: "*", effect: "deny" }), "All web requests are blocked");
+  assert.equal(DICTS.de.timelinePage.rule(push), "Befehle mit „git push“ warten auf einen Menschen");
+  assert.equal(DICTS.de.timelinePage.rule(env), "Dateiänderungen, deren Pfad „.env“ enthält, warten auf einen Menschen");
+});

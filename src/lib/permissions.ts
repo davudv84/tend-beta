@@ -16,6 +16,8 @@ export interface PolicyView {
   valid: boolean;
   rules: RuleLike[];
   tools: { tool: string; action: string; risk: Risk; available: boolean; effect: Effect; custom: boolean }[];
+  /** The central policy assigned to the agent, if any. Its rules apply too; an unreadable one makes the server deny everything. */
+  central?: { id: string; version: number; valid: boolean; rules: RuleLike[] } | null;
 }
 
 export const choiceOf = (e: Effect): Choice => (e === "allow" ? "allow" : e === "approve" ? "ask" : "never");

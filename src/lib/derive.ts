@@ -78,6 +78,8 @@ export interface TimelineEvent {
   eventId?: string;
   /** For a tool call an agent's runtime reported: how it ended. */
   outcome?: string;
+  /** The exact request as the agent sent it ("Run: git push"), for authorizations and reported tool calls. */
+  detail?: string;
 }
 
 export function checkInEvent(c: CheckIn): TimelineEvent & { say: { k: Exclude<Say["k"], "task" | "log"> } } {
@@ -97,11 +99,13 @@ export function logEvent(l: LogEntry): TimelineEvent {
   // A withdrawal is the system closing a request, not a human decision.
   const decision = (l.type.startsWith("review_") && l.type !== "review_withdrawn") || l.type === "permission_granted" || l.type === "authorization_approved" || l.type === "authorization_rejected";
   const kind = ALERTS.has(l.type) ? "alert" : decision ? "decision" : l.type.startsWith("authorization_") ? "authorization" : "control";
-  return { id: l.id, at: l.at, agentId: l.agentId, actor: l.actor, kind, say: { k: "log", type: l.type, args: l.args }, note: l.note, checkInId: l.checkInId, eventId: l.eventId };
+  return { id: l.id, at: l.at, agentId: l.agentId, actor: l.actor, kind, say: { k: "log", type: l.type, args: l.args }, note: l.note, checkInId: l.checkInId, eventId: l.eventId,
+    ...(l.detail && { detail: l.detail }) };
 }
 
 export function taskEvent(t: TaskEvent): TimelineEvent {
-  return { id: t.id, at: t.at, agentId: t.agentId, actor: "agent", kind: "task", outcome: t.outcome, say: { k: "task", type: t.type, title: t.title }, note: t.type === "tool.called" ? [t.summary, t.detail, t.error].filter(Boolean).join(" · ") : t.error ?? t.summary };
+  return { id: t.id, at: t.at, agentId: t.agentId, actor: "agent", kind: "task", outcome: t.outcome, say: { k: "task", type: t.type, title: t.title }, note: t.type === "tool.called" ? [t.summary, t.detail, t.error].filter(Boolean).join(" · ") : t.error ?? t.summary,
+    ...(t.type === "tool.called" && t.detail && { detail: t.detail }) };
 }
 
 export function timeline(checkIns: CheckIn[], log: LogEntry[], tasks: TaskEvent[] = []) {
