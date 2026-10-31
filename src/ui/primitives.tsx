@@ -11,7 +11,7 @@ export function CardHeader({ title, sub, right, id }: { title: string; sub?: str
   return (
     <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
       <div className="min-w-0">
-        <h2 id={id} className="text-[17px] font-semibold tracking-[-0.01em]">{title}</h2>
+        <h2 id={id} className="text-[17px] font-medium">{title}</h2>
         {sub && <p className="mt-1 text-[14px] text-pretty text-muted-foreground">{sub}</p>}
       </div>
       {right && <div className="shrink-0 pt-0.5 text-[13px] text-muted-foreground">{right}</div>}
@@ -40,15 +40,15 @@ export function Badge({ tone, children, className }: { tone: Tone; children: Rea
 
 const BTN = "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-[14px] font-medium whitespace-nowrap transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50";
 export const buttonClass = (kind: "primary" | "secondary" | "danger" = "primary") =>
-  cn(BTN, kind === "primary" && "bg-primary text-primary-foreground hover:bg-[#125a42]", kind === "secondary" && "border border-border bg-background text-foreground hover:border-[#d4d4d4] hover:bg-[#fafafa]", kind === "danger" && "bg-[#b42318] text-white hover:bg-[#8f1c13]");
+  cn(BTN, kind === "primary" && "bg-primary text-primary-foreground hover:bg-primary/90", kind === "secondary" && "border border-border bg-background text-foreground hover:bg-black/[0.03] dark:hover:bg-white/[0.05]", kind === "danger" && "bg-[#b42318] text-white hover:bg-[#8f1c13]");
 
 export function LinkButton({ href, children, kind = "primary", className }: { href: string; children: React.ReactNode; kind?: "primary" | "secondary"; className?: string }) {
   return <Link href={href} className={cn(buttonClass(kind), className)}>{children}</Link>;
 }
 
 /** A quiet text link in the accent colour, as the design uses for "Review", "View all" and "Details". */
-export function TextLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return <Link href={href} className="rounded-sm text-[14px] font-medium text-primary underline-offset-[3px] hover:underline">{children} →</Link>;
+export function TextLink({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) {
+  return <Link href={href} className={cn(className, "rounded-sm text-[14px] font-medium text-primary underline-offset-[3px] hover:underline")}>{children} →</Link>;
 }
 
 /** One segment per check: green verified, red at risk, grey not verified. The words next to it say the same. */

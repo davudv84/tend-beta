@@ -112,7 +112,7 @@ export default function View() {
 
   return (
     <Page full>
-      <h1 className="text-[40px] leading-[1.1] font-semibold tracking-[-0.03em]">{g.title}</h1>
+      <h1 className="text-[32px] leading-[1.15] font-medium tracking-[-0.02em]">{g.title}</h1>
       <p className="mt-3 text-[15px] text-muted-foreground">{g.sub}</p>
       <div className="mt-8 grid items-start gap-8 md:grid-cols-[200px_minmax(0,1fr)]">
         <nav aria-label={g.title} className="flex gap-1 overflow-x-auto md:grid">

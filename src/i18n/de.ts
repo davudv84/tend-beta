@@ -563,13 +563,14 @@ export const de: Dict = {
   },
 
   front: {
-    title: "Bestimmen Sie, was Ihre KI-Agenten dürfen",
-    body: "Tend sitzt zwischen Ihren Agenten und Ihren Werkzeugen. Sie legen fest, was jeder Agent darf, geben heikle Aktionen selbst frei und sehen, was wirklich passiert ist.",
+    title: "Sehen und steuern, was Ihre KI-Agenten tun",
+    body: "TEND prüft jeden Werkzeugaufruf Ihrer Agenten, bevor er läuft. Routinearbeit läuft von selbst, riskante Aktionen warten auf Ihr Ja, und alles wird aufgezeichnet.",
     points: [
-      "Zu Beginn ist alles gesperrt. Sie erlauben nur, was jeder Agent braucht.",
-      "Alles, was Sie auf „Erst fragen“ stellen, wartet auf Ihre Antwort. Ausgaben immer.",
-      "Tend zeigt, was es verifiziert hat, und sagt offen, was es nicht kann.",
+      "Verbinden Sie Claude Code mit einem Befehl und sehen Sie alle Agenten an einem Ort.",
+      "Sie wählen, wie streng TEND ist. Nur was Ihre Regeln zurückhalten, fragt nach.",
+      "TEND deckt nur die Aufrufe ab, die durch TEND laufen, und sagt offen, was es nicht sehen kann.",
     ],
+    create: "Konto erstellen",
     signIn: "Anmelden",
     prototype: "Über den Forschungsprototyp",
   },
@@ -785,6 +786,7 @@ export const de: Dict = {
     },
   },
   connect: {
+    choose: "Wählen Sie den Agenten, den Sie nutzen. Für Claude Code ist es ein Befehl, dann ein kurzer Test.",
     defaultRole: "Verbundener Agent",
     title: "Agent verbinden",
     more: "Für Entwickler: die Beispiel-Agenten und die API direkt",
@@ -1074,11 +1076,11 @@ export const de: Dict = {
   },
 
   ui: {
-    nav: { label: "Hauptnavigation", home: "Übersicht", assistants: "Agenten", approvals: "Freigaben", activity: "Aktivität", policies: "Richtlinien", verification: "Prüfung", access: "Beta-Zugang", integrations: "Integrationen", settings: "Einstellungen", more: "Mehr", notifications: "Benachrichtigungen" },
-    groups: { monitor: "Überwachen", control: "Steuern", infrastructure: "Infrastruktur" },
+    nav: { label: "Hauptnavigation", home: "Übersicht", assistants: "Agenten", approvals: "Freigaben", activity: "Aktivität", policies: "Regeln", verification: "Prüfungen", access: "Beta-Zugang", integrations: "Agent verbinden", settings: "Einstellungen", more: "Mehr", notifications: "Benachrichtigungen" },
+    groups: { daily: "Haupt", setup: "Einrichtung" },
     menu: "Menü",
     closeMenu: "Menü schließen",
-    gateway: { label: "Gateway", connected: "Verbunden", degraded: "Eingeschränkt", disconnected: "Getrennt", unknown: "Unbekannt", unknownNote: "Noch nichts zu melden", agents: (n) => `${n} online`, syncedNow: "gerade synchron", syncedAgo: (s) => `vor ${s} s synchron` },
+    gateway: { label: "TEND-Server", connected: "Verbunden", degraded: "Eingeschränkt", disconnected: "Getrennt", unknown: "Unbekannt", unknownNote: "Noch nichts zu melden", agents: (n) => `${n} online`, syncedNow: "gerade synchron", syncedAgo: (s) => `vor ${s} s synchron` },
     operator: "Operator",
     visitor: "Besucher",
     signedIn: "Angemeldet",
@@ -1133,6 +1135,24 @@ export const de: Dict = {
       activitySub: (a, b, c) => `Letzte Ereignisse: ${a} erlaubt · ${b} blockiert · ${c} zur Freigabe gesendet`,
       filterLabel: "Filter", filters: { all: "Alle", held: "Wartend", blocked: "Blockiert" }, columns: ["Zeit", "Agent", "Aktion", "Entscheidung", "Grund"],
     },
+    dash: {
+      purpose: "TEND prüft, was Ihre KI-Agenten tun wollen, und hält riskante Aktionen an, bis Sie zustimmen",
+      needYou: (n: number) => (n === 1 ? "1 Anfrage wartet auf Ihre Antwort" : `${n} Anfragen warten auf Ihre Antwort`),
+      allQuiet: "Gerade wartet nichts auf Sie",
+      stats: { running: "Aktive Agenten", of: (n: number) => `von ${n}`, auto: "Ohne Rückfrage erlaubt", waiting: "Wartet auf Sie", blocked: "Blockiert", day: "letzte 24 Stunden", now: "gerade jetzt" },
+      needs: "Wartet auf Sie",
+      seeAll: (n: number) => `Alle ${n} unter Freigaben ansehen`,
+      agents: "Agenten",
+      add: "Weiteren Agenten verbinden",
+      word: { active: "Gerade aktiv", idle: "Ruhig", stopped: "Läuft nicht", lost: "Keine Meldung", never: "Noch nicht verbunden", paused: "Pausiert" },
+      doing: { waiting: "Wartet auf Sie", blocked: "Blockiert", rejected: "Nicht erlaubt", none: "Noch keine Aktivität", setup: "Wartet darauf, dass der Installationsbefehl läuft" },
+      covers: {
+        title: "Was TEND abdeckt",
+        yes: "Werkzeugaufrufe, die Ihre verbundenen Agenten über TEND senden, werden geprüft, bevor sie laufen.",
+        no: "Andere Apps, Befehle, die Sie selbst eingeben, und Agenten, deren TEND-Hooks entfernt wurden, sind nicht abgedeckt.",
+        link: "Abdeckung und Prüfungen",
+      },
+    },
     connect: "Agenten verbinden",
     sampleLink: "Beispiel-Agenten in den Labs ansehen",
     loading: "Wird geladen …",
@@ -1175,6 +1195,7 @@ export const de: Dict = {
       denied: "Nicht erlaubt. Es wird nicht ausgeführt.",
       details: "Details",
       rows: { assistant: "Agent", action: "Aktion", item: "Gegenstand", detail: "Einzelheit", id: "Anfrage", asked: "Angefragt", lapses: "Verfällt" },
+      change: "Ändern, was Ihre Zustimmung braucht",
       technical: "In der technischen Ansicht öffnen",
       exact: "Die genaue Anfrage",
       why: "Warum Sie gefragt werden",
@@ -1219,6 +1240,11 @@ export const de: Dict = {
   },
 
   agentPage: {
+    tabs: { activity: "Aktivität", rules: "Regeln", setup: "Einrichtung" },
+    gatewayTools: "Werkzeuge des TEND-Gateways",
+    gatewayToolsNote: "Nur für Agenten, die TENDs eigene Werkzeuge direkt aufrufen. Was hier nicht eingestellt ist, wird blockiert.",
+    noActivity: "Noch nichts. Anfragen dieses Agenten erscheinen hier, sobald er sie stellt.",
+    allActivity: "Alle Aktivitäten ansehen",
     notFound: "Agent nicht gefunden",
     notFoundBody: (id) => `In dieser Umgebung gibt es keinen Agenten mit der ID „${id}“.`,
     back: "Zurück zu den Agenten",
@@ -1257,8 +1283,8 @@ export const de: Dict = {
 
   assistants: {
     title: "Agenten",
-    sub: "Jeder mit Tend verbundene Agent, wie er verbunden ist und was seine Prüfungen zuletzt zeigten.",
-    register: "Agent registrieren",
+    sub: "Jeder mit TEND verbundene Agent und was er gerade tut.",
+    register: "Agent verbinden",
     search: "Agenten suchen",
     noMatchTitle: "Kein Agent passt",
     noMatchBody: "Versuchen Sie einen anderen Namen oder eine andere Rolle.",
@@ -1407,6 +1433,7 @@ export const de: Dict = {
 
   assistant: {
     connectTitle: "KI verbinden",
+    connectHost: (host: string) => `${host} verbinden`,
     connectSub: "Stellen Sie TEND vor den KI-Assistenten, den Sie schon nutzen. TEND prüft jeden Werkzeugaufruf, bevor er läuft.",
     options: {
       claudeCode: { body: "Jeder Werkzeugaufruf (Befehle, Dateiänderungen, Web, MCP) wird von TEND geprüft, bevor er läuft." },
@@ -1416,7 +1443,7 @@ export const de: Dict = {
     },
     tested: "Mit Claude Code getestet",
     docsOnly: "Noch nicht mit echtem Cursor getestet",
-    steps: { choose: "Assistent wählen", connect: "Assistent verbinden", verify: "Verbindung prüfen", active: "Schutz aktiv" },
+    steps: { choose: "Agenten wählen", connect: "Installieren", verify: "Verbindung prüfen", active: "Regeln wählen und testen" },
     stepOf: (i, n, name) => `Schritt ${i} von ${n} · ${name}`,
     name: "Bezeichnung in TEND",
     create: "Verbindung erstellen",
@@ -1435,6 +1462,8 @@ export const de: Dict = {
       project: (host) => `Nur für ein Projekt: Ergänzen Sie den Befehl um --project /pfad/zum/projekt. Zum Trennen: node ~/.tend/tend-hooks.mjs uninstall ${host}`,
     },
     verify: {
+      first: "Erste Anfrage, die TEND aufgezeichnet hat:",
+      noneYet: "Noch keine Anfrage. Bitten Sie Ihren Agenten um etwas, dann erscheint sie hier.",
       waiting: "Warten, bis sich das Installationsprogramm meldet …",
       done: (time) => `Verbunden. Das Installationsprogramm hat sich um ${time} von Ihrem Computer gemeldet.`,
       next: (host) => `Starten Sie ${host} oder starten Sie es neu, wenn es offen ist. Ab dann sieht TEND jeden Werkzeugaufruf.`,
@@ -1835,7 +1864,7 @@ export const de: Dict = {
     requestGone: "Diese Anfrage wartet nicht mehr. Ihr Ergebnis steht unten im Verlauf.",
     eyebrow: "Menschliche Aufsicht",
     title: "Freigaben",
-    description: "Anfragen, die einen Menschen brauchen, was entschieden wurde, und die Steuerung für jeden Agenten.",
+    description: "Was Ihre Agenten Sie gefragt haben und was Sie entschieden haben.",
     principles: [
       { title: "Menschen entscheiden", body: "Jede betriebliche Änderung erfordert eine ausdrückliche menschliche Genehmigung." },
       { title: "Keine Selbstveränderung", body: "Agenten können berichten und vorschlagen, aber weder ihre Anweisungen noch Werkzeuge oder Konfiguration bearbeiten." },
@@ -1845,7 +1874,7 @@ export const de: Dict = {
     tabs: { queue: "Prüfungen", authorizations: "Anfragen", controls: "Steuerung", log: "Entscheidungen", connected: "Verbindungen" },
     howTitle: "So funktionieren Freigaben",
     waitingTitle: "Wartet auf Entscheidung",
-    waitingSub: "Jede Anfrage wird einzeln beantwortet, mit dem genauen Inhalt. Nichts läuft, bevor Sie entscheiden.",
+    waitingSub: "Nichts auf dieser Liste läuft, bevor Sie antworten.",
     nothingWaiting: "Nichts wartet auf eine Entscheidung.",
     historyTitle: "Entscheidungsverlauf",
     noHistory: "Noch keine Entscheidungen.",

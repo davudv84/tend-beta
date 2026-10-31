@@ -159,18 +159,17 @@ function Flow() {
 
   return (
     <Page>
-      <BackLink href="/integrations" label={t.integrations.title} />
-      <header className="mt-8">
-        <h1 className="text-section text-balance">{c.title}</h1>
-        <p className="mt-4 max-w-[46ch] text-lead text-pretty text-muted-foreground">{c.description}</p>
-        <p className="mt-6 text-small text-muted-foreground" aria-live="polite">{c.stepOf(shownStep, c.steps.length, c.steps[shownStep - 1])}</p>
+      {shownStep > 1 && <BackLink href="/connect" label={c.title} />}
+      <header className={shownStep > 1 ? "mt-8" : undefined}>
+        <h1 className="text-[32px] leading-[1.15] font-medium tracking-[-0.02em] text-balance">{c.title}</h1>
+        <p className="mt-3 max-w-[52ch] text-[15px] text-pretty text-muted-foreground">{shownStep > 1 ? c.description : c.choose}</p>
+        {shownStep > 1 && <p className="mt-6 text-small text-muted-foreground" aria-live="polite">{c.stepOf(shownStep, c.steps.length, c.steps[shownStep - 1])}</p>}
       </header>
 
       {step === 1 && !entry && (
-        <div className="mt-12">
-          {/* Connect AI: the four ways most people start. Claude Code and Cursor connect through their own hooks on a page of their own. */}
-          <h2 className="text-h2 text-balance">{t.assistant.connectTitle}</h2>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <div className="mt-10">
+          {/* The four ways most people start. Claude Code and Cursor connect through their own hooks on a page of their own. */}
+          <div className="grid gap-3 sm:grid-cols-2">
             {(["claudeCode", "cursor"] as const).map((id) => (
               <Link key={id} href={`/connect/assistant?for=${id}`} className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 outline-none transition-colors hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-primary">
                 <IntegrationLogo entry={INTEGRATIONS.find((i) => i.id === id)!} className="size-9" />

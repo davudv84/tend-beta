@@ -44,7 +44,7 @@ export default function View() {
   if (!canAct) return <Page><h1 className="text-section">{g.title}</h1><p className="mt-4 text-lead text-muted-foreground">{t.tools.readOnly}</p></Page>;
   return (
     <Page full>
-      <h1 className="text-[40px] leading-[1.1] font-semibold tracking-[-0.03em]">{g.title}</h1>
+      <h1 className="text-[32px] leading-[1.15] font-medium tracking-[-0.02em]">{g.title}</h1>
       <p className="mt-3 text-[15px] text-muted-foreground">{g.sub}</p>
       {connected.length === 0 ? <Card className="mt-8"><p className="px-6 py-10 text-center text-[14px] text-muted-foreground">{g.none}</p></Card> : (
         <div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.9fr)]">

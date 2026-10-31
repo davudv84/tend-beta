@@ -10,7 +10,7 @@ import { useT } from "@/i18n/client";
 import { useNow } from "@/lib/format";
 import { homeQueue, orderAssistants, realAssistants } from "@/lib/home";
 import { useStore } from "@/lib/store";
-import { AgentRow } from "@/ui/agent-row";
+import { AgentRow, lastRequest } from "@/ui/agent-row";
 import { FirstRun } from "@/ui/first-run";
 import { Page, PageSkeleton } from "@/ui/page";
 import { Card, buttonClass } from "@/ui/primitives";
@@ -52,8 +52,8 @@ export default function View() {
     <Page full>
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-[40px] leading-[1.1] font-semibold tracking-[-0.03em]">{t.ui.nav.assistants}</h1>
-          <p className="mt-3 text-[15px] text-muted-foreground">{g.sub}</p>
+          <h1 className="text-[32px] leading-[1.15] font-medium tracking-[-0.02em]">{t.ui.nav.assistants}</h1>
+          <p className="mt-2 text-[15px] text-muted-foreground">{g.sub}</p>
         </div>
         {canAct && <Link href="/connect" className={buttonClass()}>{g.register}</Link>}
       </header>
@@ -66,7 +66,7 @@ export default function View() {
           </div>
         )}
         {list.length > 0 ? (
-          <ul className="divide-y divide-border">{list.map((a) => <AgentRow key={a.id} agent={a} run={runs.get(a.id)} now={now} />)}</ul>
+          <ul className="divide-y divide-border">{list.map((a) => <AgentRow key={a.id} agent={a} run={runs.get(a.id)} now={now} last={lastRequest(authorizations, a.id)} />)}</ul>
         ) : (
           <div className="px-6 py-14 text-center">
             <p className="text-[17px] font-semibold">{g.noMatchTitle}</p>

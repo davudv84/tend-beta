@@ -116,11 +116,12 @@ test("the whole application is one product: every screen sits in the one shell, 
   assert.match(src("src/app/account/layout.tsx"), /<AccountFrame>/, "the account pages share one frame");
   assert.equal(existsSync(path.join(root, "src/components/app-shell.tsx")), false, "the old navigation shell is gone");
   const shell = src("src/ui/shell.tsx");
-  for (const href of ["/home", "/agents", "/oversight", "/timeline", "/policies", "/verification", "/integrations", "/settings"]) assert.ok(shell.includes(`"${href}"`), `the navigation reaches ${href}`);
+  for (const href of ["/home", "/agents", "/oversight", "/timeline", "/policies", "/verification", "/connect", "/settings"]) assert.ok(shell.includes(`"${href}"`), `the navigation reaches ${href}`);
+  assert.match(src("src/app/(next)/connect/view.tsx"), /href="\/integrations"/, "the full list of integrations stays one click from Connect");
   assert.match(src("src/app/(next)/integrations/view.tsx"), /href=\{`\/connect\?provider=/, "connecting an agent stays one click from Integrations");
   const settings = src("src/app/(next)/settings/view.tsx");
   for (const href of ["/developers", "/labs"]) assert.ok(settings.includes(`"${href}"`), `${href} stays reachable, from Settings`);
-  assert.match(shell, /key: "monitor"[\s\S]*?item\("activity"[\s\S]*?key: "control"[\s\S]*?item\("approvals"[\s\S]*?item\("policies"[\s\S]*?key: "infrastructure"[\s\S]*?item\("verification"[\s\S]*?item\("integrations"/, "three groups, Monitor, Control and Infrastructure, with the agreed destinations in them");
+  assert.match(shell, /key: "daily"[\s\S]*?item\("home"[\s\S]*?item\("assistants"[\s\S]*?item\("approvals"[\s\S]*?item\("activity"[\s\S]*?item\("policies"[\s\S]*?key: "setup"[\s\S]*?item\("integrations"[\s\S]*?item\("verification"/, "two groups: the daily screens first, then setup (connecting an agent and the checks)");
 });
 
 test("Activity and Approvals only ever show real assistants unless the person asks for the samples", () => {
@@ -142,7 +143,7 @@ test("the sidebar's gateway module only reports what the connection shows, and n
 
 test("every destination in the sidebar has a screen, and each private screen handles signed-out and loading itself", () => {
   const nav = src("src/ui/shell.tsx");
-  for (const href of ["/home", "/agents", "/timeline", "/oversight", "/policies", "/verification", "/integrations", "/settings"]) {
+  for (const href of ["/home", "/agents", "/timeline", "/oversight", "/policies", "/verification", "/connect", "/settings"]) {
     assert.ok(nav.includes(`"${href}"`), `${href} is in the sidebar`);
     assert.ok(existsSync(path.join(root, "src/app/(next)", href, "view.tsx")), `${href} has a screen`);
   }

@@ -65,7 +65,7 @@ export default function View() {
 
   return (
     <>
-      <h1 className="text-[40px] leading-[1.1] font-semibold tracking-[-0.03em]">{g.title}</h1>
+      <h1 className="text-[32px] leading-[1.15] font-medium tracking-[-0.02em]">{g.title}</h1>
       <p className="mt-3 max-w-[70ch] text-[15px] text-pretty text-muted-foreground">{g.description}</p>
       {/* The store follows the server's event stream; this says whether it is following right now, and when it last heard. */}
       <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-small text-muted-foreground">

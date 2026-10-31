@@ -50,7 +50,7 @@ export function RequestCard({ request, now, onAnswered }: { request: HomeRequest
   const button = "h-11 rounded-full px-6 text-ui";
   const loud = kind === "spend" || kind === "unknown" || kind === "run";
   return (
-    <article aria-labelledby={headingId} aria-busy={busy} className="rounded-3xl border border-border bg-surface p-6 shadow-[0_1px_2px_rgb(0_0_0/0.03)] md:p-8">
+    <article aria-labelledby={headingId} aria-busy={busy} className="rounded-2xl border border-border bg-surface p-5 shadow-[0_1px_2px_rgb(0_0_0/0.03)] md:p-6">
       {/* What kind of action it is comes first, as a word, so the risky ones are known before anything else is read. */}
       <p className={loud ? "text-small font-medium text-foreground" : "text-small text-muted-foreground"}>{h.kind[kind]}</p>
       <h3 id={headingId} className="mt-2 text-heading text-balance">{sentence}</h3>
@@ -66,8 +66,7 @@ export function RequestCard({ request, now, onAnswered }: { request: HomeRequest
 
       {/* What it is, what it touches and which rule asked for a person, before the buttons rather than behind "Details". */}
       <dl className="mt-4 grid gap-x-5 gap-y-0.5 text-small sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-y-1.5">
-        <dt className="text-faint">{h.rows.action}</dt><dd className="mb-2 font-mono text-caption break-all sm:mb-0">{auth.tool} · {auth.action}</dd>
-        {auth.resource && <><dt className="text-faint">{h.rows.item}</dt><dd className="mb-2 font-mono text-caption break-all sm:mb-0">{auth.resource}</dd></>}
+        {auth.resource && !hook && <><dt className="text-faint">{h.rows.item}</dt><dd className="mb-2 font-mono text-caption break-all sm:mb-0">{auth.resource}</dd></>}
         {why && <><dt className="text-faint">{h.why}</dt><dd className="text-pretty">{why}</dd></>}
       </dl>
 
@@ -91,11 +90,12 @@ export function RequestCard({ request, now, onAnswered }: { request: HomeRequest
       <p role="status" className={busy ? "mt-3 text-small text-muted-foreground" : "sr-only"}>{busy ? h.saving : ""}</p>
       {error && <p role="alert" className="mt-3 text-small text-clay">{error}</p>}
 
-      <p className="mt-5 text-caption text-faint">{h.promise}</p>
+      <p className="mt-5 text-caption text-faint">{h.promise} <Link href={`/agents/${agent.id}?tab=rules`} className="text-muted-foreground underline underline-offset-2 hover:text-foreground">{h.change}</Link></p>
 
       <Disclosure summary={h.details} open={prefs.details} className="mt-2">
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-border pt-3 text-small">
           <dt className="text-faint">{h.rows.assistant}</dt><dd>{agent.name}</dd>
+          <dt className="text-faint">{h.rows.action}</dt><dd className="font-mono text-caption break-all">{auth.tool} · {auth.action}</dd>
           {auth.detail && !showsContent(kind) && !hook && <><dt className="text-faint">{h.rows.detail}</dt><dd className="break-words">{auth.detail}</dd></>}
           <dt className="text-faint">{h.rows.id}</dt><dd className="font-mono text-caption break-all">{auth.id}</dd>
           <dt className="text-faint">{h.rows.asked}</dt><dd>{clock(auth.createdAt)}</dd>

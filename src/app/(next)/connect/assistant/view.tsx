@@ -61,6 +61,8 @@ function Flow({ initial }: { initial: HookIntegration | null }) {
   const [preset, setPreset] = useState<string | null>(null);
   const agent = useStore((s) => s.agents.find((x) => x.id === agentId));
   const seen = !!agent?.lastSeenAt;
+  // The first thing TEND recorded from this agent, shown once it is connected, so the person sees a real request and not just a tick.
+  const first = useStore((s) => (agentId ? s.authorizations.filter((x) => x.agentId === agentId).sort((x, y) => x.createdAt - y.createdAt)[0] : undefined));
   const current: StepKey = !integration ? "choose" : !agentId ? "connect" : !seen ? "verify" : "active";
   const state = (k: StepKey) => (STEPS.indexOf(k) < STEPS.indexOf(current) ? "done" : k === current ? "current" : "later") as "done" | "current" | "later";
   const entry = integration ? INTEGRATIONS.find((i) => i.id === integration)! : null;
@@ -85,9 +87,9 @@ function Flow({ initial }: { initial: HookIntegration | null }) {
 
   return (
     <Page>
-      <BackLink href="/connect" label={a.connectTitle} />
-      <h1 className="mt-8 text-section text-balance">{integration ? `${a.connectTitle}: ${HOST_NAME[integration]}` : a.connectTitle}</h1>
-      <p className="mt-4 max-w-[54ch] text-lead text-pretty text-muted-foreground">{a.connectSub}</p>
+      <BackLink href="/connect" label={t.connect.title} />
+      <h1 className="mt-8 text-[32px] leading-[1.15] font-medium tracking-[-0.02em] text-balance">{integration ? a.connectHost(HOST_NAME[integration]) : t.connect.title}</h1>
+      <p className="mt-3 max-w-[54ch] text-[15px] text-pretty text-muted-foreground">{a.connectSub}</p>
       <div className="mt-10">
         <Section n={1} title={a.steps.choose} state={state("choose")}>
           {!integration ? (
@@ -122,6 +124,7 @@ function Flow({ initial }: { initial: HookIntegration | null }) {
               ? <><CheckIcon className="size-4 text-primary" aria-hidden />{a.verify.done(new Date(agent.lastSeenAt).toLocaleTimeString(t.intl.time))} {integration && a.verify.next(HOST_NAME[integration])}</>
               : <><span aria-hidden className="relative grid size-2.5 place-items-center"><span className="absolute inline-flex size-full rounded-full bg-primary/40 motion-safe:animate-ping" /><span className="relative size-2 rounded-full bg-primary" /></span>{a.verify.waiting}</>}
           </p>
+          {seen && <p className="mt-3 text-[14px] text-muted-foreground">{first ? <>{a.verify.first} <code className="font-mono text-[13px] text-foreground">{first.detail ?? `${first.tool} · ${first.action}`}</code></> : a.verify.noneYet}</p>}
           {!seen && integration && <div className="mt-4"><ConnectHelp integration={integration} /></div>}
         </Section>
         <Section n={4} title={a.steps.active} state={state("active")}>

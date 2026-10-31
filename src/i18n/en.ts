@@ -574,13 +574,14 @@ export const en = {
   },
 
   front: {
-    title: "Control what your AI agents can do",
-    body: "Tend sits between your agents and your tools. You decide what each agent may do, approve sensitive actions yourself, and see what really happened.",
+    title: "See and control what your AI agents do",
+    body: "TEND checks each tool call your agents make before it runs. Routine work goes through on its own, risky actions wait for your yes, and everything is on record.",
     points: [
-      "Everything starts blocked. You allow only what each agent needs.",
-      "Anything you set to “Ask me first” waits for your answer. Spending always does.",
-      "Tend shows what it has verified, and says plainly what it can’t.",
+      "Connect Claude Code with one command, and see every agent in one place.",
+      "You choose how strict TEND is. Only what your rules hold back asks for you.",
+      "TEND covers only the calls that pass through it, and says plainly what it can’t see.",
     ],
+    create: "Create an account",
     signIn: "Sign in",
     prototype: "About the research prototype",
   },
@@ -796,6 +797,7 @@ export const en = {
     },
   },
   connect: {
+    choose: "Pick the agent you use. For Claude Code it is one command, then a quick test.",
     defaultRole: "Connected agent",
     title: "Connect an agent",
     more: "For developers: the example agents and the raw API",
@@ -1085,11 +1087,11 @@ export const en = {
   },
 
   ui: {
-    nav: { label: "Main", home: "Overview", assistants: "Agents", approvals: "Approvals", activity: "Activity", policies: "Policies", verification: "Verification", access: "Beta access", integrations: "Integrations", settings: "Settings", more: "More", notifications: "Notifications" },
-    groups: { monitor: "Monitor", control: "Control", infrastructure: "Infrastructure" },
+    nav: { label: "Main", home: "Overview", assistants: "Agents", approvals: "Approvals", activity: "Activity", policies: "Rules", verification: "Checks", access: "Beta access", integrations: "Connect an agent", settings: "Settings", more: "More", notifications: "Notifications" },
+    groups: { daily: "Main", setup: "Setup" },
     menu: "Menu",
     closeMenu: "Close menu",
-    gateway: { label: "Gateway", connected: "Connected", degraded: "Degraded", disconnected: "Disconnected", unknown: "Unknown", unknownNote: "Nothing to report yet", agents: (n: number) => `${n} online`, syncedNow: "synced now", syncedAgo: (s: number) => `synced ${s}s ago` },
+    gateway: { label: "TEND server", connected: "Connected", degraded: "Degraded", disconnected: "Disconnected", unknown: "Unknown", unknownNote: "Nothing to report yet", agents: (n: number) => `${n} online`, syncedNow: "synced now", syncedAgo: (s: number) => `synced ${s}s ago` },
     operator: "Operator",
     visitor: "Visitor",
     signedIn: "Signed in",
@@ -1144,6 +1146,24 @@ export const en = {
       activitySub: (a: number, b: number, c: number) => `Recent events: ${a} allowed · ${b} blocked · ${c} sent for approval`,
       filterLabel: "Filter", filters: { all: "All", held: "Held", blocked: "Blocked" }, columns: ["Time", "Agent", "Action", "Decision", "Reason"],
     },
+    dash: {
+      purpose: "TEND checks what your AI agents try to do and holds risky actions until you say yes",
+      needYou: (n: number) => (n === 1 ? "1 request needs your answer" : `${n} requests need your answer`),
+      allQuiet: "Nothing needs you right now",
+      stats: { running: "Agents running", of: (n: number) => `of ${n}`, auto: "Allowed without asking you", waiting: "Waiting for you", blocked: "Blocked", day: "last 24 hours", now: "right now" },
+      needs: "Needs you",
+      seeAll: (n: number) => `See all ${n} in Approvals`,
+      agents: "Agents",
+      add: "Connect another agent",
+      word: { active: "Active now", idle: "Idle", stopped: "Not running", lost: "Not heard from", never: "Not connected yet", paused: "Paused" },
+      doing: { waiting: "Waiting for you", blocked: "Blocked", rejected: "Not allowed", none: "No activity yet", setup: "Waiting for the install command to run" },
+      covers: {
+        title: "What TEND covers",
+        yes: "Tool calls your connected agents send through TEND are checked before they run.",
+        no: "Other apps, commands you type yourself, and any agent whose TEND hooks were removed are not covered.",
+        link: "Coverage and checks",
+      },
+    },
     connect: "Connect an agent",
     sampleLink: "See the sample agents in Labs",
     loading: "Loading…",
@@ -1171,7 +1191,7 @@ export const en = {
       },
       kind: { read: "Looks at information", write: "Changes information", spend: "Spends money", test: "A harmless test", run: "Runs something on your computer", web: "Reaches the internet", unknown: "A kind of action Tend doesn’t recognise" } satisfies Record<RequestKind, string>,
       asked: (ago: string) => `Asked ${ago}`,
-      lapsesIn: (min: number) => `Lapses in ${min} min`,
+      lapsesIn: (min: number) => `Expires in ${min} min`,
       allow: "Allow once",
       deny: "Don’t allow",
       promise: "Nothing happens until you allow it. Allowing lets this exact request run once.",
@@ -1185,7 +1205,8 @@ export const en = {
       allowed: "Allowed once. The agent can now run it, one time.",
       denied: "Not allowed. It won’t run.",
       details: "Details",
-      rows: { assistant: "Agent", action: "Action", item: "Item", detail: "Detail", id: "Request", asked: "Asked", lapses: "Lapses" },
+      rows: { assistant: "Agent", action: "Action", item: "Item", detail: "Detail", id: "Request", asked: "Asked", lapses: "Expires" },
+      change: "Change what needs your OK",
       technical: "Open in the technical view",
       exact: "The exact request",
       why: "Why you are asked",
@@ -1230,6 +1251,11 @@ export const en = {
   },
 
   agentPage: {
+    tabs: { activity: "Activity", rules: "Rules", setup: "Setup" },
+    gatewayTools: "TEND gateway tools",
+    gatewayToolsNote: "Only used by agents that call TEND's own tools directly. Anything not set here is blocked.",
+    noActivity: "Nothing yet. Requests from this agent appear here as soon as it makes them.",
+    allActivity: "See all activity",
     notFound: "Agent not found",
     notFoundBody: (id: string) => `There is no agent with the id “${id}” in this environment.`,
     back: "Back to agents",
@@ -1268,8 +1294,8 @@ export const en = {
 
   assistants: {
     title: "Agents",
-    sub: "Every agent connected to Tend, how it is connected, and what its checks last showed.",
-    register: "Register an agent",
+    sub: "Every agent connected to TEND, and what each one is doing.",
+    register: "Connect an agent",
     search: "Search agents",
     noMatchTitle: "No agent matches",
     noMatchBody: "Try a different name or role.",
@@ -1418,6 +1444,7 @@ export const en = {
 
   assistant: {
     connectTitle: "Connect AI",
+    connectHost: (host: string) => `Connect ${host}`,
     connectSub: "Put TEND in front of the AI assistant you already use. It checks each tool call before it runs.",
     options: {
       claudeCode: { body: "Every tool call (commands, file edits, web, MCP) is checked by TEND before it runs." },
@@ -1427,7 +1454,7 @@ export const en = {
     },
     tested: "Tested with Claude Code",
     docsOnly: "Not tested with real Cursor yet",
-    steps: { choose: "Choose your assistant", connect: "Connect your assistant", verify: "Verify connection", active: "Protection active" },
+    steps: { choose: "Choose your agent", connect: "Install", verify: "Check the connection", active: "Choose rules and test them" },
     stepOf: (i: number, n: number, name: string) => `Step ${i} of ${n} · ${name}`,
     name: "Name in TEND",
     create: "Create the connection",
@@ -1446,6 +1473,8 @@ export const en = {
       project: (host: string) => `Only for one project: add --project /path/to/project to the command. To disconnect: node ~/.tend/tend-hooks.mjs uninstall ${host}`,
     },
     verify: {
+      first: "First request TEND recorded:",
+      noneYet: "No request from it yet. Ask your agent to do something, and it appears here.",
       waiting: "Waiting for the installer to check in…",
       done: (time: string) => `Connected. The installer checked in from your computer at ${time}.`,
       next: (host: string) => `Start ${host}, or restart it if it is open. From then on TEND sees each tool call.`,
@@ -1851,7 +1880,7 @@ export const en = {
     requestGone: "That request is no longer waiting. Its outcome is in the history below.",
     eyebrow: "Human oversight",
     title: "Approvals",
-    description: "Requests that need a person, what was decided, and the controls for each agent.",
+    description: "What your agents asked you, and what you decided.",
     principles: [
       { title: "Humans decide", body: "Every operational change requires an explicit human approval." },
       { title: "No self-modification", body: "Agents can report and propose. They can’t edit their instructions, tools or configuration." },
@@ -1861,7 +1890,7 @@ export const en = {
     tabs: { queue: "Reviews", authorizations: "Requests", controls: "Controls", log: "Decisions", connected: "Connections" },
     howTitle: "How approvals work",
     waitingTitle: "Waiting for a decision",
-    waitingSub: "Each request is answered on its own, with the exact content shown. Nothing runs until you decide.",
+    waitingSub: "Nothing on this list runs until you answer.",
     nothingWaiting: "Nothing is waiting for a decision.",
     historyTitle: "Decision history",
     noHistory: "No decisions yet.",

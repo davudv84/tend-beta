@@ -22,7 +22,7 @@ export default async function FrontPage() {
     <UiPrefsProvider initial={initial}>
       <PublicFrame>
         <Page className="pt-16 md:pt-28">
-          <h1 className="text-headline max-w-[14ch] text-balance">{w.title}</h1>
+          <h1 className="text-headline max-w-[16ch] text-balance">{w.title}</h1>
           <p className="mt-6 max-w-[48ch] text-lead text-pretty text-muted-foreground">{w.body}</p>
           <ul className="mt-10 grid gap-3 text-body text-muted-foreground">
             {w.points.map((p) => (
@@ -30,8 +30,8 @@ export default async function FrontPage() {
             ))}
           </ul>
           <div className="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3">
-            <Button asChild className="h-12 rounded-full px-7 text-ui"><Link href={config.accounts ? "/account/sign-in" : "/operator"}>{w.signIn}</Link></Button>
-            <Link href="/prototype" className="rounded-md text-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{w.prototype}</Link>
+            {config.accounts && <Button asChild className="h-12 rounded-full px-7 text-ui"><Link href="/account/sign-up">{w.create}</Link></Button>}
+            <Link href={config.accounts ? "/account/sign-in" : "/operator"} className={config.accounts ? "rounded-md text-ui font-medium text-foreground underline-offset-4 hover:underline" : "inline-flex h-12 items-center rounded-full bg-primary px-7 text-ui text-primary-foreground"}>{w.signIn}</Link>
           </div>
         </Page>
       </PublicFrame>

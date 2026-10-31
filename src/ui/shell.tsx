@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ActivityIcon, CircleCheckIcon, CpuIcon, FileTextIcon, LayoutGridIcon, LinkIcon, LogOutIcon, MenuIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, XIcon } from "lucide-react";
+import { ActivityIcon, CircleCheckIcon, CpuIcon, FileTextIcon, LayoutGridIcon, LogOutIcon, MenuIcon, PlusIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, XIcon } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { LanguageSwitch } from "@/components/language-switch";
 import { NotificationCenter, useNotificationPolling } from "@/components/notification-center";
@@ -23,12 +23,11 @@ const THEMES: ThemePref[] = ["system", "light", "dark"];
 type NavKey = "home" | "assistants" | "approvals" | "activity" | "policies" | "verification" | "integrations" | "settings" | "access";
 type Item = { key: NavKey; href: string; icon: typeof LayoutGridIcon; match: RegExp };
 const item = (key: NavKey, href: string, icon: Item["icon"], match: RegExp): Item => ({ key, href, icon, match });
-// Three groups, in the order of the job: watch what happens, decide what may happen, and the plumbing underneath.
-// Existing addresses are kept, so nothing that links to them breaks.
-const GROUPS: { key: "monitor" | "control" | "infrastructure"; items: Item[] }[] = [
-  { key: "monitor", items: [item("home", "/home", LayoutGridIcon, /^\/home(\/|$)/), item("assistants", "/agents", CpuIcon, /^\/agents(\/|$)/), item("activity", "/timeline", ActivityIcon, /^\/timeline(\/|$)/)] },
-  { key: "control", items: [item("approvals", "/oversight", CircleCheckIcon, /^\/oversight(\/|$)/), item("policies", "/policies", FileTextIcon, /^\/policies(\/|$)/)] },
-  { key: "infrastructure", items: [item("verification", "/verification", ShieldCheckIcon, /^\/verification(\/|$)/), item("integrations", "/integrations", LinkIcon, /^\/(integrations|connect|developers)(\/|$)/)] },
+// Two groups: the daily screens (what is running, what waits for you, what happened, the rules), then setup (adding an agent, checking
+// what TEND can confirm). Existing addresses are kept, so nothing that links to them breaks.
+const GROUPS: { key: "daily" | "setup"; items: Item[] }[] = [
+  { key: "daily", items: [item("home", "/home", LayoutGridIcon, /^\/home(\/|$)/), item("assistants", "/agents", CpuIcon, /^\/agents(\/|$)/), item("approvals", "/oversight", CircleCheckIcon, /^\/oversight(\/|$)/), item("activity", "/timeline", ActivityIcon, /^\/timeline(\/|$)/), item("policies", "/policies", FileTextIcon, /^\/policies(\/|$)/)] },
+  { key: "setup", items: [item("integrations", "/connect", PlusIcon, /^\/(integrations|connect|developers)(\/|$)/), item("verification", "/verification", ShieldCheckIcon, /^\/verification(\/|$)/)] },
 ];
 const SETTINGS = item("settings", "/settings", SlidersHorizontalIcon, /^\/settings(\/|$)/);
 const ACCESS = item("access", "/admin/users", UsersIcon, /^\/admin(\/|$)/);
@@ -119,7 +118,7 @@ function GatewayStatus({ mode }: { mode: Mode }) {
       <span className={cn("flex items-center gap-2.5", mode === "full" ? "" : "justify-center lg:justify-start")}>
         <span aria-hidden className={cn("size-2 shrink-0", MARKS[state])} />
         <span className={cn("flex min-w-0 items-baseline gap-2", label(mode))}>
-          <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">{g.label}</span>
+          <span className="text-[13px] text-muted-foreground">{g.label}</span>
           <span className="text-[13px] font-medium">{g[state]}</span>
         </span>
       </span>
@@ -167,11 +166,11 @@ function Sidebar({ mode, waiting, container }: { mode: Mode; waiting: number; co
     <div className="flex h-full flex-col justify-between">
       <div className="grid gap-6 pt-6">
         <Wordmark mode={mode} />
-        <nav aria-label={t.ui.nav.label} className="grid gap-5">
+        <nav aria-label={t.ui.nav.label} className="grid gap-3">
           {GROUPS.map((g, i) => (
             <div key={g.key} role="group" aria-labelledby={`nav-${mode}-${g.key}`}>
-              <p id={`nav-${mode}-${g.key}`} className={cn("mb-1.5 px-5 text-[11px] font-medium tracking-[0.1em] text-muted-foreground uppercase", mode === "full" ? "" : "hidden lg:block")}>{t.ui.groups[g.key]}</p>
-              {mode !== "full" && i > 0 && <div aria-hidden className="mx-3 mb-2 border-t border-border lg:hidden" />}
+              <p id={`nav-${mode}-${g.key}`} className="sr-only">{t.ui.groups[g.key]}</p>
+              {i > 0 && <div aria-hidden className="mx-5 mb-3 border-t border-border" />}
               <div className="grid">{g.items.map((it) => <NavLink key={it.key} item={it} waiting={waiting} mode={mode} />)}</div>
             </div>
           ))}
