@@ -118,7 +118,7 @@ export function applyEvents(p: Projection, events: WireEvent[]): Projection {
         const status: AuthorizationStatus = e.type === "authorization.denied" ? "denied" : d.status === "approved" ? "approved" : "pending";
         freshAuths.push({
           id, agentId: e.agentId, tool: str(d.tool) ?? "", action: str(d.action) ?? "", status, createdAt: e.at, alerts: 0,
-          ...(str(d.resource) && { resource: str(d.resource) }), ...(str(d.detail) && { detail: str(d.detail) }), ...(str(d.reason) && { reason: str(d.reason) }), ...(ruleOf(d.rule) && { rule: ruleOf(d.rule) }),
+          ...(str(d.resource) && { resource: str(d.resource) }), ...(str(d.detail) && { detail: str(d.detail) }), ...(str(d.exact) && { exact: str(d.exact) }), ...(str(d.reason) && { reason: str(d.reason) }), ...(ruleOf(d.rule) && { rule: ruleOf(d.rule) }),
           ...(Number(d.expiresAt) && status !== "denied" && { expiresAt: Number(d.expiresAt) }), ...(status !== "pending" && { decidedAt: e.at }),
         });
         const a = authArgs(d);

@@ -12,10 +12,14 @@ export const DETAIL_MAX = 200;
  * may render differently from what it is (U+202E can make "to X, EUR 5" display reversed). Built from code points so
  * the source holds no invisible characters itself.
  */
+// Also characters that render as nothing or as a blank and can carry hidden text: the combining grapheme joiner, the Hangul fillers, the
+// braille blank, the tag characters (invisible ASCII look-alikes) and the supplementary variation selectors. Kept in step with the hooks
+// adapter (examples/hooks/tend-hooks.mjs), which turns the same characters into spaces before it asks.
 const INVISIBLE = new RegExp(`[${[
-  [0x00, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x61c, 0x61c], [0x180e, 0x180e], [0x200b, 0x200f],
-  [0x2028, 0x202e], [0x2060, 0x206f], [0xfeff, 0xfeff], [0xfff9, 0xfffb],
-].map(([a, b]) => `${String.fromCharCode(a)}-${String.fromCharCode(b)}`).join("")}]`);
+  [0x00, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x34f, 0x34f], [0x61c, 0x61c], [0x115f, 0x1160], [0x180e, 0x180e], [0x200b, 0x200f],
+  [0x2028, 0x202e], [0x2060, 0x206f], [0x2800, 0x2800], [0x3164, 0x3164], [0xfeff, 0xfeff], [0xffa0, 0xffa0], [0xfff9, 0xfffb],
+  [0xe0000, 0xe007f], [0xe0100, 0xe01ef],
+].map(([a, b]) => `${String.fromCodePoint(a)}-${String.fromCodePoint(b)}`).join("")}]`, "u");
 const MAX_RULES = 50;
 
 export type Effect = "allow" | "approve" | "deny";
@@ -83,19 +87,38 @@ function insidePath(path: string, root: string) {
   return p === r || p.startsWith(`${r}/`);
 }
 
-/** The value at a dot path in the request's arguments, or undefined. */
-const at = (args: Record<string, unknown> | null, path: string) =>
-  path.split(".").reduce<unknown>((v, k) => (v && typeof v === "object" && !Array.isArray(v) && Object.hasOwn(v, k) ? (v as Record<string, unknown>)[k] : undefined), args);
-const low = (x: unknown) => (typeof x === "string" ? x.toLowerCase() : x);
-function holds(c: Condition, value: unknown): boolean {
+/**
+ * Some values cannot be read by a condition: a summary an adapter sends for a long value ({ sha256, length }: strings over 256 characters,
+ * long lists, deep objects), and an object or nested list where a plain value belongs. A condition on such a value is UNKNOWN, neither true
+ * nor false, and the decision is then the strictest one the request could get whichever way it went (decidingRule): padding a value, or
+ * sending a summary or an object in its place, can make a request stricter, never looser.
+ */
+type Match = boolean | "unknown";
+const UNKNOWN = Symbol("unknown");
+const summarized = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v) && typeof (v as { sha256?: unknown }).sha256 === "string";
+/** The value at a dot path in the request's arguments, undefined, or UNKNOWN when the path runs into a summary. */
+const at = (args: Record<string, unknown> | null, path: string) => {
+  const v = path.split(".").reduce<unknown>((v, k) => (v === UNKNOWN || summarized(v) ? UNKNOWN
+    : v && typeof v === "object" && !Array.isArray(v) && Object.hasOwn(v, k) ? (v as Record<string, unknown>)[k] : undefined), args);
+  return summarized(v) ? UNKNOWN : v;
+};
+/** Compared as text, case-insensitive: 1001 and "1001" are one value, so a type change cannot step around a rule. */
+const text = (x: unknown) => String(x).toLowerCase();
+const scalar = (v: unknown) => typeof v === "string" || typeof v === "number" || typeof v === "boolean" || v === null;
+function holds(c: Condition, value: unknown): Match {
+  const onlyExists = Object.keys(c).every((k) => k === "exists");
+  if (value === UNKNOWN) return onlyExists ? c.exists !== false : "unknown";
   if (c.exists !== undefined && (value !== undefined) !== c.exists) return false;
-  if (value === undefined) return Object.keys(c).every((k) => k === "exists");
+  if (value === undefined) return onlyExists;
+  if (onlyExists) return true;
   const values = Array.isArray(value) ? value : [value];
   if (!values.length) return false;
+  if (!values.every(scalar)) return "unknown"; // an object, a nested list or a summary where a plain value belongs
   const each = (test: (v: unknown) => boolean) => values.every(test);
-  if (c.equals !== undefined && !each((v) => low(v) === low(c.equals))) return false;
-  if (c.in && !each((v) => c.in!.some((x) => low(x) === low(v)))) return false;
-  if (c.notIn && values.some((v) => c.notIn!.some((x) => low(x) === low(v)))) return false;
+  if (c.equals !== undefined && !each((v) => v !== null && text(v) === text(c.equals))) return false;
+  if (c.in && !each((v) => v !== null && c.in!.some((x) => text(x) === text(v)))) return false;
+  // Not in the list: only for plain text or numbers; null or true is not a value outside the list, it is no value.
+  if (c.notIn && !each((v) => (typeof v === "string" || typeof v === "number") && !c.notIn!.some((x) => text(x) === text(v)))) return false;
   const s = (test: (v: string) => boolean) => each((v) => typeof v === "string" && test(v.toLowerCase()));
   if (c.startsWith && !s((v) => v.startsWith(c.startsWith!.toLowerCase()))) return false;
   if (c.endsWith && !s((v) => v.endsWith(c.endsWith!.toLowerCase()))) return false;
@@ -109,8 +132,17 @@ function holds(c: Condition, value: unknown): boolean {
   if (c.emailDomainIn && !each((v) => { const m = typeof v === "string" ? ADDRESS.exec(v) : null; return !!m && c.emailDomainIn!.includes(m[1].toLowerCase()); })) return false;
   return true;
 }
-/** Whether every condition of a rule holds for these arguments. A rule without conditions always does. */
-export const conditionsHold = (when: Rule["when"], args: Record<string, unknown> | null) => !when || Object.entries(when).every(([path, c]) => holds(c, at(args, path)));
+/** Whether a rule's conditions hold: true, false, or "unknown" when none fails and one cannot be read. A rule without conditions always does. */
+export function conditionsMatch(when: Rule["when"], args: Record<string, unknown> | null): Match {
+  if (!when) return true;
+  let out: Match = true;
+  for (const [path, c] of Object.entries(when)) {
+    const m = holds(c, at(args, path));
+    if (m === false) return false;
+    if (m === "unknown") out = "unknown";
+  }
+  return out;
+}
 
 export type PolicyResult = { ok: true; rules: Rule[] } | { ok: false; error: string };
 
@@ -157,7 +189,15 @@ export const ARGS_MAX = 4_000;
 /** Arguments in one canonical form (object keys sorted), so the same arguments always bind to the same fingerprint. */
 export const canonical = (v: unknown): string =>
   Array.isArray(v) ? `[${v.map(canonical).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(",")}}` : JSON.stringify(v);
-const depth = (v: unknown): number => (v && typeof v === "object" ? 1 + Math.max(0, ...Object.values(v).map(depth)) : 0);
+/** Whether a value nests deeper than `max`, without recursion (a value 20,000 levels deep must be refused, not overflow the stack). */
+const tooDeep = (root: unknown, max: number) => {
+  const stack: [unknown, number][] = [[root, 0]];
+  while (stack.length) {
+    const [v, d] = stack.pop()!;
+    if (v && typeof v === "object") { if (d + 1 > max) return true; for (const x of Object.values(v)) stack.push([x, d + 1]); }
+  }
+  return false;
+};
 
 /**
  * Validates what an agent asks to do. Strict on purpose: no coercion, no trimming, no truncation
@@ -189,7 +229,7 @@ export function parseAuthRequest(input: unknown): { ok: true; request: AuthReque
   let args: Record<string, unknown> | null = null;
   if (o.args !== undefined && o.args !== null) {
     if (typeof o.args !== "object" || Array.isArray(o.args)) errors.push("args must be a JSON object");
-    else if (canonical(o.args).length > ARGS_MAX || depth(o.args) > 5) errors.push(`args must be at most ${ARGS_MAX} characters of JSON, nested at most 5 deep`);
+    else if (tooDeep(o.args, 5) || canonical(o.args).length > ARGS_MAX) errors.push(`args must be at most ${ARGS_MAX} characters of JSON, nested at most 5 deep`);
     else args = o.args as Record<string, unknown>;
   }
   if (errors.length || !tool || !action) return { ok: false, errors };
@@ -224,12 +264,20 @@ export function evaluate(agent: Pick<Agent, "status" | "integrationEnabled" | "p
   return { effect, reason: effect === "allow" ? "policy_allowed" : "approval_required" };
 }
 
-/** The rule that decides a request: among the matching rules the most specific, the stricter one at equal specificity. */
+/**
+ * The rule that decides a request: among the matching rules the most specific, the stricter one at equal specificity. A deny or approve rule
+ * whose conditions are unknown (see holds) might match; where it would then win (at least as specific as the sure winner) and is stricter,
+ * it decides. Unknown allow rules are left out, and with no sure winner nothing decides (TEND's default then blocks), because that is the
+ * stricter of "it matched" and "it did not".
+ */
 export function decidingRule(rules: Rule[], req: AuthRequest): Rule | undefined {
-  const hits = rules.filter((r) =>
-    r.tool === req.tool && (r.action === "*" || r.action === req.action) && (r.resourcePrefix === undefined || (req.resource !== null && req.resource.startsWith(r.resourcePrefix)))
-    && conditionsHold(r.when, req.args ?? null));
-  return hits.length ? hits.reduce((a, b) => (specificity(b) > specificity(a) || (specificity(b) === specificity(a) && strength[b.effect] > strength[a.effect]) ? b : a)) : undefined;
+  const inScope = rules.filter((r) =>
+    r.tool === req.tool && (r.action === "*" || r.action === req.action) && (r.resourcePrefix === undefined || (req.resource !== null && req.resource.startsWith(r.resourcePrefix))));
+  const sure: Rule[] = [], maybe: Rule[] = [];
+  for (const r of inScope) { const m = conditionsMatch(r.when, req.args ?? null); if (m === true) sure.push(r); else if (m === "unknown" && r.effect !== "allow") maybe.push(r); }
+  const winner = sure.length ? sure.reduce((a, b) => (specificity(b) > specificity(a) || (specificity(b) === specificity(a) && strength[b.effect] > strength[a.effect]) ? b : a)) : undefined;
+  if (!winner) return maybe.find((r) => r.effect === "deny");
+  return maybe.filter((r) => specificity(r) >= specificity(winner)).reduce((a, b) => (strength[b.effect] > strength[a.effect] ? b : a), winner);
 }
 
 /**

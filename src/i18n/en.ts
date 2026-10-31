@@ -124,6 +124,7 @@ export const en = {
       email_unverified: "Confirm your e-mail address first. We can send the link again.",
       pending_approval: "Your account is waiting for approval. You’ll get an e-mail when it’s ready.",
       account_disabled: "This account has been disabled. Contact the TEND admin.",
+      password_mismatch: "That is not the password this address was signed up with. Enter it, or choose a new one with Forgot password.",
       invalid_link: "This link is not valid any more. Ask for a new one.",
       invalid_email: "Enter a valid e-mail address.",
       accounts_disabled: "Accounts are not enabled on this server.",
@@ -716,7 +717,7 @@ export const en = {
     back: "Back to sign in",
     signIn: { title: "Sign in to TEND", submit: "Sign in", busy: "Signing in…", forgot: "Forgot password?", noAccount: "New to TEND?", create: "Create an account", admin: "Admin sign-in", resend: "Send the confirmation link again", resent: "If the address has an unconfirmed account, a new link is on its way." },
     signUp: { title: "Create your TEND account", body: "TEND is in private beta. After you confirm your e-mail address, an admin approves your access; you’ll get an e-mail.", bodyOpen: "TEND is in private beta. Confirm your e-mail address, then sign in.", bodyInstant: "TEND is in private beta. Create your account and start right away; no confirmation e-mail.", bodyApproval: "TEND is in private beta. After you create your account, an admin approves your access; you’ll get an e-mail.", signInFailed: "The account could not be signed in. If this address already has an account, sign in with its password or reset it.", submit: "Create account", busy: "Creating…", have: "Already have an account?", verifyTitle: "Verify your email to continue", verifyBody: (email: string) => `We sent a confirmation link to ${email}. Open it on this or any other device; this page continues on its own.`, waiting: "Waiting for your confirmation…", continuing: "Confirmed. Taking you to TEND…", resend: "Resend verification email", resendIn: (s: number) => `Resend in ${s}s`, resent: "Sent again. Check your inbox, and your spam folder. The newest link replaces the earlier ones.", resendLimit: "Nothing yet? You can ask for a new link up to three times an hour.", change: "Use a different e-mail address", stopped: "This page has stopped checking. Once your address is confirmed, sign in." },
-    verify: { title: "Confirm your e-mail address", submit: "Confirm", busy: "Confirming…", doneTitle: "Address confirmed", waiting: "An admin will review your access. You’ll get an e-mail when you can sign in.", ready: "Your access is ready. You can sign in now.", readyAuto: "If you signed up in another tab or on another device, it continues there on its own. You can also continue here.", continue: "Continue", missing: "This page needs the link from your e-mail. Open the link again, or ask for a new one." },
+    verify: { title: "Confirm your e-mail address", password: "Password", passwordHint: "The one you chose when you signed up", submit: "Confirm", busy: "Confirming…", doneTitle: "Address confirmed", waiting: "An admin will review your access. You’ll get an e-mail when you can sign in.", ready: "Your access is ready. You can sign in now.", readyAuto: "If you signed up in another tab or on another device, it continues there on its own. You can also continue here.", continue: "Continue", missing: "This page needs the link from your e-mail. Open the link again, or ask for a new one." },
     forgot: { title: "Reset your password", body: "Enter your e-mail address and we’ll send a link to choose a new password.", submit: "Send link", busy: "Sending…", sentTitle: "Check your inbox", sent: "If the address has an account, a link is on its way. It works once, for 30 minutes." },
     reset: { title: "Choose a new password", body: "Every other session of your account will be signed out.", submit: "Save password", busy: "Saving…", doneTitle: "Password changed", done: "Sign in with your new password." },
     prompt: { title: "Sign in to continue", body: "Use your TEND account. New here? Create one; access is approved by an admin during the private beta.", bodyOpen: "Use your TEND account. New here? Create one and confirm your e-mail address.", bodyInstant: "Use your TEND account. New here? Create one and start right away.", signIn: "Sign in", create: "Create an account", token: "Sign in with the admin token instead" },
@@ -739,7 +740,7 @@ export const en = {
     categoryLabel: "Category",
     statusLabel: "Status",
     categories: { provider: "AI providers", agent: "AI agents", framework: "Frameworks", protocol: "Protocols" },
-    status: { verified: "Verified", connected: "Connected", compatible: "Compatible", blocked: "Blocked", planned: "Planned" },
+    status: { verified: "Verified", connected: "Connected", compatible: "Not verified yet", blocked: "Not tested yet", planned: "Planned" },
     statusHelp: {
       verified: "Every real test passed: allow, deny, approval, rejection, revocation, TEND unavailable and the audit log.",
       connected: "An agent is connected to this TEND with it, but the integration is not verified yet.",
@@ -1510,7 +1511,7 @@ export const en = {
       enforcedSub: "Checked before they run. TEND can stop or hold these.",
       enforcedNone: "Nothing. Every call runs, so this is monitoring, not protection.",
       unruled: (kinds: string) => `Other ${kinds}: blocked, because no rule covers them.`,
-      kinds: { shell: "commands", "file.write": "file changes", "file.read": "file reads", web: "web requests", mcp: "MCP tool calls", agent: "helper agents" } as Record<string, string>,
+      kinds: { shell: "commands", "file.write": "file changes", "file.read": "file reads", web: "web requests", mcp: "MCP tool calls", agent: "helper agents", other: "other tools" } as Record<string, string>,
       monitored: "Monitored",
       monitoredSub: "Run without asking. TEND records the request, and the agent reports how it ended.",
       monitoredNone: "Nothing runs without a rule saying so.",
@@ -1519,7 +1520,7 @@ export const en = {
       outsideSub: "TEND cannot see or stop these.",
       outsideItems: [
         "Anything that does not go through the hooks: other apps and agents, commands you type yourself, and work done before TEND was connected.",
-        "If the hooks are removed or switched off (for example disableAllHooks, or an edited settings file), TEND sees nothing. Bypass-permissions mode has not been tested with TEND.",
+        "If the hooks are removed or switched off, TEND sees nothing. A repository's own .claude/settings.json can do that for itself with disableAllHooks (tested: the command ran and TEND heard nothing), so open repositories you don't trust with care. Bypass-permissions mode has not been tested with TEND.",
         "Rules about command text match the text, not what it does. A script, an alias or a variable can do the same thing without matching the pattern.",
         "Once a call is allowed, what it starts (a script, an install, a build) is not checked step by step.",
         "How a monitored call ended is the agent’s own report. If the agent crashes or the report is lost, TEND only has the request.",
@@ -1787,7 +1788,7 @@ export const en = {
     reasons: { policy_allowed: "Allowed by the agent’s policy", approval_required: "This action needs approval", no_policy: "Not on the agent’s allow-list", policy_denied: "Blocked by a rule", agent_paused: "The agent is paused", integration_disabled: "The agent’s access is switched off", invalid_policy: "The policy could not be read", missing_permission: "Permission not granted", unknown_agent: "Unknown agent", expired: "The request expired", no_authorization: "It ran without asking TEND first", key_revoked: "The agent’s key was revoked" } as Record<string, string>,
     /** One saved policy rule in words: what it covers and what it does ("Commands containing “git push” wait for a person"). */
     rule: (r: RuleLike) => {
-      const noun: Record<string, string> = { shell: "commands", "file.write": "file changes", "file.read": "file reads", web: "web requests", mcp: "MCP tool calls", agent: "helper agents" };
+      const noun: Record<string, string> = { shell: "commands", "file.write": "file changes", "file.read": "file reads", web: "web requests", mcp: "MCP tool calls", agent: "helper agents", other: "other tools" };
       const field: Record<string, string> = { command: "command", path: "path", url: "address", tool: "tool name" };
       const what = noun[String(r?.tool)] ?? `calls to “${r?.tool}”`;
       const big = what[0].toUpperCase() + what.slice(1);

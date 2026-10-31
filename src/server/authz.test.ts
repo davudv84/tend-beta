@@ -492,7 +492,7 @@ test("the rule that decided a request is recorded with it, reaches the operator'
   const [push, ls] = await evs(db, "authorization.requested");
   assert.deepEqual(push.rule, { tool: "shell", action: "*", effect: "approve", when: { command: { contains: "git push" } } });
   assert.deepEqual(ls.rule, { tool: "shell", action: "*", effect: "allow" });
-  assert.deepEqual((await evs(db, "authorization.denied"))[0].rule, { tool: "shell", action: "*", effect: "deny", when: { command: { contains: ".ssh/" } } });
+  assert.deepEqual((await evs(db, "authorization.denied"))[0].rule, { tool: "shell", action: "*", effect: "deny", when: { command: { contains: ".ssh" } } });
 
   const events = await eventsAfter(db, 0, 1000);
   const p = applyEvents(emptyProjection(), events);

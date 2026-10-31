@@ -19,7 +19,7 @@ import { hashKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError } from "./http.ts";
 import { evaluateEffective, fingerprint, ID, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
-import { agentBudget, agentRow, centralOf, insertEvent, toAgent } from "./repo.ts";
+import { agentBudget, agentRow, centralOf, insertEvent, keyRevoked, toAgent } from "./repo.ts";
 
 export const TTL = { request: 10 * 60_000, approval: 5 * 60_000, token: 60_000 };
 export const MAX_PENDING = 20;
@@ -35,6 +35,15 @@ interface Row {
 
 const newToken = () => `tend_az_${randomBytes(32).toString("base64url")}`;
 const asRequest = (r: Row): AuthRequest => ({ tool: r.tool, action: r.action, resource: r.resource, detail: r.detail, args: r.args ? JSON.parse(r.args) : null });
+/**
+ * The text a pending request is bound to, word for word, when the agent sent one as an argument (a command, path or URL, as the hooks
+ * adapter does): `detail` holds at most 200 characters, and a person must be able to read everything they approve. Operators only: the
+ * visitor view keeps a fixed list of fields (redact.ts), and this is not on it.
+ */
+const exactOf = (r: AuthRequest) => {
+  const v = ["command", "path", "url"].map((k) => r.args?.[k]).find((x) => typeof x === "string" && x.length > 0) as string | undefined;
+  return v ? { exact: v } : {};
+};
 const bound = (r: Pick<AuthRequest, "tool" | "action" | "resource" | "detail">) => ({ tool: r.tool, action: r.action, ...(r.resource && { resource: r.resource }), ...(r.detail && { detail: r.detail }) });
 
 /** What an agent may see about an authorization. Never the fingerprint or token hash. */
@@ -54,9 +63,10 @@ async function mine(q: Q, agentId: string, id: string) {
  * Re-checked at claim and consume, so pausing the agent or tightening its policy takes effect on tokens already handed out.
  * That includes allow → approve: an authorization the policy granted on its own was never seen by a person, so it stops too.
  */
-async function stillPermitted(q: Q, row: Row) {
+async function stillPermitted(q: Q, row: Row, agent: Agent) {
   const a = await agentRow(q, row.agent_id);
   if (!a) return { effect: "deny" as const, reason: "unknown_agent" };
+  if (keyRevoked(a, agent)) return { effect: "deny" as const, reason: "key_revoked" };
   const d = evaluateEffective(toAgent(a), a.policy, (await centralOf(q, a))?.policy, asRequest(row));
   return d.effect === "approve" && row.reason === "policy_allowed" ? { effect: "deny" as const, reason: "approval_required" } : d;
 }
@@ -93,7 +103,7 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
     await q.lockEvents();
     await expireStale(q, now);
     const a = await agentRow(q, agent.id);
-    if (!a) throw new HttpError(401, "invalid_key", "Unknown or revoked API key.");
+    if (!a || keyRevoked(a, agent)) throw new HttpError(401, "invalid_key", "Unknown or revoked API key.");
     if (idemKey) {
       const prior = await q.get<Row>("SELECT * FROM authorizations WHERE agent_id = ? AND idempotency_key = ?", agent.id, idemKey);
       if (prior) {
@@ -126,7 +136,7 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
     const stored = (await q.get<Row>("SELECT * FROM authorizations WHERE id = ?", id))!;
     await insertEvent(q, status === "denied"
       ? { agentId: agent.id, type: "authorization.denied", actor: "system", at: now, data: { authorizationId: id, ...bound(r), ...why } }
-      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), status: status === "consumed" ? "approved" : status, approval: status === "pending", expiresAt: view(stored).expiresAt, ...why } });
+      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), ...(status === "pending" && exactOf(r)), status: status === "consumed" ? "approved" : status, approval: status === "pending", expiresAt: view(stored).expiresAt, ...why } });
     if (status === "consumed") await insertEvent(q, { agentId: agent.id, type: "authorization.consumed", actor: "system", at: now, data: { authorizationId: id, ...bound(r) } });
     return { view: view(stored), created: true };
   });
@@ -150,7 +160,7 @@ export async function claimToken(db: DB, agent: Agent, id: string, now = Date.no
     const row = await mine(q, agent.id, id);
     if (row.status === "pending") return { view: view(row) };
     if (row.status !== "approved") throw new HttpError(403, "not_approved", `This authorization is ${row.status}; no token can be issued.`, { status: row.status });
-    const d = await stillPermitted(q, row);
+    const d = await stillPermitted(q, row, agent);
     if (d.effect === "deny") throw new HttpError(403, "not_permitted", "The agent is no longer allowed to do this.", { reason: d.reason });
     const token = newToken();
     const tokenExpiresAt = Math.min(now + TTL.token, row.approved_until!);
@@ -189,7 +199,7 @@ export async function consumeAuthorization(db: DB, agent: Agent, id: string, bod
       return { err: new HttpError(409, "already_consumed", "This authorization was already used.") };
     }
     if (row.status !== "approved") return { err: new HttpError(403, "not_approved", `This authorization is ${row.status}.`, { status: row.status }) };
-    const d = await stillPermitted(q, row);
+    const d = await stillPermitted(q, row, agent);
     if (d.effect === "deny") return { err: new HttpError(403, "not_permitted", "The agent is no longer allowed to do this.", { reason: d.reason }) };
 
     // The one atomic step. Token, expiry and the bound fingerprint are checked together.
@@ -242,7 +252,7 @@ export async function spendApproved(db: DB, agent: Agent, id: string, body: unkn
     }
     if (row.status === "pending") return { err: new HttpError(409, "pending", "A person has not decided yet.", { status: row.status }) };
     if (row.status !== "approved") return { err: new HttpError(403, "not_approved", `This authorization is ${row.status}.`, { status: row.status }) };
-    const d = await stillPermitted(q, row);
+    const d = await stillPermitted(q, row, agent);
     if (d.effect === "deny") return { err: new HttpError(403, "not_permitted", "The agent is no longer allowed to do this.", { reason: d.reason }) };
     const won = await q.run("UPDATE authorizations SET status = 'consumed', consumed_at = ?, token_hash = NULL WHERE id = ? AND agent_id = ? AND status = 'approved' AND approved_until > ? AND fingerprint = ?", now, id, agent.id, now, fp);
     if (won) {

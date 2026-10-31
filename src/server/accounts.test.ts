@@ -22,7 +22,7 @@ const PW = "correct horse battery";
 /** A verified, approved account, ready to sign in. */
 async function account(db: DB, email: string) {
   const r = await register(db, req(), { email, password: PW });
-  await verifyEmail(db, req(), { token: tokenIn(r.outbox) });
+  await verifyEmail(db, req(), { token: tokenIn(r.outbox), password: PW });
   const id = (await db.get<{ id: string }>("SELECT id FROM users WHERE email = ?", email))!.id;
   await setAccess(db, req(), id, "approve", "admin");
   return id;
@@ -47,7 +47,7 @@ test("sign-up answers the same for a new and an existing address; only the mail 
   assert.equal(first.outbox[0].to, "ada@example.com");
   assert.match(again.outbox[0].text, /\/account\/verify#token=/, "an unconfirmed existing address gets a fresh link, not a second account");
   assert.equal((await db.all("SELECT 1 FROM users")).length, 1);
-  await verifyEmail(db, req(), { token: tokenIn(again.outbox) });
+  await verifyEmail(db, req(), { token: tokenIn(again.outbox), password: PW });
   const third = await register(db, req(), { email: "ada@example.com", password: PW });
   assert.deepEqual(third.result, first.result);
   assert.match(third.outbox[0].text, /already has one/, "a confirmed address is told it has an account, nothing more");
@@ -65,12 +65,12 @@ test("the order is enforced: confirm, then approval, then a session; wrong addre
   assert.equal(await code(passwordSignIn(db, req(), { email: "nobody@example.com", password: PW })), "invalid_credentials");
   const token = tokenIn(r.outbox);
   process.env.TEND_ADMIN_EMAIL = "admin@example.com";
-  const v = await verifyEmail(db, req(), { token });
+  const v = await verifyEmail(db, req(), { token, password: PW });
   delete process.env.TEND_ADMIN_EMAIL;
   assert.deepEqual(v.result, { ok: true, approved: false });
   assert.match(v.outbox[0].text, /eve@example.com confirmed/, "the admin is told someone waits");
-  assert.equal(await code(verifyEmail(db, req(), { token })), "invalid_link", "a link works once");
-  assert.equal(await code(verifyEmail(db, req(), { token: "x".repeat(43) })), "invalid_link");
+  assert.equal(await code(verifyEmail(db, req(), { token, password: PW })), "invalid_link", "a link works once");
+  assert.equal(await code(verifyEmail(db, req(), { token: "x".repeat(43), password: PW })), "invalid_link");
   assert.equal(await code(passwordSignIn(db, req(), { email: "eve@example.com", password: PW })), "pending_approval");
   const id = (await db.get<{ id: string }>("SELECT id FROM users"))!.id;
   const approved = await setAccess(db, req(), id, "approve", "admin");
@@ -89,7 +89,7 @@ test("an unconfirmed address cannot be approved, and an expired link does not wo
   const r = await register(db, req(), { email: "late@example.com", password: PW }, now);
   const id = (await db.get<{ id: string }>("SELECT id FROM users"))!.id;
   assert.equal(await code(setAccess(db, req(), id, "approve", "admin")), "email_unverified");
-  assert.equal(await code(verifyEmail(db, req(), { token: tokenIn(r.outbox) }, now + 25 * 3_600_000)), "invalid_link");
+  assert.equal(await code(verifyEmail(db, req(), { token: tokenIn(r.outbox), password: PW }, now + 25 * 3_600_000)), "invalid_link");
   await db.close();
 });
 
@@ -158,4 +158,44 @@ test("with accounts switched off, every account endpoint says so and nothing is 
     delete process.env.TEND_ACCOUNTS;
     await db.close();
   }
+});
+
+// From the security review of 2026-10-31. Before: whoever signed up first with an address chose the password, and the owner's own
+// confirmation click activated it, handing the owner's account (and everything they later connected) to the first sign-up.
+test("signing up first with someone else's address gets you nothing: the confirmation needs the password the owner chose", async () => {
+  process.env.TEND_ADMIN = "0";
+  try {
+    const db = await memoryDb();
+    const victim = "victim@example.com", attackerPw = "attacker chose this one", ownerPw = "the owner's own passphrase";
+    await register(db, req(), { email: victim, password: attackerPw }); // the attacker never sees this mail
+    const owner = await register(db, req(), { email: victim, password: ownerPw });
+    const link = tokenIn(owner.outbox)!;
+    assert.equal(await code(verifyEmail(db, req(), { token: link, password: ownerPw })), "password_mismatch", "the stored password is not the owner's: refused");
+    assert.equal(await code(verifyEmail(db, req(), { token: link })), "password_mismatch", "and no password is no confirmation");
+    assert.equal(await code(passwordSignIn(db, req(), { email: victim, password: attackerPw })), "email_unverified", "the attacker still has no session");
+    // The owner takes the way the error offers: a password reset, which proves the mailbox and sets their password.
+    const forgot = await requestReset(db, req(), { email: victim });
+    await resetPassword(db, { token: tokenIn(forgot.outbox), password: ownerPw });
+    assert.equal(await code(passwordSignIn(db, req(), { email: victim, password: attackerPw })), "invalid_credentials", "the attacker's password is gone");
+    assert.equal(await code(passwordSignIn(db, req(), { email: victim, password: ownerPw })), "ok", "the owner is in, confirmed and ready");
+    // The confirmation link, still unspent, now works only with the owner's password.
+    assert.equal(await code(verifyEmail(db, req(), { token: link, password: attackerPw })), "password_mismatch");
+  } finally {
+    delete process.env.TEND_ADMIN;
+  }
+});
+
+test("a password reset ends a lockout someone else caused, and a reset without a live link costs the server no password hashing", async () => {
+  const db = await memoryDb();
+  const email = "owner@example.com";
+  const r = await register(db, req(), { email, password: PW });
+  await verifyEmail(db, req(), { token: tokenIn(r.outbox), password: PW });
+  for (let i = 0; i <= LIMITS.failuresPerAccountPerHour; i++) await code(passwordSignIn(db, req(), { email, password: "someone guessing wrong" }));
+  assert.equal(await code(passwordSignIn(db, req(), { email, password: PW })), "rate_limited", "locked out by someone else's guesses");
+  const forgot = await requestReset(db, req(), { email });
+  await resetPassword(db, { token: tokenIn(forgot.outbox), password: "a brand new passphrase" });
+  assert.notEqual(await code(passwordSignIn(db, req(), { email, password: "a brand new passphrase" })), "rate_limited", "the reset ends the lockout");
+  const start = performance.now();
+  for (let i = 0; i < 20; i++) assert.equal(await code(resetPassword(db, { token: "x".repeat(43), password: "a long enough password" })), "invalid_link");
+  assert.ok(performance.now() - start < 1_000, "twenty bad links answered without twenty scrypt hashes");
 });

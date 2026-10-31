@@ -6,7 +6,7 @@
 // your own ~/.claude settings and ~/.tend are not touched (TEND_HOME points at the throwaway folder).
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startIsolatedServer } from "./isolated-server.mjs";
@@ -27,7 +27,7 @@ async function call(method, p, { body, cookie, key } = {}) {
 /** One Claude Code session in the project, asked to run exactly one harmless command. Resolves with its exit code and output. */
 function claude(prompt, env = {}) {
   return new Promise((resolve) => {
-    const child = spawn("claude", ["-p", prompt, "--model", "haiku", "--allowedTools", "Bash(echo:*)", "--max-turns", "4", "--output-format", "json"], {
+    const child = spawn("claude", ["-p", prompt, "--model", "haiku", "--allowedTools", "Bash", "--max-turns", "4", "--output-format", "json"], {
       cwd: project, env: { ...process.env, TEND_HOME: tendHome, TEND_URL: "", TEND_AGENT_KEY: "", ...env }, stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "", err = "";
@@ -37,7 +37,10 @@ function claude(prompt, env = {}) {
     child.on("close", (code) => { clearTimeout(timer); let result = ""; try { result = JSON.parse(out).result ?? ""; } catch { result = out; } resolve({ code, result, err }); });
   });
 }
-const ask = (cmd) => `Use the Bash tool to run exactly this command, once, and then tell me its output: ${cmd}`;
+// Each test command writes a file named after it; whether it ran is read from that file, not from the model's wording. Claude Code's own
+// rules allow any Bash command here, so TEND's hook is the only thing that can stop one.
+const ask = (cmd) => `Use the Bash tool to run exactly this command, once, and then tell me its output: ${cmd} > ${cmd.split(" ").at(-1)}.txt`;
+const ranFile = (marker) => { const f = path.join(project, `${marker}.txt`); const did = existsSync(f); rmSync(f, { force: true }); return did; };
 
 async function main() {
   if (spawnSync("claude", ["--version"], { encoding: "utf8" }).status !== 0) { console.log("SKIP claude is not installed"); process.exit(0); }
@@ -67,7 +70,7 @@ async function main() {
 
     console.log("\n-- allowed: Claude Code runs a harmless command; TEND records the request, the run and the session");
     const a = await claude(ask("echo tend-activity-test"));
-    check(a.code === 0 && /tend-activity-test/.test(a.result), `Claude Code ran it (${a.code}): ${a.result.slice(0, 120).replace(/\n/g, " ")}`);
+    check(a.code === 0 && ranFile("tend-activity-test"), `Claude Code ran it (${a.code}): ${a.result.slice(0, 120).replace(/\n/g, " ")}`);
     const activity = await shellAuths("echo tend-activity-test");
     check(activity.length >= 1 && activity[0].status === "consumed", `TEND authorized it under the policy (${activity.map((x) => x.status)})`);
     let s = await state();
@@ -81,7 +84,7 @@ async function main() {
     check(blocked.length >= 1 && blocked.every((x) => x.status === "denied"), `TEND refused every attempt (${blocked.map((x) => x.status)})`);
     s = await state();
     check(!s.taskEvents.some((e) => e.agentId === agentId && e.type === "tool.called" && blocked.some((x) => x.id === e.authorizationId)), "no run was reported for it");
-    check(!/^tend-blocked-test$/m.test(b.result), `Claude Code did not show the command's output (${b.result.slice(0, 120).replace(/\n/g, " ")})`);
+    check(!ranFile("tend-blocked-test"), `Claude Code did not run it (${b.result.slice(0, 120).replace(/\n/g, " ")})`);
 
     console.log("\n-- approval: Claude Code waits; a person approves in TEND; then it runs, once");
     const pending = claude(ask("echo tend-approval-test"));
@@ -101,7 +104,7 @@ async function main() {
       check((await call("POST", `/api/v1/reviews/${waiting.id}`, { cookie, body: { status: "approved" } })).status === 200, "approved through the normal review route");
     }
     const c = await pending;
-    check(c.code === 0 && /tend-approval-test/.test(c.result), `Claude Code ran it after the approval (${c.result.slice(0, 120).replace(/\n/g, " ")})`);
+    check(c.code === 0 && ranFile("tend-approval-test"), `Claude Code ran it after the approval (${c.result.slice(0, 120).replace(/\n/g, " ")})`);
     const approvedAuth = (await shellAuths("echo tend-approval-test")).find((x) => x.id === waiting?.id);
     check(approvedAuth?.status === "consumed", `the approval was spent once (${approvedAuth?.status})`);
     s = await state();
@@ -113,11 +116,15 @@ async function main() {
     for (const end = Date.now() + 120_000; !second && Date.now() < end; await sleep(1000)) second = (await shellAuths("echo tend-approval-test")).find((x) => x.status === "pending");
     if (second) await call("POST", `/api/v1/reviews/${second.id}`, { cookie, body: { status: "rejected" } });
     const r = await rejecting;
-    check(!!second && !(await state()).taskEvents.some((e) => e.type === "tool.called" && e.authorizationId === second.id), `rejected, and no run was reported (${r.result.slice(0, 100).replace(/\n/g, " ")})`);
+    check(!!second && !ranFile("tend-approval-test") && !(await state()).taskEvents.some((e) => e.type === "tool.called" && e.authorizationId === second.id), `rejected, and no run was reported (${r.result.slice(0, 100).replace(/\n/g, " ")})`);
 
     console.log("\n-- TEND unreachable: the call is blocked, not let through");
-    const u = await claude(ask("echo tend-unreachable-test"), { TEND_URL: "http://127.0.0.1:9", TEND_AGENT_KEY: key });
-    check(!/^tend-unreachable-test$/m.test(u.result), `Claude Code did not run it (${u.result.slice(0, 140).replace(/\n/g, " ")})`);
+    // The installed key file points at an address nothing listens on (the hook ignores TEND_URL and TEND_AGENT_KEY by design).
+    const cfgFile = path.join(tendHome, "claude-code.json"), cfgGood = readFileSync(cfgFile, "utf8");
+    writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(cfgGood), url: "http://127.0.0.1:9" }), { mode: 0o600 });
+    const u = await claude(ask("echo tend-unreachable-test"));
+    writeFileSync(cfgFile, cfgGood, { mode: 0o600 });
+    check(!ranFile("tend-unreachable-test"), `Claude Code did not run it (${u.result.slice(0, 140).replace(/\n/g, " ")})`);
 
     // Not tested here: Claude Code's bypass-permissions mode. Whether hooks still run in it is not established by this suite.
     console.log("\n-- a hook that crashes blocks the call (onFailure: block), it does not let it through");
@@ -128,7 +135,7 @@ async function main() {
     writeFileSync(file, JSON.stringify(broken));
     const crash = await claude(ask("echo tend-crash-test"));
     writeFileSync(file, good);
-    check(!/^tend-crash-test$/m.test(crash.result), `not run when the hook crashed (${crash.result.slice(0, 120).replace(/\n/g, " ")})`);
+    check(!ranFile("tend-crash-test"), `not run when the hook crashed (${crash.result.slice(0, 120).replace(/\n/g, " ")})`);
 
     console.log("\n-- nothing secret left behind");
     const stateFiles = existsSync(path.join(tendHome, "state/claude-code")) ? readdirSync(path.join(tendHome, "state/claude-code")) : [];

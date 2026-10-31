@@ -40,7 +40,7 @@ const PW = "correct horse battery staple";
 async function account(email) {
   const r = await call("POST", "/api/account/register", { body: { email, password: PW } });
   const token = tokenIn(await mailTo(email));
-  const v = await call("POST", "/api/account/verify", { body: { token } });
+  const v = await call("POST", "/api/account/verify", { body: { token, password: PW } });
   return { register: r, verified: v.status === 200 };
 }
 

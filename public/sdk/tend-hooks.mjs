@@ -20,7 +20,7 @@
 // The agent key is kept in ~/.tend/<host>.json (readable only by you), never in the host's settings, never printed, never sent anywhere but
 // TEND. What TEND receives about a tool call: its kind, the tool's name, and a shortened copy of the command, path, URL or MCP tool, with
 // things that look like secrets replaced by ***. Never file contents, prompts or tool output.
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -29,14 +29,17 @@ import { fileURLToPath } from "node:url";
 
 const ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const HOSTS = { "claude-code": "Claude Code", cursor: "Cursor" };
-// TEND_HOME moves the key and state files (tests use a throwaway folder).
-const HOME = process.env.TEND_HOME ?? path.join(homedir(), ".tend");
+// TEND_HOME moves the key and state files for install, uninstall and status (tests use a throwaway folder). Run as a hook, the files are the
+// ones next to this installed copy, whatever the environment says: a repository's settings can set environment variables for the assistant,
+// and must not be able to point the hook at another key or another server.
+const HOOK_MODE = process.argv[2] === "hook";
+const HOME = HOOK_MODE ? path.dirname(fileURLToPath(import.meta.url)) : process.env.TEND_HOME ?? path.join(homedir(), ".tend");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- what a tool call is, in TEND's words ----------------------------------------------------------------------------
 
 /** Kinds shared by every host, so one policy reads the same for Claude Code and Cursor. The host's own tool name is the action. */
-export const KINDS = ["shell", "file.write", "file.read", "web", "mcp", "agent"];
+export const KINDS = ["shell", "file.write", "file.read", "web", "mcp", "agent", "other"];
 const CLAUDE = {
   Bash: "shell", BashOutput: "shell", KillShell: "shell", KillBash: "shell", PowerShell: "shell",
   Write: "file.write", Edit: "file.write", MultiEdit: "file.write", NotebookEdit: "file.write",
@@ -50,19 +53,21 @@ export function kindOf(tool) {
   if (/^mcp(__|:|_)/i.test(tool) || /mcp/i.test(tool)) return "mcp";
   const t = tool.toLowerCase();
   if (/shell|terminal|command|bash|exec/.test(t)) return "shell";
-  if (/write|edit|delete|create_file|apply|patch|rename|move/.test(t)) return "file.write";
+  if (/write|edit|delete|create_file|apply|patch|rename|move|replace|insert|remove/.test(t)) return "file.write";
   if (/read|grep|glob|search_files|list|find|ls/.test(t)) return "file.read";
   if (/web|fetch|http|browse/.test(t)) return "web";
-  return "agent";
+  // Only the tools listed above count as the assistant's bookkeeping. A tool this file does not know is not assumed harmless.
+  return "other";
 }
 
 // Things that look like credentials in a command or URL. Replaced before anything leaves this computer.
 const SECRET = [
   /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{12,}/g, /\btend_(?:sk|az)_[A-Za-z0-9_-]{12,}/g, /\bgh[pousr]_[A-Za-z0-9]{20,}/g, /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
   /\bAKIA[0-9A-Z]{16}\b/g, /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
-  /\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASS|PWD)[A-Z0-9_]*=)(?:"[^"]*"|'[^']*'|\S+)/gi,
-  /(--?(?:password|passwd|token|secret|api[-_]?key)[= ])(?:"[^"]*"|'[^']*'|\S+)/gi,
-  /(authorization:\s*(?:bearer|basic)\s+)\S+/gi, /(\/\/[^/\s:@]+:)[^@\s/]+(?=@)/g,
+  // A value is replaced only when it is plain text: one with $, `, quotes, ;, |, &, <, >, ( or ) in it could run something, and is left visible.
+  /\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASS|PWD)[A-Z0-9_]*=)(?:"[^"$`\\]*"|'[^']*'|[^\s"'$`;|&<>()\\]+)(?![^\s;|&<>()'"])/gi,
+  /(--?(?:password|passwd|token|secret|api[-_]?key)[= ])(?:"[^"$`\\]*"|'[^']*'|[^\s"'$`;|&<>()\\]+)(?![^\s;|&<>()'"])/gi,
+  /(authorization:\s*(?:bearer|basic)\s+)[^\s"'$`;|&<>()\\]+(?![^\s;|&<>()'"])/gi, /(\/\/[^/\s:@]+:)[^@\s/$`;|&<>()\\]+(?=@)/g,
 ];
 export function redact(text) {
   let out = String(text ?? "");
@@ -72,9 +77,20 @@ export function redact(text) {
 }
 // Printable one line: what a person reads when approving must look exactly like what it is (no control or invisible characters).
 // Control, zero-width and bidirectional characters, as in TEND's own check (src/server/policy.ts), built from code points so this file holds none.
-const INVISIBLE = new RegExp(`[${[[0x00, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x61c, 0x61c], [0x180e, 0x180e], [0x200b, 0x200f], [0x2028, 0x202e], [0x2060, 0x206f], [0xfeff, 0xfeff], [0xfff9, 0xfffb]]
-  .map(([a, b]) => `${String.fromCharCode(a)}-${String.fromCharCode(b)}`).join("")}]+`, "g");
-const oneLine = (s, max) => redact(s).replace(INVISIBLE, " ").replace(/\s+/g, " ").trim().slice(0, max);
+const INVISIBLE = new RegExp(`[${[[0x00, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x34f, 0x34f], [0x61c, 0x61c], [0x115f, 0x1160], [0x180e, 0x180e], [0x200b, 0x200f],
+  [0x2028, 0x202e], [0x2060, 0x206f], [0x2800, 0x2800], [0x3164, 0x3164], [0xfeff, 0xfeff], [0xffa0, 0xffa0], [0xfff9, 0xfffb], [0xe0000, 0xe007f], [0xe0100, 0xe01ef]]
+  .map(([a, b]) => `${String.fromCodePoint(a)}-${String.fromCodePoint(b)}`).join("")}]+`, "gu");
+// A line break is shown as ⏎: "echo done" and a second command on the next line must not read as one harmless echo.
+const flat = (s) => redact(s).replace(/\r?\n|\r/g, " ⏎ ").replace(INVISIBLE, " ").replace(/\s+/g, " ").trim();
+// Cut to fit, and say so: a person must never take the start of a command for all of it.
+const fit = (s, max) => {
+  if (s.length <= max) return s;
+  const more = (n) => `… (+${n} more characters)`, keep = max - more(s.length).length;
+  return `${s.slice(0, keep).trimEnd()}${more(s.length - keep)}`;
+};
+const oneLine = (s, max) => fit(flat(s), max);
+// What the rules test is never cut: a command, path or URL longer than this is not checked by halves, it is refused.
+export const LIMITS = { command: 3000, path: 1000, url: 1000 };
 const safeId = (s) => String(s ?? "").replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 64) || "unknown";
 
 /** The authorization request TEND sees for one tool call. `args` are what policy conditions test (command, path, url, server). */
@@ -82,15 +98,17 @@ export function toRequest(tool, input = {}, cwd = "") {
   const kind = kindOf(tool);
   const i = input && typeof input === "object" ? input : {};
   const rel = (p) => (cwd && typeof p === "string" && p.startsWith(cwd + path.sep) ? p.slice(cwd.length + 1) : p);
-  let args = {}, what = "";
-  if (kind === "shell") { const command = oneLine(i.command ?? i.cmd ?? "", 1000); args = { command }; what = command; }
+  let args = {}, what = "", tooLong = 0;
+  const whole = (s, max) => { const v = flat(s); if (v.length > max) tooLong = v.length; return v; };
+  if (kind === "shell") { const command = whole(i.command ?? i.cmd ?? "", LIMITS.command); args = { command }; what = command; }
   else if (kind === "file.write" || kind === "file.read") {
     const p = i.file_path ?? i.path ?? i.notebook_path ?? i.target_file ?? i.pattern ?? "";
-    args = { path: oneLine(p, 500) }; what = oneLine(rel(p), 160);
-  } else if (kind === "web") { const url = oneLine(i.url ?? i.query ?? "", 500); args = { url }; what = url; }
-  else if (kind === "mcp") { args = { tool: oneLine(tool, 120) }; what = oneLine(tool, 160); }
-  const label = { shell: "Run", "file.write": "Change", "file.read": "Read", web: "Open", mcp: "Use", agent: "Use" }[kind];
-  return { tool: kind, action: safeId(tool), detail: oneLine(what ? `${label}: ${what}` : `${label} ${tool}`, 200) || label, args };
+    args = { path: whole(p, LIMITS.path) }; what = flat(rel(p));
+  } else if (kind === "web") { const url = whole(i.url ?? i.query ?? "", LIMITS.url); args = { url }; what = url; }
+  else if (kind === "mcp") { args = { tool: oneLine(tool, 120) }; what = flat(tool); }
+  const label = { shell: "Run", "file.write": "Change", "file.read": "Read", web: "Open", mcp: "Use", agent: "Use", other: "Use" }[kind];
+  const request = { tool: kind, action: safeId(tool), detail: oneLine(what ? `${label}: ${what}` : `${label} ${tool}`, 200) || label, args };
+  return tooLong ? { ...request, tooLong } : request;
 }
 
 // ---- talking to TEND -----------------------------------------------------------------------------------------------------
@@ -98,8 +116,14 @@ export function toRequest(tool, input = {}, cwd = "") {
 const configPath = (host) => path.join(HOME, `${host}.json`);
 export function readConfig(host) {
   const envUrl = process.env.TEND_URL, envKey = process.env.TEND_AGENT_KEY;
-  if (envUrl && envKey) return { url: envUrl.replace(/\/$/, ""), key: envKey };
-  try { const c = JSON.parse(readFileSync(configPath(host), "utf8")); return { url: String(c.url).replace(/\/$/, ""), key: String(c.key) }; } catch { return null; }
+  if (!HOOK_MODE && envUrl && envKey) return { url: envUrl.replace(/\/$/, ""), key: envKey };
+  try {
+    // Only a regular file (not a link to one) owned by you and readable by nobody else: the key decides what the assistant may do.
+    const st = lstatSync(configPath(host));
+    if (!st.isFile() || (st.mode & 0o077) !== 0 || (typeof process.getuid === "function" && st.uid !== process.getuid())) return null;
+    const c = JSON.parse(readFileSync(configPath(host), "utf8"));
+    return { url: String(c.url).replace(/\/$/, ""), key: String(c.key) };
+  } catch { return null; }
 }
 
 async function tend(cfg, p, body, headers = {}) {
@@ -185,7 +209,8 @@ export async function runHook(host, input, { out = (s) => process.stdout.write(s
   if (pre) {
     if (!input || typeof input.tool_name !== "string" || !input.tool_name) return deny("TEND could not read this tool call, so it was blocked. Nothing ran.");
     sweepState(host);
-    const request = toRequest(String(input.tool_name ?? "unknown"), input.tool_input, input.cwd ?? input.workspace_roots?.[0] ?? "");
+    const { tooLong, ...request } = toRequest(String(input.tool_name ?? "unknown"), input.tool_input, input.cwd ?? input.workspace_roots?.[0] ?? "");
+    if (tooLong) return deny(`TEND blocked this: it is ${tooLong} characters long, more than TEND checks in full. Nothing ran. Split it into shorter steps.`);
     const r = await decide(cfg, request, { idempotencyKey: input.tool_use_id, waitMs, pollMs });
     if (!r.allow) return deny(r.reason);
     remember(host, input.tool_use_id, r.id);

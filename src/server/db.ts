@@ -333,7 +333,25 @@ function queries(raw: Raw, exec: (sql: string) => Promise<unknown>): Q {
   return q;
 }
 
+/**
+ * The database's certificate is always checked: chain and hostname (`verify-full`). Hosted providers hand out `sslmode=require`, which pg 8
+ * already treats as verify-full but pg 9 will weaken to libpq's "encrypt without checking", so it is pinned here rather than in a variable the
+ * provider's integration owns and may rewrite. `disable` (a local database) and a missing sslmode are left as they are.
+ */
+export function verifiedTls(url: string): string {
+  let u: URL;
+  try { u = new URL(url); } catch { return url; }
+  if (!["allow", "prefer", "require", "verify-ca"].includes(u.searchParams.get("sslmode") ?? "")) return url;
+  u.searchParams.set("sslmode", "verify-full");
+  u.searchParams.delete("uselibpqcompat");
+  return u.toString();
+}
+export const tlsMode = (url: string) => {
+  try { return new URL(verifiedTls(url)).searchParams.get("sslmode") ?? "none"; } catch { return "unknown"; }
+};
+
 export async function postgres(url: string): Promise<DB> {
+  url = verifiedTls(url);
   const pg = (await import("pg")).default;
   // BIGINT columns hold millisecond timestamps and counts, all well inside Number's safe range.
   pg.types.setTypeParser(20, (v: string) => Number(v));

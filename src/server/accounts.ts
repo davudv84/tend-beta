@@ -160,12 +160,21 @@ async function autoApprove(q: Q, userId: string, now: number) {
     await audit(q, "account.approved", { userId, reason: "automatic", now });
 }
 
-/** Confirms the address. The admin is told (if TEND_ADMIN_EMAIL is set) that someone waits for approval; without approval the account is ready. */
+/**
+ * Confirms the address, with the password the account was signed up with. The link proves the mailbox, the password proves who chose it:
+ * without the second, someone who signed up first with another person's address and a password of their own would get that person's account
+ * the moment its owner, signing up later, clicked the link (the stored password stays the first one). A different password is refused and
+ * the link stays usable; the way on is a password reset, which proves the mailbox and sets the owner's password. The admin is told (if
+ * TEND_ADMIN_EMAIL is set) that someone waits for approval; without approval the account is ready.
+ */
 export async function verifyEmail(db: DB, req: Request, input: unknown, now = Date.now()) {
   requireAccounts();
+  const o = (input ?? {}) as { token?: unknown; password?: unknown };
   return db.tx(async (q) => {
-    const userId = await spendToken(q, (input as { token?: unknown } | null)?.token, "verify", now);
+    const userId = await spendToken(q, o.token, "verify", now);
     const u = (await q.get<UserRow>("SELECT * FROM users WHERE id = ?", userId))!;
+    if (typeof o.password !== "string" || !o.password || !(await checkPassword(o.password.slice(0, PASSWORD.max), u.password_hash)))
+      throw new HttpError(403, "password_mismatch", "That is not the password this address was signed up with. Enter it, or choose a new one with Forgot password.");
     const outbox: Outbox = [];
     if (u.email_verified_at === null) {
       await q.run("UPDATE users SET email_verified_at = ? WHERE id = ?", now, userId);
@@ -245,6 +254,10 @@ export async function requestReset(db: DB, req: Request, input: unknown, now = D
 export async function resetPassword(db: DB, input: unknown, now = Date.now()) {
   requireAccounts();
   const o = (input ?? {}) as { token?: unknown; password?: unknown };
+  // The link is looked at before the password is hashed: hashing is deliberately slow, and nobody without a live link may make the server do it.
+  const live = typeof o.token === "string" && /^[A-Za-z0-9_-]{43}$/.test(o.token)
+    && await db.get("SELECT 1 FROM user_tokens WHERE hash = ? AND purpose = 'reset' AND used_at IS NULL AND expires_at > ?", sha(o.token), now);
+  if (!live) throw new HttpError(400, "invalid_link", "This link is not valid any more. Ask for a new one.");
   const hash = typeof o.password === "string" && !passwordProblem(o.password) ? await hashPassword(o.password) : null;
   return db.tx(async (q) => {
     const userId = await spendToken(q, o.token, "reset", now);
@@ -255,7 +268,11 @@ export async function resetPassword(db: DB, input: unknown, now = Date.now()) {
     await q.run("UPDATE users SET password_hash = ?, password_changed_at = ?, email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ?", hash, now, now, userId);
     await q.run("UPDATE user_tokens SET used_at = ? WHERE user_id = ? AND purpose = 'reset' AND used_at IS NULL", now, userId);
     await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", now, userId);
+    // Failed sign-ins counted against the account end with the reset: someone guessing must not keep the owner out of the new password.
+    await q.run("DELETE FROM rate_limits WHERE key = ?", `account:fail:${u.email}`);
     await audit(q, "account.password_reset", { userId, now });
+    // A reset proves the mailbox as a confirmation link does, so without admin approval the account is ready after it, as after confirming.
+    if (!config.approvalRequired) await autoApprove(q, userId, now);
     return { ok: true };
   });
 }

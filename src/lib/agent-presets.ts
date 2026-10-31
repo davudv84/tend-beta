@@ -1,5 +1,5 @@
 // Ready-made policies for coding assistants connected through hooks (examples/hooks/tend-hooks.mjs). The hook files every tool call under a
-// kind (shell, file.write, file.read, web, mcp, agent) with the assistant's own tool name as the action, and passes the command, path or URL
+// kind (shell, file.write, file.read, web, mcp, agent, other) with the assistant's own tool name as the action, and passes the command, path or URL
 // as arguments, so a handful of rules covers every tool, including ones a later version of the assistant adds. Anything a preset does not
 // mention is denied by TEND's default (no_policy), never allowed.
 import type { RuleLike } from "./permissions";
@@ -14,7 +14,7 @@ export const PRESETS: PresetId[] = ["balanced", "strict", "monitor"];
 export const TEST_COMMANDS = { activity: "echo tend-activity-test", blocked: "echo tend-blocked-test", approval: "echo tend-approval-test" } as const;
 
 /** The kinds the hook files every tool call under. */
-export const HOOK_KINDS = ["shell", "file.write", "file.read", "web", "mcp", "agent"] as const;
+export const HOOK_KINDS = ["shell", "file.write", "file.read", "web", "mcp", "agent", "other"] as const;
 
 const all = (tool: string, effect: RuleLike["effect"]): RuleLike => ({ tool, action: "*", effect });
 const when = (tool: string, field: string, op: "contains" | "startsWith", value: string, effect: RuleLike["effect"]): RuleLike => ({ tool, action: "*", effect, when: { [field]: { [op]: value } } });
@@ -24,10 +24,11 @@ const ALWAYS: RuleLike[] = [
   when("shell", "command", "startsWith", TEST_COMMANDS.blocked, "deny"),
   when("shell", "command", "startsWith", TEST_COMMANDS.approval, "approve"),
   when("shell", "command", "contains", "rm -rf /", "deny"),
-  // SSH keys: by path for the file tools, and by command text for the shell (cat ~/.ssh/id_rsa is a shell call, not a file read).
-  when("shell", "command", "contains", ".ssh/", "deny"),
-  when("file.read", "path", "contains", "/.ssh/", "deny"),
-  when("file.write", "path", "contains", "/.ssh/", "deny"),
+  // SSH keys: by path for the file tools, and by command text for the shell (cat ~/.ssh/id_rsa is a shell call, not a file read). ".ssh"
+  // without slashes, so the folder itself counts too (ls ~/.ssh, a search rooted at ~/.ssh itself), not only what is under it.
+  when("shell", "command", "contains", ".ssh", "deny"),
+  when("file.read", "path", "contains", ".ssh", "deny"),
+  when("file.write", "path", "contains", ".ssh", "deny"),
 ];
 
 export function presetRules(id: PresetId): RuleLike[] {
@@ -35,8 +36,8 @@ export function presetRules(id: PresetId): RuleLike[] {
   if (id === "monitor") return [...ALWAYS.slice(0, 2), ...HOOK_KINDS.map((k) => all(k, "allow"))];
   const ask = (field: string, value: string, tool = "shell") => when(tool, field, "contains", value, "approve");
   const base = id === "strict"
-    ? [all("shell", "approve"), all("file.write", "approve"), all("file.read", "allow"), all("web", "approve"), all("mcp", "approve"), all("agent", "allow")]
-    : [all("shell", "allow"), all("file.write", "allow"), all("file.read", "allow"), all("web", "approve"), all("mcp", "approve"), all("agent", "allow"),
+    ? [all("shell", "approve"), all("file.write", "approve"), all("file.read", "allow"), all("web", "approve"), all("mcp", "approve"), all("agent", "allow"), all("other", "approve")]
+    : [all("shell", "allow"), all("file.write", "allow"), all("file.read", "allow"), all("web", "approve"), all("mcp", "approve"), all("agent", "allow"), all("other", "approve"),
       // Commands that publish, delete, escalate or reach the network wait for a person; everything else runs as the assistant's own rules allow.
       ...["git push", "rm ", "sudo ", "curl ", "wget ", "ssh ", "scp ", "npm publish", "chmod ", "kubectl ", "terraform "].map((c) => ask("command", c)),
       ask("path", ".env", "file.write"), ask("path", ".env", "file.read"), ask("path", "/.git/", "file.write")];

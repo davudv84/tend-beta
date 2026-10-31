@@ -30,7 +30,7 @@ export async function snapshot(db: DB, v: Viewer, now = Date.now()) {
   const seq = await lastSeq(db);
   const agents = await visible(db, v);
   const ids = new Set(agents.map((a) => a.id));
-  const events = visibleTo((await recentEvents(db, now - WINDOW, 12_000)).filter((e) => ids.has(e.agentId) && e.seq <= seq), v, agents);
+  const events = visibleTo((await recentEvents(db, now - WINDOW, 12_000, [...ids])).filter((e) => e.seq <= seq), v, agents);
   return {
     viewer: v,
     seq,

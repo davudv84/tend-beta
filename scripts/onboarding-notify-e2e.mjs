@@ -36,7 +36,7 @@ const mailTo = async (email) => {
 async function account(email) {
   await call("POST", "/api/account/register", { body: { email, password: PW } });
   const token = /#token=([A-Za-z0-9_-]{43})/.exec(await mailTo(email))?.[1];
-  await call("POST", "/api/account/verify", { body: { token } });
+  await call("POST", "/api/account/verify", { body: { token, password: PW } });
   const r = await call("POST", "/api/account/sign-in", { body: { email, password: PW } });
   return r.setCookie?.split(";")[0];
 }

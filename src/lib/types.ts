@@ -184,6 +184,8 @@ export interface Authorization {
   action: string;
   resource?: string;
   detail?: string;
+  /** What a hook request is bound to, word for word (its command, path or URL): shown to the person deciding a pending request. */
+  exact?: string;
   status: AuthorizationStatus;
   /** Policy reason code (policy_allowed, approval_required, policy_denied, …) or why it ended. */
   reason?: string;

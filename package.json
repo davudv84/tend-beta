@@ -18,6 +18,8 @@
     "e2e:open-beta": "node scripts/open-beta-e2e.mjs",
     "e2e:onboarding": "node scripts/onboarding-notify-e2e.mjs",
     "e2e:claude-hooks": "node --no-warnings scripts/claude-hooks-e2e.mjs",
+    "e2e:claude-coverage": "node --no-warnings scripts/claude-coverage-e2e.mjs",
+    "e2e:cursor-hooks": "node --no-warnings scripts/cursor-hooks-e2e.mjs",
     "qa:inventory": "node scripts/qa-inventory.mjs",
     "qa:agent": "node scripts/qa-agent.mjs",
     "onboarding:test": "node scripts/onboarding-test.mjs",

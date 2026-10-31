@@ -51,10 +51,24 @@ export const getAgent = async (q: Q, id: string) => {
 export const allAgents = async (q: Q, workspace?: string) =>
   (await q.all<AgentRow>(`SELECT * FROM agents ${workspace ? "WHERE workspace_id = ? " : ""}ORDER BY origin DESC, created_at, id`, ...(workspace ? [workspace] : []))).map(toAgent);
 
+// Which key each agent object was authenticated with, kept beside the object (never in it, so it cannot end up in a response).
+const presented = new WeakMap<object, string>();
 export async function agentByKey(q: Q, key: string) {
-  const r = await q.get<AgentRow>("SELECT * FROM agents WHERE key_hash = ?", hashKey(key));
-  return r ? toAgent(r) : undefined;
+  const hash = hashKey(key);
+  const r = await q.get<AgentRow>("SELECT * FROM agents WHERE key_hash = ?", hash);
+  if (!r) return undefined;
+  const agent = toAgent(r);
+  presented.set(agent, hash);
+  return agent;
 }
+/**
+ * Whether the key an agent was authenticated with is no longer its key. Checked again inside each authorization transaction, under the lock:
+ * the key is looked up before the transaction starts, and a revocation that commits in between must win.
+ */
+export const keyRevoked = (row: Pick<AgentRow, "key_hash"> | undefined, agent: object) => {
+  const hash = presented.get(agent);
+  return hash !== undefined && row?.key_hash !== hash;
+};
 
 export function insertAgent(q: Q, a: Agent, keyHash?: string, keyPrefix?: string, workspace = DEFAULT_WORKSPACE) {
   const profile: Profile = { name: a.name, model: a.model, provider: a.provider, role: a.role, description: a.description, cadenceHours: a.cadenceHours };
@@ -113,8 +127,12 @@ export async function insertEvents(q: Q, list: NewEvent[]) {
 }
 
 export const eventsAfter = async (q: Q, seq: number, n: number) => (await q.all<EventRow>("SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?", seq, n)).map(toWire);
-export const recentEvents = async (q: Q, since: number, n: number) =>
-  (await q.all<EventRow>("SELECT * FROM events WHERE at > ? ORDER BY seq DESC LIMIT ?", ms(since), n)).map(toWire).reverse();
+/** The latest events, oldest first. With `agentIds`, only theirs: the limit is then per viewer, so another workspace's volume cannot crowd them out. */
+export const recentEvents = async (q: Q, since: number, n: number, agentIds?: string[]) => {
+  if (agentIds && !agentIds.length) return [];
+  const only = agentIds ? ` AND agent_id IN (${agentIds.map(() => "?").join(", ")})` : "";
+  return (await q.all<EventRow>(`SELECT * FROM events WHERE at > ?${only} ORDER BY seq DESC LIMIT ?`, ms(since), ...(agentIds ?? []), n)).map(toWire).reverse();
+};
 export const lastSeq = async (q: Q) => (await q.get<{ seq: number }>("SELECT COALESCE(MAX(seq), 0) AS seq FROM events"))!.seq;
 
 // ---- agent ingestion -------------------------------------------------------------------------

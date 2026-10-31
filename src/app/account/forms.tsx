@@ -264,11 +264,14 @@ export function Verify() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ approved: boolean } | null>(null);
-  // Confirmed by a click, not on opening: a mail scanner that follows the link must not use it up.
-  const confirm = async () => {
+  const [password, setPassword] = useState("");
+  // Confirmed by a click, not on opening: a mail scanner that follows the link must not use it up. With the sign-up password, so that a
+  // sign-up made earlier by someone else with this address cannot be activated by its owner's click.
+  const confirm = async (e: React.FormEvent) => {
+    e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await call<{ approved: boolean }>("/api/account/verify", { token });
+    const r = await call<{ approved: boolean }>("/api/account/verify", { token, password });
     setBusy(false);
     if (!r.ok) return setError(errorText(t, r));
     forgetLink();
@@ -286,9 +289,15 @@ export function Verify() {
   return (
     <>
       <Title body={token ? undefined : a.verify.missing}>{a.verify.title}</Title>
-      {error && <div className="mb-4"><Alert>{error}</Alert></div>}
-      {token && <Button disabled={busy} onClick={() => void confirm()} className="h-11 w-full rounded-full text-ui">{busy ? a.verify.busy : a.verify.submit}</Button>}
-      <Foot><A href="/account/sign-in">{a.back}</A></Foot>
+      {token && (
+        <form onSubmit={confirm} className="grid gap-4">
+          <Field label={a.verify.password} hint={a.verify.passwordHint} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          {error && <Alert>{error}</Alert>}
+          <Submit busy={busy} label={a.verify.submit} busyLabel={a.verify.busy} />
+        </form>
+      )}
+      {!token && error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      <Foot><A href="/account/forgot">{a.signIn.forgot}</A></Foot>
     </>
   );
 }

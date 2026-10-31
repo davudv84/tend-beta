@@ -31,7 +31,7 @@ test("without the admin: sign up, confirm, sign in at once; nothing before the a
   const db = await memoryDb();
   const r = await register(db, req(), { email: "ana@example.com", password: PW });
   assert.equal(await code(passwordSignIn(db, req(), { email: "ana@example.com", password: PW })), "email_unverified", "confirming the address stays mandatory");
-  const v = await verifyEmail(db, req(), { token: tokenIn(r.outbox) });
+  const v = await verifyEmail(db, req(), { token: tokenIn(r.outbox), password: PW });
   assert.deepEqual(v.result, { ok: true, approved: true });
   assert.equal(v.outbox.length, 0, "no 'waiting for approval' mail to an admin who is turned off");
   const u = (await user(db, "ana@example.com"))!;
@@ -50,7 +50,7 @@ test("without the admin: sign up, confirm, sign in at once; nothing before the a
 test("an account confirmed while approval was required, still waiting, can sign in once the admin is off; an unconfirmed one still cannot", async () => {
   const db = await memoryDb();
   const waiting = await register(db, req(), { email: "wes@example.com", password: PW });
-  await verifyEmail(db, req(), { token: tokenIn(waiting.outbox) });
+  await verifyEmail(db, req(), { token: tokenIn(waiting.outbox), password: PW });
   await register(db, req(), { email: "una@example.com", password: PW });
   assert.equal(await code(passwordSignIn(db, req(), { email: "wes@example.com", password: PW })), "pending_approval", "with the admin on, approval is still required");
   process.env.TEND_ADMIN = "0";
@@ -67,7 +67,7 @@ test("a disabled account stays disabled without the admin", async () => {
   process.env.TEND_ADMIN = "0";
   const db = await memoryDb();
   const r = await register(db, req(), { email: "dee@example.com", password: PW });
-  await verifyEmail(db, req(), { token: tokenIn(r.outbox) });
+  await verifyEmail(db, req(), { token: tokenIn(r.outbox), password: PW });
   const s = await passwordSignIn(db, req(), { email: "dee@example.com", password: PW });
   await db.run("UPDATE users SET disabled_at = ? WHERE email = ?", Date.now(), "dee@example.com");
   assert.equal(await currentSession(db, withCookie(s.value)), undefined);
@@ -101,7 +101,7 @@ test("without the admin, two accounts still see only their own workspace", async
   const ws: string[] = [];
   for (const email of ["amy@example.com", "ben@example.com"]) {
     const r = await register(db, req(), { email, password: PW });
-    await verifyEmail(db, req(), { token: tokenIn(r.outbox) });
+    await verifyEmail(db, req(), { token: tokenIn(r.outbox), password: PW });
     const s = await passwordSignIn(db, req(), { email, password: PW });
     ws.push((await currentSession(db, withCookie(s.value)))!.workspace);
   }

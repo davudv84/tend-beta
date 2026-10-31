@@ -60,7 +60,8 @@ export function RequestCard({ request, now, onAnswered }: { request: HomeRequest
       {(showsContent(kind) || hook) && auth.detail && (
         <>
           <p className="mt-6 text-caption text-faint">{h.exact}</p>
-          <blockquote className={`mt-2 rounded-2xl bg-sunken px-5 py-4 break-words whitespace-pre-wrap ${hook ? "font-mono text-[14px] [overflow-wrap:anywhere]" : "text-body"}`}>{auth.detail}</blockquote>
+          {/* For a hook request, the whole command, path or URL the approval is bound to: the detail line stops at 200 characters. */}
+          <blockquote className={`mt-2 max-h-80 overflow-y-auto rounded-2xl bg-sunken px-5 py-4 break-words whitespace-pre-wrap ${hook ? "font-mono text-[14px] [overflow-wrap:anywhere]" : "text-body"}`}>{hook ? auth.exact ?? auth.detail : auth.detail}</blockquote>
         </>
       )}
 

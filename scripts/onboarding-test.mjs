@@ -57,7 +57,7 @@ async function main() {
     await step("1. create an account", async () => must((await call("POST", "/api/account/register", { body: { email, password } })).status === 202, "sign-up refused"));
     await step("   confirm the address from the mail", async () => {
       const token = /#token=([A-Za-z0-9_-]{43})/.exec(await mail(email))?.[1];
-      must(token && (await call("POST", "/api/account/verify", { body: { token } })).status === 200, "no working link in the mail");
+      must(token && (await call("POST", "/api/account/verify", { body: { token, password } })).status === 200, "no working link in the mail");
     });
     await step("   (the admin approves the account)", async () => {
       const admin = (await call("POST", "/api/operator/session", { body: { token: ADMIN } })).cookie;

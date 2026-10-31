@@ -28,12 +28,16 @@ Read this before you put anything real behind TEND. This beta is for controlled 
 - **Same machine, same user.** Processes running as your user can read each other's environment (`ps eww`) and files. On macOS
   `npm run agents:confined` reduces this for the example agents; it is not a general isolation boundary.
 - **Accounts without roles or multi-factor sign-in.** Each account has one workspace and everyone in it is an operator. No SSO, no 2FA, no teams.
-  The admin token (for approving accounts) is one shared secret.
+  The admin token (for approving accounts) is one shared secret. Confirming an address needs the link and the password chosen at sign-up, so
+  signing up first with someone else's address gains nothing. A password reset signs every session out but leaves agent keys working:
+  after a suspected compromise, also revoke the keys of agents you did not create.
 - **The agent tells TEND what it is about to do.** Conditions are checked against the arguments the agent sends. TEND's adapters send exactly the
   arguments the tool then receives, but a modified or malicious agent could describe one call and make another. Only a tool that itself checks
   TEND's decision closes that, and TEND does not offer that yet.
-- **Conditions see summaries of long values.** Strings over 256 characters and lists over 50 items reach the rules as a hash and a length, so a
-  condition on them does not match (the request falls through to the next rule). String comparisons ignore case.
+- **Conditions see summaries of long values.** Strings over 256 characters and lists over 50 items reach the rules as a hash and a length. A
+  condition on such a value (or on an object where a plain value belongs) is treated as unknown: a deny or approve rule that might match
+  applies, an allow rule does not, so padding or reshaping an argument can make a request stricter, never looser. String comparisons ignore
+  case; numbers and text are compared as text (1001 and "1001" are the same value).
 - **The hash chain detects tampering, it does not prevent it.** Someone who can write to the database can rewrite history and recompute the chain.
   Keep the head hash that `audit-verify` prints somewhere outside TEND and compare it later.
 - **It cannot judge what a request means.** It binds an approval to exactly what was asked; if your code describes one thing and does another,

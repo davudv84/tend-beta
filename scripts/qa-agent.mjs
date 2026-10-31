@@ -69,7 +69,7 @@ The server is a disposable local instance with test data only: probe it freely, 
 (TEND_ADMIN=0): people sign up, confirm their e-mail from a mailed link, and sign in; there is no admin, and the admin routes must not exist.
 
 How it is used:
-- Accounts: POST /api/account/register {email,password}; the mail holds /account/verify#token=…; POST /api/account/verify {token};
+- Accounts: POST /api/account/register {email,password}; the mail holds /account/verify#token=…; POST /api/account/verify {token,password};
   POST /api/account/sign-in {email,password}; DELETE /api/operator/session signs out; /api/account/forgot and /api/account/reset {token,password}.
 - Signed in (cookie): POST /api/v1/agents {name,model,provider:"Custom"} returns {agent,apiKey}; GET/POST /api/v1/agents/{id}/policy
   {rules:[{tool,action,effect:"allow"|"deny"|"approve", when?}],enforcement:"enforce",expectedVersion}; POST /api/v1/agents/{id}/keys rotates,

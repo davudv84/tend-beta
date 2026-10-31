@@ -118,6 +118,7 @@ export const de: Dict = {
       email_unverified: "Bestätigen Sie zuerst Ihre E-Mail-Adresse. Wir können den Link erneut senden.",
       pending_approval: "Ihr Konto wartet auf Freigabe. Sie erhalten eine E-Mail, sobald es bereit ist.",
       account_disabled: "Dieses Konto wurde gesperrt. Wenden Sie sich an den TEND-Admin.",
+      password_mismatch: "Das ist nicht das Passwort, mit dem diese Adresse registriert wurde. Geben Sie es ein oder wählen Sie über „Passwort vergessen“ ein neues.",
       invalid_link: "Dieser Link ist nicht mehr gültig. Fordern Sie einen neuen an.",
       invalid_email: "Geben Sie eine gültige E-Mail-Adresse ein.",
       accounts_disabled: "Konten sind auf diesem Server nicht aktiviert.",
@@ -705,7 +706,7 @@ export const de: Dict = {
     back: "Zurück zur Anmeldung",
     signIn: { title: "Bei TEND anmelden", submit: "Anmelden", busy: "Anmelden …", forgot: "Passwort vergessen?", noAccount: "Neu bei TEND?", create: "Konto erstellen", admin: "Admin-Anmeldung", resend: "Bestätigungslink erneut senden", resent: "Falls die Adresse ein unbestätigtes Konto hat, ist ein neuer Link unterwegs." },
     signUp: { title: "TEND-Konto erstellen", body: "TEND ist in der privaten Beta. Nachdem Sie Ihre E-Mail-Adresse bestätigt haben, gibt ein Admin den Zugang frei; Sie erhalten eine E-Mail.", bodyOpen: "TEND ist in der privaten Beta. Bestätigen Sie Ihre E-Mail-Adresse, dann melden Sie sich an.", bodyInstant: "TEND ist in der privaten Beta. Erstellen Sie Ihr Konto und legen Sie sofort los; ohne Bestätigungs-E-Mail.", bodyApproval: "TEND ist in der privaten Beta. Nachdem Sie Ihr Konto erstellt haben, gibt ein Admin den Zugang frei; Sie erhalten eine E-Mail.", signInFailed: "Das Konto konnte nicht angemeldet werden. Hat diese Adresse schon ein Konto, melden Sie sich mit dessen Passwort an oder setzen Sie es zurück.", submit: "Konto erstellen", busy: "Wird erstellt …", have: "Schon ein Konto?", verifyTitle: "Bestätigen Sie Ihre E-Mail-Adresse, um fortzufahren", verifyBody: (email: string) => `Wir haben einen Bestätigungslink an ${email} gesendet. Öffnen Sie ihn auf diesem oder einem anderen Gerät; diese Seite geht dann von selbst weiter.`, waiting: "Warten auf Ihre Bestätigung …", continuing: "Bestätigt. Sie werden zu TEND weitergeleitet …", resend: "Bestätigungs-E-Mail erneut senden", resendIn: (s: number) => `Erneut senden in ${s}${NB}s`, resent: "Erneut gesendet. Prüfen Sie Ihren Posteingang und den Spam-Ordner. Der neueste Link ersetzt die früheren.", resendLimit: "Noch nichts da? Sie können bis zu dreimal pro Stunde einen neuen Link anfordern.", change: "Andere E-Mail-Adresse verwenden", stopped: "Diese Seite prüft nicht mehr. Sobald Ihre Adresse bestätigt ist, melden Sie sich an." },
-    verify: { title: "E-Mail-Adresse bestätigen", submit: "Bestätigen", busy: "Wird bestätigt …", doneTitle: "Adresse bestätigt", waiting: "Ein Admin prüft Ihren Zugang. Sie erhalten eine E-Mail, sobald Sie sich anmelden können.", ready: "Ihr Zugang ist bereit. Sie können sich jetzt anmelden.", readyAuto: "Wenn Sie sich in einem anderen Tab oder auf einem anderen Gerät registriert haben, geht es dort von selbst weiter. Sie können auch hier fortfahren.", continue: "Weiter", missing: "Diese Seite braucht den Link aus Ihrer E-Mail. Öffnen Sie ihn erneut oder fordern Sie einen neuen an." },
+    verify: { title: "E-Mail-Adresse bestätigen", password: "Passwort", passwordHint: "Das Passwort, das Sie bei der Registrierung gewählt haben", submit: "Bestätigen", busy: "Wird bestätigt …", doneTitle: "Adresse bestätigt", waiting: "Ein Admin prüft Ihren Zugang. Sie erhalten eine E-Mail, sobald Sie sich anmelden können.", ready: "Ihr Zugang ist bereit. Sie können sich jetzt anmelden.", readyAuto: "Wenn Sie sich in einem anderen Tab oder auf einem anderen Gerät registriert haben, geht es dort von selbst weiter. Sie können auch hier fortfahren.", continue: "Weiter", missing: "Diese Seite braucht den Link aus Ihrer E-Mail. Öffnen Sie ihn erneut oder fordern Sie einen neuen an." },
     forgot: { title: "Passwort zurücksetzen", body: "Geben Sie Ihre E-Mail-Adresse ein; wir senden einen Link, um ein neues Passwort zu wählen.", submit: "Link senden", busy: "Wird gesendet …", sentTitle: "Posteingang prüfen", sent: "Falls die Adresse ein Konto hat, ist ein Link unterwegs. Er funktioniert einmal, 30 Minuten lang." },
     reset: { title: "Neues Passwort wählen", body: "Alle anderen Sitzungen Ihres Kontos werden abgemeldet.", submit: "Passwort speichern", busy: "Wird gespeichert …", doneTitle: "Passwort geändert", done: "Melden Sie sich mit dem neuen Passwort an." },
     prompt: { title: "Zum Fortfahren anmelden", body: "Mit Ihrem TEND-Konto. Neu hier? Erstellen Sie eines; in der privaten Beta gibt ein Admin den Zugang frei.", bodyOpen: "Mit Ihrem TEND-Konto. Neu hier? Erstellen Sie eines und bestätigen Sie Ihre E-Mail-Adresse.", bodyInstant: "Mit Ihrem TEND-Konto. Neu hier? Erstellen Sie eines und legen Sie sofort los.", signIn: "Anmelden", create: "Konto erstellen", token: "Stattdessen mit dem Admin-Token anmelden" },
@@ -728,7 +729,7 @@ export const de: Dict = {
     categoryLabel: "Kategorie",
     statusLabel: "Status",
     categories: { provider: "KI-Anbieter", agent: "KI-Agenten", framework: "Frameworks", protocol: "Protokolle" },
-    status: { verified: "Verifiziert", connected: "Verbunden", compatible: "Kompatibel", blocked: "Blockiert", planned: "Geplant" },
+    status: { verified: "Verifiziert", connected: "Verbunden", compatible: "Noch nicht verifiziert", blocked: "Noch nicht getestet", planned: "Geplant" },
     statusHelp: {
       verified: "Alle echten Tests bestanden: Erlauben, Verweigern, Freigabe, Ablehnung, Widerruf, TEND nicht erreichbar und das Protokoll.",
       connected: "Ein Agent ist damit an dieses TEND angeschlossen, aber die Integration ist noch nicht verifiziert.",
@@ -1499,7 +1500,7 @@ export const de: Dict = {
       enforcedSub: "Wird vor der Ausführung geprüft. TEND kann diese Aufrufe stoppen oder anhalten.",
       enforcedNone: "Nichts. Jeder Aufruf läuft, das ist also Beobachtung, kein Schutz.",
       unruled: (kinds) => `Andere ${kinds}: blockiert, weil keine Regel sie abdeckt.`,
-      kinds: { shell: "Befehle", "file.write": "Dateiänderungen", "file.read": "Lesezugriffe auf Dateien", web: "Webanfragen", mcp: "MCP-Werkzeugaufrufe", agent: "Hilfsagenten" },
+      kinds: { shell: "Befehle", "file.write": "Dateiänderungen", "file.read": "Lesezugriffe auf Dateien", web: "Webanfragen", mcp: "MCP-Werkzeugaufrufe", agent: "Hilfsagenten", other: "andere Werkzeuge" },
       monitored: "Beobachtet",
       monitoredSub: "Läuft ohne Rückfrage. TEND zeichnet die Anfrage auf, und der Agent meldet, wie sie ausging.",
       monitoredNone: "Nichts läuft, ohne dass eine Regel es erlaubt.",
@@ -1508,7 +1509,7 @@ export const de: Dict = {
       outsideSub: "Das kann TEND weder sehen noch stoppen.",
       outsideItems: [
         "Alles, was nicht durch die Hooks läuft: andere Apps und Agenten, Befehle, die Sie selbst eingeben, und Arbeit, bevor TEND verbunden war.",
-        "Werden die Hooks entfernt oder abgeschaltet (etwa mit disableAllHooks oder einer geänderten Einstellungsdatei), sieht TEND nichts. Der Modus zum Umgehen der Berechtigungen wurde mit TEND nicht getestet.",
+        "Werden die Hooks entfernt oder abgeschaltet, sieht TEND nichts. Die eigene .claude/settings.json eines Repositorys kann das für sich selbst mit disableAllHooks tun (getestet: der Befehl lief, TEND erfuhr nichts). Öffnen Sie Repositorys, denen Sie nicht vertrauen, mit Vorsicht. Der Modus zum Umgehen der Berechtigungen wurde mit TEND nicht getestet.",
         "Regeln über Befehlstext prüfen den Text, nicht die Wirkung. Ein Skript, ein Alias oder eine Variable kann dasselbe tun, ohne auf das Muster zu passen.",
         "Ist ein Aufruf erlaubt, wird nicht Schritt für Schritt geprüft, was er startet (ein Skript, eine Installation, einen Build).",
         "Wie ein beobachteter Aufruf ausging, meldet der Agent selbst. Stürzt er ab oder geht die Meldung verloren, hat TEND nur die Anfrage.",
@@ -1773,7 +1774,7 @@ export const de: Dict = {
   timelinePage: {
     reasons: { policy_allowed: "Von der Richtlinie des Agenten erlaubt", approval_required: "Diese Aktion braucht eine Freigabe", no_policy: "Nicht auf der Erlaubnisliste des Agenten", policy_denied: "Durch eine Regel blockiert", agent_paused: "Der Agent ist pausiert", integration_disabled: "Der Zugang des Agenten ist abgeschaltet", invalid_policy: "Die Richtlinie war nicht lesbar", missing_permission: "Berechtigung nicht erteilt", unknown_agent: "Unbekannter Agent", expired: "Die Anfrage ist abgelaufen", no_authorization: "Lief, ohne TEND vorher zu fragen", key_revoked: "Der Schlüssel des Agenten wurde widerrufen" } as Record<string, string>,
     rule: (r) => {
-      const noun: Record<string, string> = { shell: "Befehle", "file.write": "Dateiänderungen", "file.read": "Lesezugriffe auf Dateien", web: "Webanfragen", mcp: "MCP-Werkzeugaufrufe", agent: "Hilfsagenten" };
+      const noun: Record<string, string> = { shell: "Befehle", "file.write": "Dateiänderungen", "file.read": "Lesezugriffe auf Dateien", web: "Webanfragen", mcp: "MCP-Werkzeugaufrufe", agent: "Hilfsagenten", other: "andere Werkzeuge" };
       const field: Record<string, string> = { command: "Befehl", path: "Pfad", url: "Adresse", tool: "Werkzeugname" };
       const what = noun[String(r?.tool)] ?? `Aufrufe von „${r?.tool}“`;
       const conds = Object.entries(r?.when ?? {});

@@ -94,3 +94,69 @@ test("resource restrictions on file paths cannot be walked out of", () => {
     assert.equal(effect(files, "write_file", { path }), "deny", JSON.stringify(path));
   assert.equal(parsePolicy([{ tool: "t", action: "call", effect: "allow", when: { path: { pathUnder: ["/data/../etc"] } } }]).ok, false, "a rule cannot name a folder with .. in it");
 });
+
+// From the security review of 2026-10-31: an adapter sends long values as { sha256, length }; padding a value past that limit used to make a
+// stricter rule's condition false, so the request fell through to a broader allow.
+test("a condition on a summarized value applies a deny or approve rule and never an allow rule", () => {
+  const agent = { status: "active" as const, integrationEnabled: true, permissions: [] };
+  const policy = [
+    { tool: "email", action: "*", effect: "allow" },
+    { tool: "email", action: "*", effect: "approve", when: { body: { contains: "password" } } },
+    { tool: "email", action: "*", effect: "deny", when: { to: { endsWith: "@evil.example" } } },
+    { tool: "pay", action: "*", effect: "allow", when: { amount: { lte: 50 }, note: { contains: "ok" } } },
+    { tool: "pay", action: "*", effect: "approve" },
+    { tool: "nested", action: "*", effect: "allow" },
+    { tool: "nested", action: "*", effect: "deny", when: { "payload.to": { in: ["boss@corp.example"] } } },
+  ];
+  const long = { sha256: "a".repeat(64), length: 9000 };
+  const req = (tool: string, args: Record<string, unknown>): AuthRequest => ({ tool, action: "send", resource: null, detail: null, args });
+  assert.equal(evaluate(agent, policy, req("email", { body: "hi", to: "a@b.example" })).effect, "allow", "readable and harmless: allowed as before");
+  assert.equal(evaluate(agent, policy, req("email", { body: long, to: "a@b.example" })).effect, "approve", "an unreadable body may contain the word: a person decides");
+  assert.equal(evaluate(agent, policy, req("email", { body: "hi", to: long })).effect, "deny", "an unreadable address may be the denied one");
+  assert.equal(evaluate(agent, policy, req("pay", { amount: 10, note: long })).effect, "approve", "an allow rule whose condition cannot be read does not allow");
+  assert.equal(evaluate(agent, policy, req("pay", { amount: 10, note: "ok" })).effect, "allow");
+  assert.equal(evaluate(agent, policy, req("nested", { payload: long })).effect, "deny", "a path into a summarized object is unknown, not missing");
+  assert.equal(evaluate(agent, policy, req("email", { body: [long, "x"], to: "a@b.example" })).effect, "approve", "a list with a summarized element is unknown too");
+});
+
+test("an unreadable value can make a decision stricter, never looser: a forged summary cannot lift a deny into the approval queue", () => {
+  const agent = { status: "active" as const, integrationEnabled: true, permissions: [] };
+  const policy = [
+    { tool: "send_email", action: "*", effect: "approve", when: { to: { endsWith: "@partner.example" } } },
+    { tool: "send_email", action: "*", effect: "deny" },
+  ];
+  const req = (to: unknown): AuthRequest => ({ tool: "send_email", action: "send", resource: null, detail: null, args: { to } });
+  assert.equal(evaluate(agent, policy, req("x@evil.example")).effect, "deny");
+  assert.equal(evaluate(agent, policy, req("a@partner.example")).effect, "approve");
+  for (const forged of [{ sha256: "00", length: 999 }, [{ sha256: "00" }], { addr: "a@partner.example" }, [["a@partner.example"]]])
+    assert.equal(evaluate(agent, policy, req(forged)).effect, "deny", JSON.stringify(forged));
+});
+
+test("notIn and equality hold only for plain values, compared as text: no null, object, nested list or type change slips past", () => {
+  const agent = { status: "active" as const, integrationEnabled: true, permissions: [] };
+  const allowUnlessBoss = [
+    { tool: "send_email", action: "*", effect: "allow", when: { to: { notIn: ["boss@corp.example", 1001] } } },
+    { tool: "send_email", action: "*", effect: "deny" },
+  ];
+  const req = (to: unknown): AuthRequest => ({ tool: "send_email", action: "send", resource: null, detail: null, args: { to } });
+  assert.equal(evaluate(agent, allowUnlessBoss, req("ana@corp.example")).effect, "allow");
+  for (const bad of ["boss@corp.example", [["boss@corp.example"]], { addr: "boss@corp.example" }, null, true, "1001", 1001])
+    assert.equal(evaluate(agent, allowUnlessBoss, req(bad)).effect, "deny", JSON.stringify(bad));
+  const denyAmount = [{ tool: "pay", action: "*", effect: "allow" }, { tool: "pay", action: "*", effect: "deny", when: { amount: { in: [1001] } } }];
+  const pay = (amount: unknown): AuthRequest => ({ tool: "pay", action: "send", resource: null, detail: null, args: { amount } });
+  assert.equal(evaluate(agent, denyAmount, pay("1001")).effect, "deny", "a number sent as text is the same number");
+  assert.equal(evaluate(agent, denyAmount, pay(5)).effect, "allow");
+});
+
+test("request text with hidden characters is refused, and arguments nested thousands deep are refused instead of crashing", async () => {
+  const { parseAuthRequest } = await import("./policy.ts");
+  for (const hidden of [0xe0041, 0x3164, 0x115f, 0x2800, 0x34f, 0xe0100]) {
+    const r = parseAuthRequest({ tool: "send_email", action: "send", detail: `pay 5 EUR${String.fromCodePoint(hidden)}` });
+    assert.equal(r.ok, false, hidden.toString(16));
+  }
+  assert.equal(parseAuthRequest({ tool: "send_email", action: "send", detail: "done ✔️ 🎉" }).ok, true, "ordinary emoji stay allowed");
+  let deep: unknown = "x";
+  for (let i = 0; i < 20_000; i++) deep = { a: deep };
+  const r = parseAuthRequest({ tool: "t", action: "a", args: { deep } });
+  assert.equal(r.ok, false);
+});

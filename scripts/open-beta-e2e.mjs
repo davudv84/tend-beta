@@ -37,7 +37,7 @@ const mailTo = async (email, wait = 3000) => {
 const tokenIn = (mail) => /#token=([A-Za-z0-9_-]{43})/.exec(mail)?.[1];
 const PW = "correct horse battery staple";
 const signUp = async (email) => (await call("POST", "/api/account/register", { body: { email, password: PW } })).status;
-const confirm = async (email) => call("POST", "/api/account/verify", { body: { token: tokenIn(await mailTo(email)) } });
+const confirm = async (email) => call("POST", "/api/account/verify", { body: { token: tokenIn(await mailTo(email)), password: PW } });
 const signIn = (email, password = PW) => call("POST", "/api/account/sign-in", { body: { email, password } });
 
 async function main() {

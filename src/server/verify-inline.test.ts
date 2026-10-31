@@ -24,7 +24,7 @@ test("waiting for confirmation: repeated checks get 'not confirmed yet', never a
   for (let i = 0; i < 60; i++) assert.equal(await code(passwordSignIn(db, req(), { email: "ana@example.com", password: PW })), "email_unverified", `check ${i}`);
   assert.equal((await db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM operator_sessions"))!.n, 0, "no session exists for an unconfirmed account");
   assert.equal(await code(requireOperator(new Request("http://tend.test/api/v1/agents", { method: "POST", headers: { host: "tend.test" } }), db)), "operator_required", "protected routes refuse it");
-  await verifyEmail(db, req(), { token: tokenIn(r.outbox) });
+  await verifyEmail(db, req(), { token: tokenIn(r.outbox), password: PW });
   const s = await passwordSignIn(db, req(), { email: "ana@example.com", password: PW });
   const session = await currentSession(db, new Request("http://tend.test/", { headers: { host: "tend.test", cookie: `${sessionCookieName()}=${s.value}` } }));
   assert.equal(session?.email, "ana@example.com", "the page continues into a real session");
@@ -48,7 +48,7 @@ test("resend: a new link replaces the old one, the answer is the same for every 
   const first = await register(db, req(), { email: "cy@example.com", password: PW });
   const again = await resendVerification(db, req(), { email: "cy@example.com" });
   assert.deepEqual(again.result, (await resendVerification(db, req(), { email: "nobody@example.com" })).result, "same answer for an unknown address");
-  assert.equal(await code(verifyEmail(db, req(), { token: tokenIn(first.outbox) })), "invalid_link", "the earlier link stops working");
-  assert.equal(await code(verifyEmail(db, req(), { token: tokenIn(again.outbox) })), "ok");
+  assert.equal(await code(verifyEmail(db, req(), { token: tokenIn(first.outbox), password: PW })), "invalid_link", "the earlier link stops working");
+  assert.equal(await code(verifyEmail(db, req(), { token: tokenIn(again.outbox), password: PW })), "ok");
   await db.close();
 });

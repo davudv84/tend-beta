@@ -28,7 +28,7 @@ const PW = "correct horse battery";
 
 async function user(db: DB, email: string) {
   const r = await register(db, post(), { email, password: PW });
-  await verifyEmail(db, post(), { token: /#token=([A-Za-z0-9_-]{43})/.exec(r.outbox[0].text)![1] });
+  await verifyEmail(db, post(), { token: /#token=([A-Za-z0-9_-]{43})/.exec(r.outbox[0].text)![1], password: PW });
   await setAccess(db, post(), (await db.get<{ id: string }>("SELECT id FROM users WHERE email = ?", email))!.id, "approve", "admin");
   const s = await passwordSignIn(db, post(), { email, password: PW });
   const session = (await currentSession(db, as(s.value)))!;
@@ -141,4 +141,21 @@ test("disabling an account also stops its agents: every key of the workspace is 
   assert.equal((await db.get<{ status: string }>("SELECT status FROM authorizations WHERE id = ?", view.id))!.status, "cancelled");
   assert.ok(await authAgent(db, keyReq(rb.apiKey)), "B's agent is untouched");
   await db.close();
+});
+
+// From the security review of 2026-10-31: the dashboard's first load read the latest 12,000 events of the whole server and then kept the
+// viewer's, so one busy (or hostile) workspace could push another's waiting approvals out of its dashboard.
+test("another workspace's volume never pushes your waiting approval out of your dashboard", async () => {
+  const db = await memoryDb();
+  const a = await user(db, "a@example.com"), b = await user(db, "b@example.com");
+  const ra = await registerAgent(db, { name: "Mailer", model: "m", provider: "Anthropic" }, a.id, a.workspace);
+  const rb = await registerAgent(db, { name: "Noisy", model: "m", provider: "Anthropic" }, b.id, b.workspace);
+  await setPolicy(db, ra.agent.id, RULES, "enforce");
+  const agent = (await authAgent(db, new Request("http://tend.test/api/v1/authorize", { headers: { authorization: `Bearer ${ra.apiKey}` } })))!;
+  const { view } = await requestAuthorization(db, agent, { tool: "send_email", action: "send", resource: "r1" }, null);
+  assert.equal(view.status, "pending");
+  const now = Date.now();
+  await db.exec(`INSERT INTO events (id, agent_id, type, at, actor, data) SELECT 'flood_' || g, '${rb.agent.id}', 'agent.heartbeat', ${now} + g, 'agent', '{}' FROM generate_series(1, 12500) AS g`);
+  const mine = await snapshot(db, await viewerOf(db, as(a.cookie)), now + 20_000);
+  assert.ok(mine.projection.authorizations.some((x) => x.id === view.id && x.status === "pending"), "the waiting request is still on the dashboard");
 });

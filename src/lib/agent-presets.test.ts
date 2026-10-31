@@ -23,6 +23,8 @@ test("Balanced and Strict: what runs, what waits, what is refused", () => {
     ["shell", { command: "cat ~/.ssh/id_rsa" }, "deny", "deny"],
     ["shell", { command: "rm -rf /" }, "deny", "deny"],
     ["file.read", { path: "/home/a/.ssh/id_rsa" }, "deny", "deny"],
+    ["file.read", { path: "/home/a/.ssh" }, "deny", "deny"], // a search rooted at the folder itself (review of 2026-10-31)
+    ["shell", { command: "ls ~/.ssh" }, "deny", "deny"],
     ["file.read", { path: "/home/a/project/.env" }, "approve", "allow"],
     ["file.write", { path: "/home/a/project/src/x.ts" }, "allow", "approve"],
     ["web", { url: "https://example.com" }, "approve", "approve"],
@@ -49,7 +51,7 @@ test("coverage: Balanced holds risky commands and web/MCP calls, records the res
   const c = coverageOf(presetRules("balanced"));
   assert.ok(c.enforced.every((r) => r.effect !== "allow") && c.monitored.every((r) => r.effect === "allow"));
   assert.ok(c.enforced.some((r) => r.tool === "web" && r.effect === "approve" && !r.when));
-  assert.ok(c.enforced.some((r) => r.tool === "shell" && r.effect === "deny" && (r.when as { command?: { contains?: string } }).command?.contains === ".ssh/"));
+  assert.ok(c.enforced.some((r) => r.tool === "shell" && r.effect === "deny" && (r.when as { command?: { contains?: string } }).command?.contains === ".ssh"));
   assert.equal(c.enforced[0].effect, "deny", "blocks are listed first");
   assert.ok(!c.enforced.some(isTestRule) && !c.monitored.some(isTestRule));
   assert.deepEqual(c.unruled, []);
@@ -58,14 +60,14 @@ test("coverage: Balanced holds risky commands and web/MCP calls, records the res
 test("coverage: Monitor only enforces nothing, and a kind without a catch-all rule falls to the default block", () => {
   assert.deepEqual(coverageOf(presetRules("monitor")).enforced, []);
   const c = coverageOf([{ tool: "shell", action: "*", effect: "allow" }]);
-  assert.deepEqual(c.unruled, ["file.write", "file.read", "web", "mcp", "agent"]);
+  assert.deepEqual(c.unruled, ["file.write", "file.read", "web", "mcp", "agent", "other"]);
 });
 
 test("coverage: a central policy's rules count too, marked as central, and a kind either policy catches is not left to the default", () => {
   const c = coverageOf([{ tool: "shell", action: "*", effect: "allow" }], [{ tool: "web", action: "*", effect: "deny" }, { tool: "shell", action: "*", effect: "approve", when: { command: { contains: "deploy" } } }]);
   assert.deepEqual(c.enforced.map((r) => [r.tool, r.effect, r.from]), [["web", "deny", "central"], ["shell", "approve", "central"]]);
   assert.deepEqual(c.monitored.map((r) => [r.tool, r.from]), [["shell", "agent"]]);
-  assert.deepEqual(c.unruled, ["file.write", "file.read", "mcp", "agent"]);
+  assert.deepEqual(c.unruled, ["file.write", "file.read", "mcp", "agent", "other"]);
 });
 
 test("coverage: a rule overridden by a stricter one with the same scope (from either policy) is not listed", () => {

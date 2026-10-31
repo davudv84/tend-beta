@@ -297,3 +297,24 @@ test("a visitor sees a check-in's answers and confidences, never the free-text e
     await db.close();
   }
 });
+
+// From the security review of 2026-10-31: the person deciding saw only the 200-character detail, while the approval was bound to the whole
+// command. A pending request now carries its exact command, path or URL to operators; visitors never receive it.
+test("a pending hook request shows operators its whole command; visitors of a public instance never get it", async () => {
+  const db = await memoryDb();
+  const { agent } = await registerAgent(db, { name: "Public Coder", model: "Claude Code", provider: "Anthropic", public: true }, SID);
+  await setPolicy(db, agent.id, [{ tool: "shell", action: "*", effect: "approve" }], "enforce", SID);
+  const command = `echo ${"a".repeat(400)} ; git push --force`;
+  const a = (await getAgent(db, agent.id))!;
+  const { view } = await requestAuthorization(db, a, { tool: "shell", action: "Bash", detail: `Run: ${command.slice(0, 150)}…`, args: { command } }, null);
+  const op = (await snapshot(db, await asOperator(db))).projection.authorizations.find((x) => x.id === view.id);
+  assert.equal(op?.exact, command, "the operator can read every character they are asked to approve");
+  const prior = process.env.TEND_PUBLIC;
+  process.env.TEND_PUBLIC = "1";
+  try {
+    const seen = JSON.stringify(await read(db, await asVisitor(db)));
+    assert.equal(seen.includes("git push --force"), false, "a visitor never receives the command");
+  } finally {
+    if (prior === undefined) delete process.env.TEND_PUBLIC; else process.env.TEND_PUBLIC = prior;
+  }
+});
