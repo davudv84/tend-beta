@@ -22,6 +22,7 @@ export function RequestCard({ request, now, onAnswered }: { request: HomeRequest
   const t = useT();
   const h = t.home.request;
   const decide = useStore((s) => s.decide);
+  const readOnly = useStore((s) => !!s.viewer?.readOnly);
   const [prefs] = useUiPrefs();
   const headingId = useId();
   const [step, setStep] = useState<"ask" | "confirm" | "saving">("ask");
@@ -84,10 +85,11 @@ export function RequestCard({ request, now, onAnswered }: { request: HomeRequest
         </div>
       ) : (
         <div className="mt-6 flex flex-wrap gap-2.5">
-          <Button className={button} disabled={busy} onClick={() => (needsConfirmation(kind) ? setStep("confirm") : void answer("approved"))}>{h.allow}</Button>
-          <Button variant="secondary" className={`${button} border-border`} disabled={busy} onClick={() => void answer("rejected")}>{h.deny}</Button>
+          <Button className={button} disabled={busy || readOnly} onClick={() => (needsConfirmation(kind) ? setStep("confirm") : void answer("approved"))}>{h.allow}</Button>
+          <Button variant="secondary" className={`${button} border-border`} disabled={busy || readOnly} onClick={() => void answer("rejected")}>{h.deny}</Button>
         </div>
       )}
+      {readOnly && <p className="mt-3 text-small text-muted-foreground">{t.common.readOnlyDemo}</p>}
       <p role="status" className={busy ? "mt-3 text-small text-muted-foreground" : "sr-only"}>{busy ? h.saving : ""}</p>
       {error && <p role="alert" className="mt-3 text-small text-clay">{error}</p>}
 

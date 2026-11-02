@@ -249,6 +249,7 @@ export function UiShell({ children }: { children: React.ReactNode }) {
   const t = useT();
   const [prefs] = useUiPrefs();
   const waiting = useWaiting();
+  const readOnly = useStore((s) => !!s.viewer?.readOnly);
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const [root, setRoot] = useState<HTMLElement | null>(null);
@@ -285,7 +286,10 @@ export function UiShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main id="main" className="min-w-0">{children}</main>
+      <main id="main" className="min-w-0">
+        {readOnly && <p role="note" className="border-b border-border bg-sunken px-4 py-2.5 text-small text-muted-foreground md:px-8">{t.common.demoBanner}</p>}
+        {children}
+      </main>
     </div>
   );
 }

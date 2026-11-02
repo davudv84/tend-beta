@@ -252,7 +252,7 @@ const touch = (q: Q, agentId: string, now: number, disconnecting = false) =>
   q.run("UPDATE agents SET last_seen_at = ?, disconnected_at = ? WHERE id = ?", ms(now), disconnecting ? ms(now) : null, agentId);
 
 /** Ingests a batch of agent events atomically. Duplicate idempotency keys are reported, not re-stored. */
-export async function ingestEvents(db: DB, agent: Agent, inputs: unknown[]) {
+export async function ingestEvents(db: DB, agent: Agent, inputs: unknown[], now = Date.now()) {
   if (!inputs.length || inputs.length > 50) throw new HttpError(422, "invalid_batch", "Send between 1 and 50 events per request.");
   const parsed = inputs.map(parseAgentEvent);
   for (const p of parsed) guard(agent, p.type);
@@ -262,7 +262,6 @@ export async function ingestEvents(db: DB, agent: Agent, inputs: unknown[]) {
   return db.tx(async (q) => {
     // Taken first, so two retries of the same request can't both pass the duplicate check.
     await q.lockEvents();
-    const now = Date.now();
     const results: { id?: string; seq?: number; type: string; status: "stored" | "duplicate" | "presence"; alerts?: string[] }[] = [];
     for (const p of parsed) {
       await touch(q, agent.id, now, p.type === "agent.disconnected");
@@ -573,17 +572,16 @@ export async function assignCentralPolicy(db: DB, id: string, body: unknown, by?
   });
 }
 
-export async function decide(db: DB, reviewId: string, status: "approved" | "rejected" | "acknowledged", note?: string, by?: string) {
+export async function decide(db: DB, reviewId: string, status: "approved" | "rejected" | "acknowledged", note?: string, by?: string, now = Date.now()) {
   if (!["approved", "rejected", "acknowledged"].includes(status)) throw new HttpError(422, "invalid_status", "status must be approved, rejected or acknowledged.");
   // Outside the transaction, so an expiry is kept even though the decision below is refused.
-  await sweepExpired(db, Date.now());
+  await sweepExpired(db, now);
   return db.tx(async (q) => {
     await q.lockEvents();
     // Locked, so two reviewers deciding at once can't both grant.
     const r = await q.get<{ id: string; agent_id: string; status: string; permission: string | null }>("SELECT * FROM reviews WHERE id = ? FOR UPDATE", reviewId);
     if (!r) throw new HttpError(404, "review_not_found", "No review with that id.");
     if (r.status !== "pending") throw new HttpError(409, "already_decided", `This review was already ${r.status}.`);
-    const now = Date.now();
     // A review that is an authorization request also decides that authorization, if it hasn't expired.
     const authz = !!(await q.get("SELECT 1 FROM authorizations WHERE id = ?", reviewId));
     if (authz) {

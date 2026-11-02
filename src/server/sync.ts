@@ -4,6 +4,7 @@ import type { Viewer } from "./auth.ts";
 import { sweepExpired } from "./authz.ts";
 import type { DB } from "./db.ts";
 import { advanceDemo } from "./demo.ts";
+import { refreshDemo } from "./demo-account.ts";
 import { HttpError } from "./http.ts";
 import { visibleTo } from "./redact.ts";
 import { allAgents, eventsAfter, keyPrefixes, lastSeq, recentEvents } from "./repo.ts";
@@ -24,6 +25,7 @@ async function visible(db: DB, v: Viewer) {
 export async function snapshot(db: DB, v: Viewer, now = Date.now()) {
   assertCanView(v);
   await advanceDemo(db, now);
+  if (v.readOnly && v.workspace) await refreshDemo(db, v.workspace, now);
   // So the dashboard shows an authorization as expired once it is, not when the agent next calls.
   await sweepExpired(db, now);
   // Read the cursor first: anything committed after it arrives with the next poll, never lost.
@@ -44,6 +46,7 @@ export async function snapshot(db: DB, v: Viewer, now = Date.now()) {
 export async function since(db: DB, v: Viewer, seq: number, now = Date.now()) {
   assertCanView(v);
   await advanceDemo(db, now);
+  if (v.readOnly && v.workspace) await refreshDemo(db, v.workspace, now);
   await sweepExpired(db, now);
   const agents = await visible(db, v);
   const ids = new Set(agents.map((a) => a.id));

@@ -96,6 +96,8 @@ export const en = {
     clipboard: "Couldn’t access the clipboard",
     readOnlyPublic: "Read-only demo: visitors can explore but not change anything.",
     readOnlySignIn: "Sign in as an operator to make changes.",
+    readOnlyDemo: "This demo account is read-only. In your own workspace, this is where you would decide.",
+    demoBanner: "YC Demo: a read-only account with sample agents and sample activity. Look around freely; nothing you click here changes anything.",
     source: (s: string) => `source: ${s}`,
     /** Shown where agent-written text appears; empty when the interface language matches it. */
     originalLanguage: "",
@@ -124,6 +126,7 @@ export const en = {
       email_unverified: "Confirm your e-mail address first. We can send the link again.",
       pending_approval: "Your account is waiting for approval. You’ll get an e-mail when it’s ready.",
       account_disabled: "This account has been disabled. Contact the TEND admin.",
+      read_only_account: "This demo account is read-only. Nothing here can be changed.",
       password_mismatch: "That is not the password this address was signed up with. Enter it, or choose a new one with Forgot password.",
       invalid_link: "This link is not valid any more. Ask for a new one.",
       invalid_email: "Enter a valid e-mail address.",

@@ -95,6 +95,15 @@ export const config = {
   get demo() {
     return process.env.TEND_DEMO !== "0";
   },
+  /**
+   * A shared, read-only demo account (demo-account.ts): TEND_DEMO_ACCOUNT="<e-mail> <scrypt hash>", the hash as accounts.ts hashPassword() makes it, never
+   * the password. Signing in with that address creates the account and its sample workspace the first time. Remove the variable to turn the
+   * demo off: its sessions end on their next request and it can no longer sign in.
+   */
+  get demoAccount(): { email: string; hash: string } | undefined {
+    const [email = "", hash = "", ...rest] = (process.env.TEND_DEMO_ACCOUNT ?? "").trim().split(/\s+/);
+    return !rest.length && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && /^scrypt\$15\$8\$1\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{43}$/.test(hash) ? { email: email.toLowerCase(), hash } : undefined;
+  },
   /** Postgres connection string. Vercel's Neon integration sets DATABASE_URL (and POSTGRES_URL). */
   get databaseUrl() {
     return process.env.DATABASE_URL || process.env.POSTGRES_URL || "";

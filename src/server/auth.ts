@@ -66,4 +66,6 @@ export interface Viewer {
   emailVerification?: boolean;
   /** The signed-in user, when it is an account rather than the admin token. */
   account?: { email: string };
+  /** A read-only account (the shared demo): it sees its workspace like any operator, and the server refuses every change it asks for. */
+  readOnly?: boolean;
 }

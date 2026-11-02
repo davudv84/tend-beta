@@ -33,6 +33,8 @@ export interface Viewer {
   /** False when sign-up needs no confirmation mail (TEND_EMAIL_VERIFICATION=0). */
   emailVerification?: boolean;
   account?: { email: string };
+  /** The shared demo account: it sees its workspace in full and the server refuses every change. */
+  readOnly?: boolean;
 }
 
 /** `code` is the server's error code (or "network"); the interface translates it, `error` is the fallback. */

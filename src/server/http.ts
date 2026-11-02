@@ -154,6 +154,8 @@ export async function requireOperator(req: Request, db: Q): Promise<Session> {
   requireSameSite(req);
   const s = await currentSession(db, req);
   if (!s) throw new HttpError(403, "operator_required", "Sign in to make changes. Visitors have read-only access.");
+  // Every operator route goes through here, so this one check makes a read-only account read-only everywhere: it may look, never change.
+  if (s.readOnly && req.method !== "GET" && req.method !== "HEAD") throw new HttpError(403, "read_only_account", "This is a read-only demo account with sample data. Nothing here can be changed.");
   return s;
 }
 

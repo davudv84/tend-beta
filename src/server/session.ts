@@ -60,9 +60,9 @@ function epoch() {
 }
 
 interface SessionRow { id: string; secret_hash: string; epoch: string; created_at: number; expires_at: number; last_seen_at: number | null; revoked_at: number | null; client: string | null; user_id: string | null }
-interface AccountRow { workspace_id: string; email: string; email_verified_at: number | null; approved_at: number | null; disabled_at: number | null; password_changed_at: number }
-/** Who a live session acts for: `by` is recorded beside everything it does; `workspace` bounds everything it can see or change. */
-export interface Session { id: string; userId: string | null; workspace: string; email?: string; admin: boolean }
+interface AccountRow { workspace_id: string; email: string; email_verified_at: number | null; approved_at: number | null; disabled_at: number | null; password_changed_at: number; read_only: number }
+/** Who a live session acts for: `by` is recorded beside everything it does; `workspace` bounds everything it can see or change. `readOnly`: it may look, never change (the demo account). */
+export interface Session { id: string; userId: string | null; workspace: string; email?: string; admin: boolean; readOnly?: boolean }
 
 export type AuthEventType = "signin.succeeded" | "signin.failed" | "signin.blocked" | "session.signed_out" | "session.revoked_all" | "session.rejected" | "log.suppressed" | "agentkey.rejected"
   | "account.registered" | "account.verified" | "account.approved" | "account.disabled" | "account.reset_requested" | "account.password_reset";
@@ -111,10 +111,11 @@ export async function currentSession(q: Q, req: Request, now = Date.now()): Prom
     : Number(row.expires_at) <= now ? "expired"
     : row.user_id === null && row.epoch !== e ? "admin_token_changed"
     : undefined;
-  const account = !reason && row.user_id !== null ? await q.get<AccountRow>("SELECT workspace_id, email, email_verified_at, approved_at, disabled_at, password_changed_at FROM users WHERE id = ?", row.user_id) : undefined;
+  const account = !reason && row.user_id !== null ? await q.get<AccountRow>("SELECT workspace_id, email, email_verified_at, approved_at, disabled_at, password_changed_at, read_only FROM users WHERE id = ?", row.user_id) : undefined;
   const accountReason = reason || row.user_id === null ? undefined
     : !account ? "account_gone" : account.disabled_at !== null ? "account_disabled" : account.email_verified_at === null && config.emailVerification ? "email_unverified"
-    : account.approved_at === null ? "not_approved" : Number(account.password_changed_at) > Number(row.created_at) ? "password_changed" : undefined;
+    : account.approved_at === null ? "not_approved" : Number(account.password_changed_at) > Number(row.created_at) ? "password_changed"
+    : account.read_only && account.email !== config.demoAccount?.email ? "demo_off" : undefined;
   // A session issued under another admin token is ended for good, so putting the old token back cannot bring it back to life.
   if (reason === "admin_token_changed") await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL", Math.round(now), id);
   if (reason || accountReason) {
@@ -124,7 +125,7 @@ export async function currentSession(q: Q, req: Request, now = Date.now()): Prom
     return undefined;
   }
   if (row.last_seen_at === null || Number(row.last_seen_at) < now - TOUCH_EVERY) await q.run("UPDATE operator_sessions SET last_seen_at = ? WHERE id = ? AND revoked_at IS NULL", Math.round(now), id);
-  return account ? { id, userId: row.user_id, workspace: account.workspace_id, email: account.email, admin: false } : { id, userId: null, workspace: DEFAULT_WORKSPACE, admin: true };
+  return account ? { id, userId: row.user_id, workspace: account.workspace_id, email: account.email, admin: false, ...(account.read_only && { readOnly: true }) } : { id, userId: null, workspace: DEFAULT_WORKSPACE, admin: true };
 }
 
 /** The id of the live session this request carries, or undefined. */
@@ -162,6 +163,8 @@ export async function sessionOverview(q: Q, current: string | Session, now = Dat
   const recent = (await q.all<{ at: number; type: AuthEventType; session_id: string | null; client: string | null; reason: string | null }>(
     `SELECT at, type, session_id, client, reason FROM auth_events ${s.userId ? "WHERE user_id = ?" : ""} ORDER BY seq DESC LIMIT 30`, ...(s.userId ? [s.userId] : [])))
     .map((e) => ({ at: Number(e.at), type: e.type, sessionId: e.session_id, client: e.client, reason: e.reason }));
+  // A shared demo account: other people's sessions and sign-ins (with their addresses) are none of this viewer's business.
+  if (typeof current !== "string" && current.readOnly) return { sessions: sessions.filter((x) => x.current), recent: [] };
   return { sessions, recent };
 }
 
@@ -182,5 +185,6 @@ export async function viewerOf(q: Q, req: Request): Promise<Viewer> {
   return {
     role: s ? "operator" : "visitor", canAct: !!s, public: config.public, operatorAvailable: !!config.adminToken, demo: config.demo,
     workspace: s?.workspace ?? DEFAULT_WORKSPACE, admin: !!s?.admin, accounts: config.accounts, approval: config.approvalRequired, emailVerification: config.emailVerification, ...(s?.email && { account: { email: s.email } }),
+    ...(s?.readOnly && { readOnly: true }),
   };
 }

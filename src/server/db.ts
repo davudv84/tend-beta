@@ -291,6 +291,8 @@ export const MIGRATIONS: string[] = [
      alert INTEGER NOT NULL DEFAULT 1,
      updated_at BIGINT NOT NULL
    );`,
+  // A read-only account (demo-account.ts): it can sign in and look at its own workspace, and every change is refused (http.ts requireOperator).
+  `ALTER TABLE users ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */

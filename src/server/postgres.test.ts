@@ -398,6 +398,41 @@ test("the demo can still be reset on PostgreSQL, and a connected agent's history
   }
 });
 
+test("the read-only demo account on PostgreSQL: overlapping first sign-ins create it once, its samples are seeded, overlapping reads top it up once, and changes are refused", { skip }, async () => {
+  const { hashPassword, passwordSignIn } = await import("./accounts.ts");
+  const { refreshDemo } = await import("./demo-account.ts");
+  const { requireOperator } = await import("./http.ts");
+  const t = await tempDb();
+  const email = "yc-demo@tend-demo.local", password = "YC-postgres-test-password";
+  process.env.TEND_DEMO_ACCOUNT = `${email} ${await hashPassword(password)}`;
+  try {
+    await warm(t.db);
+    const signIn = (i: number) => passwordSignIn(t.db, new Request("http://tend.test/api/account/sign-in", { method: "POST", headers: { host: "tend.test", "x-forwarded-for": `10.9.0.${i}` } }), { email, password });
+    const results = await Promise.allSettled([1, 2, 3].map(signIn));
+    assert.equal(settled(results).ok, 3, String(settled(results).failed.map((f) => f.reason)));
+    assert.equal(await count(t.db, "SELECT COUNT(*)::int AS n FROM users WHERE email = ? AND read_only = 1", email), 1);
+    assert.equal(await count(t.db, "SELECT COUNT(*)::int AS n FROM workspaces WHERE name = 'YC Demo'"), 1, "the losing sign-ins left no workspace behind");
+    const ws = (await t.db.get<{ workspace_id: string }>("SELECT workspace_id FROM users WHERE email = ?", email))!.workspace_id;
+    assert.equal(await count(t.db, "SELECT COUNT(*)::int AS n FROM agents WHERE workspace_id = ? AND key_hash IS NULL", ws), 4);
+    assert.ok(await count(t.db, "SELECT COUNT(*)::int AS n FROM authorizations a JOIN agents g ON g.id = a.agent_id WHERE g.workspace_id = ? AND a.status = 'consumed'", ws) > 5);
+    const before = await count(t.db, "SELECT COUNT(*)::int AS n FROM authorizations");
+    const later = Date.now() + 4 * 60_000;
+    await Promise.all([1, 2, 3, 4].map(() => refreshDemo(t.db, ws, later)));
+    const added = (await count(t.db, "SELECT COUNT(*)::int AS n FROM authorizations")) - before;
+    assert.ok(added >= 2 && added <= 3, `one top-up, not four: ${added} new requests`);
+    // Every overlapping sign-in got a session that works (one that began a moment before the account existed included), and none can change anything.
+    for (const r of results) {
+      const cookie = (r as PromiseFulfilledResult<{ value: string }>).value.value;
+      const as = (method: string) => new Request("http://tend.test/api/v1/agents", { method, headers: { host: "tend.test", cookie: `${sessionCookieName()}=${cookie}` } });
+      assert.equal(await requireOperator(as("GET"), t.db).then(() => "ok", (e) => e.code), "ok");
+      for (const method of ["POST", "DELETE"]) assert.equal(await requireOperator(as(method), t.db).then(() => "ok", (e) => e.code), "read_only_account", method);
+    }
+  } finally {
+    delete process.env.TEND_DEMO_ACCOUNT;
+    await t.close();
+  }
+});
+
 test("protection checks on PostgreSQL: the records are read in a read-only transaction, only the run's own two records are written, and results are append-only", { skip }, async () => {
   const t = await tempDb();
   const dir = mkdtempSync(path.join(tmpdir(), "tend-pg-verify-"));

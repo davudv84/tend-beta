@@ -20,6 +20,7 @@ import type { DB, Q } from "./db.ts";
 import { sendMail, type Mail, type Send } from "./email.ts";
 import { clientIp, HttpError } from "./http.ts";
 import { spend } from "./limits.ts";
+import { ensureDemoAccount } from "./demo-account.ts";
 import { allAgents, revokeKey } from "./repo.ts";
 import { audit, createSession, signOut } from "./session.ts";
 
@@ -66,7 +67,7 @@ export function passwordProblem(pw: unknown, email?: string) {
   return undefined;
 }
 
-interface UserRow { id: string; email: string; password_hash: string; workspace_id: string; created_at: number; email_verified_at: number | null; approved_at: number | null; approved_by: string | null; disabled_at: number | null; password_changed_at: number }
+interface UserRow { id: string; email: string; password_hash: string; workspace_id: string; created_at: number; email_verified_at: number | null; approved_at: number | null; approved_by: string | null; disabled_at: number | null; password_changed_at: number; read_only: number }
 const userByEmail = (q: Q, email: string) => q.get<UserRow>("SELECT * FROM users WHERE email = ?", email);
 
 /** Where links in mails point. Configured in production (config.appUrl), never read from the request there; locally the request's own origin. */
@@ -133,6 +134,7 @@ export async function register(db: DB, req: Request, input: unknown, now = Date.
   const mailOk = (await spend(db, `account:mail:${email}`, LIMITS.mailsPerAccountPerHour, { windowMs: HOUR, now })).ok;
   const result = config.emailVerification ? sent : created;
   if (existing) {
+    if (existing.read_only) return { result, outbox }; // the demo account's address takes no mail
     if (mailOk && existing.email_verified_at === null && config.emailVerification) outbox.push(mails.verify(email, `${link}/account/verify#token=${await issueToken(db, existing.id, "verify", now)}`));
     else if (mailOk) outbox.push(mails.exists(email, link));
     return { result, outbox };
@@ -213,6 +215,8 @@ export async function passwordSignIn(db: DB, req: Request, input: unknown, now =
     await audit(db, "signin.blocked", { client, reason: perAccount.ok ? "too_many_failures" : "too_many_failures_for_account", now });
     throw new HttpError(429, "rate_limited", "Too many failed sign-in attempts. Try again later.", { retryAfter: perAccount.ok ? 60 : 3600 });
   }
+  // The demo account comes into being the first time someone signs in with its address (config.demoAccount), with its sample workspace.
+  if (email && email === config.demoAccount?.email) await ensureDemoAccount(db, now);
   const u = email ? await userByEmail(db, email) : undefined;
   const ok = u ? await checkPassword(password, u.password_hash) : (await checkPassword(password, await dummyHash()), false);
   if (!u || !ok) {
@@ -222,7 +226,7 @@ export async function passwordSignIn(db: DB, req: Request, input: unknown, now =
   // The password was right: give the failures back.
   await spend(db, `account:fail:${client}`, LIMITS.signInFailuresPerMinute, { now, cost: -1 });
   await spend(db, `account:fail:${email}`, LIMITS.failuresPerAccountPerHour, { windowMs: HOUR, now, cost: -1 });
-  if (u.disabled_at !== null) throw new HttpError(403, "account_disabled", "This account has been disabled. Contact the TEND admin.");
+  if (u.disabled_at !== null || (u.read_only && u.email !== config.demoAccount?.email)) throw new HttpError(403, "account_disabled", "This account has been disabled. Contact the TEND admin.");
   if (u.email_verified_at === null && config.emailVerification) throw new HttpError(403, "email_unverified", "Confirm your e-mail address first. We can send the link again.");
   if (u.approved_at === null && config.approvalRequired) throw new HttpError(403, "pending_approval", "Your account is waiting for approval. You’ll get an e-mail when it’s ready.");
   await signOut(db, req, now); // a sign-in replaces the session this browser already held
@@ -243,7 +247,7 @@ export async function requestReset(db: DB, req: Request, input: unknown, now = D
   const client = clientIp(req);
   const perClient = await spend(db, `account:reset:${client}`, 10, { windowMs: HOUR, now });
   const u = await userByEmail(db, email);
-  if (perClient.ok && u && u.disabled_at === null && (await spend(db, `account:resetmail:${email}`, LIMITS.mailsPerAccountPerHour, { windowMs: HOUR, now })).ok) {
+  if (perClient.ok && u && u.disabled_at === null && !u.read_only && (await spend(db, `account:resetmail:${email}`, LIMITS.mailsPerAccountPerHour, { windowMs: HOUR, now })).ok) {
     outbox.push(mails.reset(email, `${base(req)}/account/reset#token=${await issueToken(db, u.id, "reset", now)}`));
     await audit(db, "account.reset_requested", { userId: u.id, client, now });
   }

@@ -45,7 +45,7 @@ export function Gated({ allowed, reason, children }: { allowed: boolean; reason:
 export function useReadOnlyReason() {
   const t = useT();
   const viewer = useStore((s) => s.viewer);
-  return viewer?.public ? t.common.readOnlyPublic : t.common.readOnlySignIn;
+  return viewer?.readOnly ? t.common.readOnlyDemo : viewer?.public ? t.common.readOnlyPublic : t.common.readOnlySignIn;
 }
 
 /** The floating panel for one agent, drawn beside its figure. Not a modal: the scene stays live. */

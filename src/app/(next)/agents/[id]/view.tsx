@@ -42,6 +42,8 @@ export default function View() {
   const setPaused = useStore((s) => s.setPaused);
   const tab = useSearchParams().get("tab");
   const canAct = useStore((s) => !!s.viewer?.canAct);
+  // The demo account sees everything an operator sees; its controls are shown off, and the server refuses them anyway.
+  const canChange = useStore((s) => !!s.viewer?.canAct && !s.viewer.readOnly);
   const skew = useStore((s) => s.skew);
   const readOnly = useReadOnlyReason();
   const [prefs] = useUiPrefs();
@@ -131,8 +133,8 @@ export default function View() {
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           {!hook && <Link href={`/check-ins/new?agent=${agent.id}`} className="inline-flex h-10 items-center gap-2 px-3 text-[14px] text-muted-foreground transition-colors hover:text-foreground"><MessageSquareTextIcon className="size-4" strokeWidth={1.75} aria-hidden /> {g.compose}</Link>}
-          <Gated allowed={canAct} reason={readOnly}>
-            <Button variant="secondary" className="h-10 rounded-lg border-border px-4 text-[14px]" onClick={toggle} disabled={!canAct || !agent.integrationEnabled}>
+          <Gated allowed={canChange} reason={readOnly}>
+            <Button variant="secondary" className="h-10 rounded-lg border-border px-4 text-[14px]" onClick={toggle} disabled={!canChange || !agent.integrationEnabled}>
               {paused ? <><PlayIcon /> {g.resume}</> : <><PauseIcon /> {g.pause}</>}
             </Button>
           </Gated>

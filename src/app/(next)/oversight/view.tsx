@@ -41,7 +41,8 @@ export default function View() {
   const setIntegration = useStore((s) => s.setIntegration);
   const requests = useStore((s) => s.requests);
   const authorizations = useStore((s) => s.authorizations);
-  const canAct = useStore((s) => !!s.viewer?.canAct);
+  // The demo account sees everything an operator sees; its controls are shown off, and the server refuses them anyway.
+  const canChange = useStore((s) => !!s.viewer?.canAct && !s.viewer.readOnly);
   const skew = useStore((s) => s.skew);
   const readOnly = useReadOnlyReason();
   const now = useNow() + skew;
@@ -166,15 +167,15 @@ export default function View() {
                     <span className="block text-ui font-medium hover:underline">{a.name}</span>
                     <span className="block text-small text-muted-foreground">{st.line}</span>
                   </Link>
-                  <Gated allowed={canAct} reason={readOnly}>
+                  <Gated allowed={canChange} reason={readOnly}>
                     <label className="flex items-center gap-2.5 text-small text-muted-foreground">
-                      <Switch checked={a.status !== "paused"} disabled={!canAct || !a.integrationEnabled || busy === a.id} onCheckedChange={(v) => pause(a, !v)} aria-label={g.runningLabel(a.name)} />
+                      <Switch checked={a.status !== "paused"} disabled={!canChange || !a.integrationEnabled || busy === a.id} onCheckedChange={(v) => pause(a, !v)} aria-label={g.runningLabel(a.name)} />
                       {g.columns.running}
                     </label>
                   </Gated>
-                  <Gated allowed={canAct} reason={readOnly}>
+                  <Gated allowed={canChange} reason={readOnly}>
                     <label className="flex items-center gap-2.5 text-small text-muted-foreground">
-                      <Switch checked={a.integrationEnabled} disabled={!canAct || busy === a.id} onCheckedChange={(v) => (v ? integration(a, true) : setDisabling(a))} aria-label={g.accessLabel(a.name)} />
+                      <Switch checked={a.integrationEnabled} disabled={!canChange || busy === a.id} onCheckedChange={(v) => (v ? integration(a, true) : setDisabling(a))} aria-label={g.accessLabel(a.name)} />
                       {g.columns.access}
                     </label>
                   </Gated>

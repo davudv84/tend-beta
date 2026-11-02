@@ -30,6 +30,8 @@ export function ConnectedAgents() {
   const keys = useStore((s) => s.keys);
   const skew = useStore((s) => s.skew);
   const canAct = useStore((s) => !!s.viewer?.canAct);
+  // The demo account sees everything an operator sees; its controls are shown off, and the server refuses them anyway.
+  const canChange = useStore((s) => !!s.viewer?.canAct && !s.viewer.readOnly);
   const registerAgent = useStore((s) => s.registerAgent);
   const rotateKey = useStore((s) => s.rotateKey);
   const readOnly = useReadOnlyReason();
@@ -91,8 +93,8 @@ export function ConnectedAgents() {
                       <span className="text-faint">{keys[a.id] ?? "tend_sk_"}… </span>
                       <span className={syncing ? "text-amber" : "text-faint"}>{c.config(a.configVersion, syncing)}</span>
                     </span>
-                    <Gated allowed={canAct} reason={readOnly}>
-                      <Button variant="ghost" size="sm" disabled={!canAct} onClick={() => rotate(a.id, a.name)} className="text-muted-foreground"><KeyRoundIcon /> {c.rotate}</Button>
+                    <Gated allowed={canChange} reason={readOnly}>
+                      <Button variant="ghost" size="sm" disabled={!canChange} onClick={() => rotate(a.id, a.name)} className="text-muted-foreground"><KeyRoundIcon /> {c.rotate}</Button>
                     </Gated>
                   </li>
                 );
