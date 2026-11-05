@@ -8,12 +8,12 @@ import { cn } from "@/lib/utils";
  * Dusk over forested hills: the picture when it exists under public/home, otherwise hills drawn in the same mood, so the page
  * looks finished before the pictures arrive. `preload` marks the one picture that is the largest thing above the fold.
  */
-export function Landscape({ src, alt = "", preload, className, position = "center", tone = "dusk", mask }: {
-  src?: string; alt?: string; preload?: boolean; className?: string; position?: string; tone?: "dusk" | "night"; mask?: string;
+export function Landscape({ src, alt = "", preload, className, position = "center", tone = "dusk", mask, sizes = "100vw" }: {
+  src?: string; alt?: string; preload?: boolean; className?: string; position?: string; tone?: "dusk" | "night"; mask?: string; sizes?: string;
 }) {
   return (
     <div aria-hidden={alt ? undefined : true} className={cn("absolute inset-0 overflow-hidden", className)} style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}>
-      {src ? <Image src={src} alt={alt} fill sizes="100vw" preload={preload} className="object-cover" style={{ objectPosition: position }} /> : <Hills tone={tone} />}
+      {src ? <Image src={src} alt={alt} fill sizes={sizes} preload={preload} className="object-cover" style={{ objectPosition: position }} /> : <Hills tone={tone} />}
     </div>
   );
 }

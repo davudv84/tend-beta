@@ -3,6 +3,7 @@
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 import { useDocumentTheme } from "@/ui/theme";
+import { Features } from "./features";
 import { Hero } from "./hero";
 import { Nav } from "./nav";
 import { Why } from "./why";
@@ -23,6 +24,7 @@ export function Homepage({ accounts, images, fontClass }: { accounts: boolean; i
       <main id="main">
         <Hero accounts={accounts} images={images} />
         <Why />
+        <Features images={images} />
       </main>
     </div>
   );
