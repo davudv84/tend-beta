@@ -19,7 +19,7 @@ export function Integrations({ images }: { images: HomeImages }) {
   const f = t.front.integrations;
   const names = (list: typeof INTEGRATIONS) => list.map((i) => i.name).join(", ");
   return (
-    <section id="integrations" aria-labelledby="integrations-title" className="scroll-mt-24 px-6 pt-24 md:px-8 md:pt-32">
+    <section id="integrations" aria-labelledby="integrations-title" className="mk-below scroll-mt-24 px-6 pt-24 md:px-8 md:pt-32">
       <Reveal className="relative mx-auto max-w-[1240px] overflow-hidden rounded-3xl border border-border bg-mk-surface">
         <Landscape src={images.integrations} alt={f.landscape} tone="night" sizes="(min-width: 1280px) 1240px, 100vw" />
         <div aria-hidden className="absolute inset-0 bg-[linear-gradient(to_right,rgb(5_6_5/0.15),rgb(5_6_5/0.35)_50%,rgb(5_6_5/0.7))]" />
@@ -33,8 +33,8 @@ export function Integrations({ images }: { images: HomeImages }) {
             <div className="max-w-[44ch]">
               <Eyebrow>{f.eyebrow}</Eyebrow>
               <h2 id="integrations-title" className="mt-5 font-serif text-[clamp(2rem,3.8vw,3rem)] leading-[1.1] font-light tracking-[-0.02em] text-balance">{f.title}</h2>
-              <p className="mt-4 text-[15px] text-pretty text-foreground/80">{t.connect.choose}</p>
-              <p className="mt-3 text-[12px] leading-relaxed text-pretty text-muted-foreground">{f.footnote(SCENARIOS.length)}</p>
+              <p className="mt-4 text-[15px] text-foreground/80">{t.connect.choose}</p>
+              <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">{f.footnote(SCENARIOS.length)}</p>
               <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[12px] text-muted-foreground">
                 <li className="flex items-center gap-2"><span aria-hidden className="size-2 rounded-full bg-white" />{f.legend.verified}</li>
                 <li className="flex items-center gap-2"><span aria-hidden className="size-2 rounded-full bg-white/45" />{f.legend.next}</li>

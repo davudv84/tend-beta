@@ -17,7 +17,7 @@ export function ActivityScreen() {
     <AppShell active="activity" waiting={2}>
       <div className="mx-auto w-full max-w-[1180px] px-12 pt-14 pb-24">
         <h1 className="text-[32px] leading-[1.15] font-medium tracking-[-0.02em]">{g.title}</h1>
-        <p className="mt-3 max-w-[70ch] text-[15px] text-pretty text-muted-foreground">{g.description}</p>
+        <p className="mt-3 max-w-[70ch] text-[15px] text-muted-foreground">{g.description}</p>
         <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-small text-muted-foreground">
           <span className="size-1.5 rounded-full bg-sage" />
           <span className="font-medium text-foreground">{g.live}</span>

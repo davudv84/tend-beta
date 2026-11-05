@@ -450,6 +450,11 @@
   --primary: #176b50;
   color-scheme: light;
 }
+/* Sections below the fold are styled and laid out only as they come near, so the first paint waits for nothing it cannot show. */
+.mk-below {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 900px;
+}
 /* Diagonal hatching in the tiles between cards. */
 .mk-stripes {
   background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.09) 0 1px, transparent 1px 9px);

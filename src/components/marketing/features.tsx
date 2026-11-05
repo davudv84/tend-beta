@@ -16,13 +16,13 @@ export function Features({ images }: { images: HomeImages }) {
   const t = useT();
   const f = t.front.features;
   return (
-    <section id="features" aria-labelledby="features-title" className="scroll-mt-24 px-6 pt-24 md:px-8 md:pt-32">
+    <section id="features" aria-labelledby="features-title" className="mk-below scroll-mt-24 px-6 pt-24 md:px-8 md:pt-32">
       <Reveal className="mx-auto flex max-w-[1240px] flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div>
           <Eyebrow>{f.eyebrow}</Eyebrow>
           <h2 id="features-title" className="mt-6 max-w-[18ch] font-serif text-[clamp(2.25rem,4.6vw,3.5rem)] leading-[1.08] font-light tracking-[-0.025em] text-balance">{f.title}</h2>
         </div>
-        <p className="max-w-[34ch] text-[14px] text-pretty text-muted-foreground md:text-right">{f.body}</p>
+        <p className="max-w-[34ch] text-[14px] text-muted-foreground md:text-right">{f.body}</p>
       </Reveal>
       <div className="mx-auto mt-10 grid max-w-[1240px] gap-4 md:mt-14 md:grid-cols-3">
         <FeatureCard title={f.rules.title} body={f.rules.body} alt={f.rules.alt} images={images}><RulesMini /></FeatureCard>
@@ -41,8 +41,8 @@ function FeatureCard({ title, body, alt, images, wide, delay, children }: { titl
       <div className="relative mt-4 h-[200px]">
         <Landscape src={images.footer} tone="night" position="center 70%" sizes="(min-width: 768px) 66vw, 100vw" mask="linear-gradient(to bottom, transparent, black 55%)" />
         <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(to_top,rgb(13_15_14/0.85),transparent)] px-6 pt-10 pb-7 text-center">
-          <h3 className="font-serif text-[26px] leading-tight font-normal tracking-[-0.01em]">{title}</h3>
-          <p className="mx-auto mt-2 max-w-[42ch] text-[13px] text-pretty text-muted-foreground">{body}</p>
+          <h3 className="font-serif text-[26px] leading-tight font-light tracking-[-0.01em]">{title}</h3>
+          <p className="mx-auto mt-2 max-w-[42ch] text-[13px] text-muted-foreground">{body}</p>
         </div>
       </div>
     </Reveal>
@@ -138,7 +138,7 @@ function ChecksMini() {
         {rows.map(([id, status]) => (
           <li key={id} className="flex items-start gap-3 px-4 py-2.5">
             <span className={cn("mt-[5px] size-2 shrink-0 rounded-full", status === "verified" ? "bg-sage" : "border border-muted-foreground")} />
-            <span className="min-w-0"><span className="block text-[12px] leading-snug text-pretty">{p.checks[id].title}</span><span className={cn("mt-0.5 block text-[11px]", status === "verified" ? "text-sage" : "text-muted-foreground")}>{p.status[status]}</span></span>
+            <span className="min-w-0"><span className="block text-[12px] leading-snug">{p.checks[id].title}</span><span className={cn("mt-0.5 block text-[11px]", status === "verified" ? "text-sage" : "text-muted-foreground")}>{p.status[status]}</span></span>
           </li>
         ))}
       </ul>

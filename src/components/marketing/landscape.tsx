@@ -13,7 +13,7 @@ export function Landscape({ src, alt = "", preload, className, position = "cente
 }) {
   return (
     <div aria-hidden={alt ? undefined : true} className={cn("absolute inset-0 overflow-hidden", className)} style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}>
-      {src ? <Image src={src} alt={alt} fill sizes={sizes} preload={preload} className="object-cover" style={{ objectPosition: position }} /> : <Hills tone={tone} />}
+      {src ? <Image src={src} alt={alt} fill sizes={sizes} preload={preload} fetchPriority={preload ? "high" : undefined} decoding={preload ? "sync" : undefined} className="object-cover" style={{ objectPosition: position }} /> : <Hills tone={tone} />}
     </div>
   );
 }

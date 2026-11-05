@@ -20,7 +20,7 @@ export function ApprovalsScreen() {
       <div className="mx-auto w-full max-w-[1180px] px-12 pt-14 pb-24">
         <header className="mb-10">
           <h1 className="text-[32px] leading-[1.15] font-medium tracking-[-0.02em] text-balance">{g.title}</h1>
-          <p className="mt-2 max-w-[60ch] text-[15px] text-pretty text-muted-foreground">{g.description}</p>
+          <p className="mt-2 max-w-[60ch] text-[15px] text-muted-foreground">{g.description}</p>
         </header>
         <div className="mb-8 flex w-full gap-6 border-b border-border pb-[3px] text-ui">
           {TABS.map((tab) => (

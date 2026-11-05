@@ -24,7 +24,7 @@ export function Footer({ accounts, images }: { accounts: boolean; images: HomeIm
   ];
   const link = "rounded-sm text-[14px] text-foreground/85 transition-colors hover:text-foreground";
   return (
-    <footer className="relative mt-24 overflow-hidden md:mt-32">
+    <footer className="mk-below relative mt-24 overflow-hidden md:mt-32">
       <Landscape src={images.footer} alt={o.landscape} tone="night" position="center bottom" className="top-auto h-[75%]" mask="linear-gradient(to bottom, transparent, black 65%)" />
       <div className="relative mx-auto max-w-[1240px] px-6 pt-16 pb-10 md:px-8 md:pt-20">
         <div className="grid gap-12 md:grid-cols-[minmax(0,1.1fr)_minmax(0,2fr)]">

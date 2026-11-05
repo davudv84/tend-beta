@@ -18,7 +18,7 @@ export function Honest() {
   const t = useT();
   const h = t.front.honest;
   return (
-    <section id="security" aria-labelledby="honest-title" className="scroll-mt-24 overflow-hidden pt-24 md:pt-32">
+    <section id="security" aria-labelledby="honest-title" className="mk-below scroll-mt-24 overflow-hidden pt-24 md:pt-32">
       <Reveal className="mx-auto max-w-[1240px] px-6 text-center md:px-8">
         <Eyebrow>{h.eyebrow}</Eyebrow>
         <h2 id="honest-title" className="mx-auto mt-6 max-w-[22ch] font-serif text-[clamp(2.25rem,4.6vw,3.5rem)] leading-[1.08] font-light tracking-[-0.025em] text-balance">{h.title}</h2>
@@ -49,7 +49,7 @@ function Row({ heading, keys, Icon, shift }: { heading: string; keys: readonly K
             <li className="flex min-h-[200px] flex-col rounded-2xl border border-border bg-mk-surface p-6 xl:w-[var(--c)] xl:shrink-0">
               <p className="flex items-center gap-2 text-[12px] text-muted-foreground"><Icon className="size-3.5" strokeWidth={2} aria-hidden />{heading}</p>
               <p className="mt-4 text-[17px] font-medium tracking-[-0.01em] text-balance">{h[k].title}</p>
-              <p className="mt-2 text-[14px] leading-relaxed text-pretty text-muted-foreground">{h[k].body}</p>
+              <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">{h[k].body}</p>
             </li>
           </Fragment>
         ))}
