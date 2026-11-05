@@ -3,6 +3,7 @@
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 import { useDocumentTheme } from "@/ui/theme";
+import { Cta } from "./cta";
 import { Features } from "./features";
 import { Hero } from "./hero";
 import { Honest } from "./honest";
@@ -29,6 +30,7 @@ export function Homepage({ accounts, images, fontClass }: { accounts: boolean; i
         <Features images={images} />
         <Integrations images={images} />
         <Honest />
+        <Cta accounts={accounts} />
       </main>
     </div>
   );

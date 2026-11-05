@@ -48,3 +48,13 @@ export const HISTORY: DemoDecision[] = [
   { time: "13:41", agent: REPO_HELPER, detail: "Read: ~/.ssh/id_ed25519", tool: "file.read", action: "Read", outcome: "blocked", why: { kind: "rule", rule: SSH_READ_RULE } },
   { time: "13:12", agent: OPS_AGENT, detail: "Send email to billing@example.com", tool: "send_email", action: "send", outcome: "rejected", why: { kind: "person" } },
 ];
+
+/** What the Activity screen on the closing card lists: the two waiting requests and the four decisions before them. */
+export const ACTIVITY: DemoDecision[] = [
+  { time: "14:02", agent: OPS_AGENT, detail: INVOICE_REQUEST.detail!, tool: INVOICE_REQUEST.tool, action: INVOICE_REQUEST.action, outcome: "needs_approval", why: { kind: "reason", reason: "approval_required" } },
+  { time: "14:00", agent: REPO_HELPER, detail: PUSH_REQUEST.detail!, tool: PUSH_REQUEST.tool, action: PUSH_REQUEST.action, outcome: "needs_approval", why: { kind: "rule", rule: GIT_PUSH_RULE } },
+  HISTORY[0],
+  HISTORY[1],
+  { time: "13:30", agent: REPO_HELPER, detail: "Read: src/app/page.tsx", tool: "file.read", action: "Read", outcome: "allowed", why: { kind: "reason", reason: "policy_allowed" } },
+  HISTORY[2],
+];
