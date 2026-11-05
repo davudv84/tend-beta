@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useDocumentTheme } from "@/ui/theme";
 import { Hero } from "./hero";
 import { Nav } from "./nav";
+import { Why } from "./why";
 import type { HomeImages } from "./types";
 
 /**
@@ -21,6 +22,7 @@ export function Homepage({ accounts, images, fontClass }: { accounts: boolean; i
       <Nav accounts={accounts} />
       <main id="main">
         <Hero accounts={accounts} images={images} />
+        <Why />
       </main>
     </div>
   );
