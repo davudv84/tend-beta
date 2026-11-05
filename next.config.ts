@@ -30,6 +30,8 @@ const nextConfig: NextConfig = {
     }];
   },
   poweredByHeader: false,
+  // The homepage looks at request time which pictures exist under public/home (components/marketing/images.ts), so a hosted build carries them.
+  outputFileTracingIncludes: { "/": ["./public/home/**"] },
   // The embedded database (local development and tests) ships its own WebAssembly; load it from node_modules.
   serverExternalPackages: ["@electric-sql/pglite"],
 };
