@@ -16,7 +16,7 @@ export function Features({ images }: { images: HomeImages }) {
   const t = useT();
   const f = t.front.features;
   return (
-    <section id="features" aria-labelledby="features-title" className="mk-below scroll-mt-24 px-6 pt-24 md:px-8 md:pt-32">
+    <section id="features" aria-labelledby="features-title" className="scroll-mt-24 px-6 pt-24 md:px-8 md:pt-32">
       <Reveal className="mx-auto flex max-w-[1240px] flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div>
           <Eyebrow>{f.eyebrow}</Eyebrow>

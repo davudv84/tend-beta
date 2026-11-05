@@ -18,7 +18,7 @@ export function Honest() {
   const t = useT();
   const h = t.front.honest;
   return (
-    <section id="security" aria-labelledby="honest-title" className="mk-below scroll-mt-24 overflow-hidden pt-24 md:pt-32">
+    <section id="security" aria-labelledby="honest-title" className="scroll-mt-24 overflow-hidden pt-24 md:pt-32">
       <Reveal className="mx-auto max-w-[1240px] px-6 text-center md:px-8">
         <Eyebrow>{h.eyebrow}</Eyebrow>
         <h2 id="honest-title" className="mx-auto mt-6 max-w-[22ch] font-serif text-[clamp(2.25rem,4.6vw,3.5rem)] leading-[1.08] font-light tracking-[-0.025em] text-balance">{h.title}</h2>

@@ -17,7 +17,7 @@ export function Why() {
   const t = useT();
   const w = t.front.why;
   return (
-    <section id="product" aria-labelledby="why-title" className="mk-below scroll-mt-24 px-6 pt-24 md:px-8 md:pt-32">
+    <section id="product" aria-labelledby="why-title" className="scroll-mt-24 px-6 pt-24 md:px-8 md:pt-32">
       <Reveal className="mx-auto max-w-[1240px] text-center">
         <Eyebrow>{w.eyebrow}</Eyebrow>
         <h2 id="why-title" className="mx-auto mt-6 max-w-[22ch] font-serif text-[clamp(2.25rem,4.6vw,3.5rem)] leading-[1.08] font-light tracking-[-0.025em] text-balance">{w.title}</h2>

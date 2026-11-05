@@ -14,7 +14,7 @@ export function Cta({ accounts }: { accounts: boolean }) {
   const t = useT();
   const c = t.front.cta;
   return (
-    <section aria-labelledby="cta-title" className="mk-below px-6 pt-24 md:px-8 md:pt-32">
+    <section aria-labelledby="cta-title" className="px-6 pt-24 md:px-8 md:pt-32">
       <Reveal className="relative mx-auto max-w-[1240px] overflow-hidden rounded-3xl border border-border bg-mk-surface">
         <div aria-hidden className="pointer-events-none absolute -top-48 -left-24 size-[560px] rounded-full bg-white/[0.025]" />
         <div aria-hidden className="pointer-events-none absolute -bottom-64 left-[30%] size-[520px] rounded-full bg-white/[0.02]" />
