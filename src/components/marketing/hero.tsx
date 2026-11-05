@@ -30,7 +30,7 @@ export function Hero({ accounts, images }: { accounts: boolean; images: HomeImag
 
       <div className="mx-auto max-w-[1240px] px-6 text-center md:px-8">
         <Eyebrow>{f.hero.eyebrow}</Eyebrow>
-        <h1 className="mx-auto mt-6 max-w-[15ch] font-serif text-[clamp(2.75rem,7.2vw,5.5rem)] leading-[1.02] font-light tracking-[-0.03em] text-balance">{f.title}</h1>
+        <h1 className="mx-auto mt-6 max-w-[17ch] font-serif text-[clamp(2.75rem,7.2vw,5.5rem)] leading-[1.02] font-light tracking-[-0.03em] text-balance">{f.title}</h1>
         <p className="mx-auto mt-5 max-w-[46ch] text-[16px] text-pretty text-foreground/80 md:text-[17px]">{f.body}</p>
         <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-6">
           <Button asChild className={pill("light", "lg")}><Link href={accounts ? "/account/sign-up" : "/operator"}>{f.create}</Link></Button>

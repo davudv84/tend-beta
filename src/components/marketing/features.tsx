@@ -94,7 +94,7 @@ function ApprovalMini() {
         </div>
         <p className="mt-3 text-[11px] text-muted-foreground">{t.front.features.approvals.once}</p>
       </Mini>
-      <span className="absolute top-[172px] left-[236px] flex items-start whitespace-nowrap">
+      <span className="absolute top-[172px] left-[236px] hidden items-start whitespace-nowrap sm:flex">
         <MousePointer2Icon className="size-4 fill-white text-white" strokeWidth={1.5} />
         <span className="-mt-0.5 ml-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-[#171717]">{t.front.why.flow.bubble}</span>
       </span>

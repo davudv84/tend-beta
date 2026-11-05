@@ -23,7 +23,7 @@ export function Honest() {
         <Eyebrow>{h.eyebrow}</Eyebrow>
         <h2 id="honest-title" className="mx-auto mt-6 max-w-[22ch] font-serif text-[clamp(2.25rem,4.6vw,3.5rem)] leading-[1.08] font-light tracking-[-0.025em] text-balance">{h.title}</h2>
       </Reveal>
-      <div className="mt-12 grid gap-4 md:mt-16">
+      <div className="mt-12 flex flex-col gap-4 md:mt-16">
         <Row heading={h.does} keys={DOES} Icon={CheckIcon} />
         <Row heading={h.doesnt} keys={DOESNT} Icon={MinusIcon} shift />
       </div>
@@ -40,7 +40,7 @@ function Row({ heading, keys, Icon, shift }: { heading: string; keys: readonly K
   // From 1280px up, a strip wider than the page: hatched tiles between the cards, the outer ones cut off, the second row shifted by
   // half a tile. Card and tile widths follow the window so every card stays whole at 1280 and at 1440. Narrower: a plain grid.
   return (
-    <Reveal as="section" aria-label={heading} delay={shift ? 80 : 0} className="mx-auto max-w-[1240px] px-6 xl:max-w-none xl:px-0">
+    <Reveal as="section" aria-label={heading} delay={shift ? 80 : 0} className="mx-auto w-full min-w-0 max-w-[1240px] px-6 xl:mx-0 xl:max-w-none xl:px-0">
       <h3 className="sr-only">{heading}</h3>
       <ul className={cn("grid gap-4 sm:grid-cols-2 xl:flex xl:justify-center xl:[--c:clamp(300px,23.6vw,340px)] xl:[--s:clamp(96px,7.6vw,110px)]", shift && "xl:translate-x-[calc((var(--s)+16px)/2)]")}>
         {keys.map((k) => (

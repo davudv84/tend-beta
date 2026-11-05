@@ -54,7 +54,8 @@ function Flow() {
             {["#176b50", "#b45309", "#404040"].map((c) => <span key={c} className="size-5 rounded-full border-2 border-white" style={{ background: c }} />)}
           </span>
         </div>
-        <div className="mt-6 grid grid-cols-[minmax(0,1fr)_28px_auto_28px_minmax(0,1.3fr)] items-center">
+        {/* On a phone the three outcomes sit under the call; from 640px up they fan out to its right. */}
+        <div className="mt-6 grid grid-cols-[minmax(0,1fr)_28px_auto] items-center sm:grid-cols-[minmax(0,1fr)_28px_auto_28px_minmax(0,1.3fr)]">
           <div className="rounded-xl border border-[#eaeaea] bg-[#fafafa] px-3 py-2.5">
             <p className="text-[11px] text-[#737373]">{w.flow.call}</p>
             <p className="mt-0.5 truncate font-mono text-[12px]">{INVOICE_REQUEST.tool} · {INVOICE_REQUEST.action}</p>
@@ -62,11 +63,11 @@ function Flow() {
           <Line />
           <span className="grid size-11 place-items-center rounded-xl bg-[#171717] text-white"><BrandMark className="size-6" /></span>
           <Fan />
-          <div className="grid gap-3">
+          <div className="col-span-3 mt-5 grid justify-items-start gap-3 border-l border-[#d4d4d4] pl-4 sm:col-span-1 sm:mt-0 sm:border-0 sm:pl-0">
             <Badge tone="good">{s.auto}</Badge>
             <span className="relative inline-flex">
               <Badge tone="attention">{s.waiting}</Badge>
-              <span className="absolute top-[14px] left-[96px] flex items-start whitespace-nowrap">
+              <span className="absolute top-[14px] left-[96px] hidden items-start whitespace-nowrap sm:flex">
                 <MousePointer2Icon className="size-4 fill-[#171717] text-[#171717]" strokeWidth={1.5} />
                 <span className="-mt-0.5 ml-1 rounded-full bg-[#171717] px-2.5 py-1 text-[11px] font-medium text-white">{w.flow.bubble}</span>
               </span>
@@ -85,7 +86,7 @@ const Line = () => <span className="h-px w-full bg-[#d4d4d4]" />;
 /** One line in, three out, with rounded corners; the stroke keeps its width however the box is sized. */
 function Fan() {
   return (
-    <svg viewBox="0 0 28 120" preserveAspectRatio="none" className="h-[116px] w-7">
+    <svg viewBox="0 0 28 120" preserveAspectRatio="none" className="hidden h-[116px] w-7 sm:block">
       <path d="M0 60 H10 M10 60 V16 Q10 10 16 10 H28 M10 60 H28 M10 60 V104 Q10 110 16 110 H28" fill="none" stroke="#d4d4d4" strokeWidth="1" vectorEffect="non-scaling-stroke" />
     </svg>
   );
