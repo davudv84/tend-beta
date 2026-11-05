@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useDocumentTheme } from "@/ui/theme";
 import { Cta } from "./cta";
 import { Features } from "./features";
+import { Footer } from "./footer";
 import { Hero } from "./hero";
 import { Honest } from "./honest";
 import { Integrations } from "./integrations";
@@ -32,6 +33,7 @@ export function Homepage({ accounts, images, fontClass }: { accounts: boolean; i
         <Honest />
         <Cta accounts={accounts} />
       </main>
+      <Footer accounts={accounts} images={images} />
     </div>
   );
 }
