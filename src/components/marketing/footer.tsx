@@ -7,20 +7,24 @@ import { LanguageSwitch } from "@/components/language-switch";
 import { useT } from "@/i18n/client";
 import { Landscape } from "./landscape";
 import { Logo } from "./logo";
+import { SITE } from "./site";
 import type { HomeImages } from "./types";
 
 type Item = [label: string, href: string];
 
-/** The footer: the logo and the contact placeholder, three columns, the newsletter pill (no backend yet), the language, and hills rising at the bottom. */
+/**
+ * The footer: the logo and the way to get in touch, three columns of links (every one leads to a page), the newsletter pill (no backend yet),
+ * the language, and hills rising at the bottom. Section links are written as `/#id`, so they work from every page of the site.
+ */
 export function Footer({ accounts, images }: { accounts: boolean; images: HomeImages }) {
   const t = useT();
   const f = t.front;
   const o = f.footer;
   const [note, setNote] = useState(false);
   const columns: [string, Item[]][] = [
-    [o.columns.product, [[f.nav.product, "#product"], [f.nav.features, "#features"], [f.nav.integrations, "#integrations"], [f.nav.security, "#security"], [f.signIn, accounts ? "/account/sign-in" : "/operator"], ...(accounts ? [[f.create, "/account/sign-up"] as Item] : [])]],
-    [o.columns.resources, [[o.links.limitations, "#"], [o.links.report, "#"], [o.links.docs, "#"]]],
-    [o.columns.company, [[o.links.about, "#"], [o.contact, "#"], [o.links.imprint, "#"]]],
+    [o.columns.product, [[f.nav.product, "/how-it-works"], [f.nav.features, "/#features"], [f.nav.integrations, "/#integrations"], [f.nav.security, "/security"], [f.signIn, accounts ? "/account/sign-in" : "/operator"], ...(accounts ? [[f.create, "/account/sign-up"] as Item] : [])]],
+    [o.columns.resources, [[o.links.limitations, "/security"], [o.links.report, "/verification-report"], [o.links.docs, "/docs"]]],
+    [o.columns.company, [[o.links.about, "/about"], [o.links.contact, "/contact"], [o.links.imprint, "/imprint"]]],
   ];
   const link = "rounded-sm text-[14px] text-foreground/85 transition-colors hover:text-foreground";
   return (
@@ -32,7 +36,7 @@ export function Footer({ accounts, images }: { accounts: boolean; images: HomeIm
             <Logo />
             <p className="mt-6 flex items-center gap-2.5 text-[14px]">
               <MailIcon className="size-4 text-muted-foreground" strokeWidth={1.75} aria-hidden />
-              <a href="#" className={link}>{o.contact}</a>
+              {SITE.contactEmail ? <a href={`mailto:${SITE.contactEmail}`} className={link}>{SITE.contactEmail}</a> : <Link href="/contact" className={link}>{o.links.contact}</Link>}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
@@ -40,7 +44,7 @@ export function Footer({ accounts, images }: { accounts: boolean; images: HomeIm
               <nav key={title} aria-label={title}>
                 <p className="text-[12px] font-medium tracking-[0.08em] text-foreground uppercase">{title}</p>
                 <ul className="mt-5 grid gap-3">
-                  {items.map(([label, href]) => <li key={label + href}>{href.startsWith("#") ? <a href={href} className={link}>{label}</a> : <Link href={href} className={link}>{label}</Link>}</li>)}
+                  {items.map(([label, href]) => <li key={label + href}><Link href={href} className={link}>{label}</Link></li>)}
                 </ul>
               </nav>
             ))}
@@ -62,9 +66,6 @@ export function Footer({ accounts, images }: { accounts: boolean; images: HomeIm
             <p role="status" className="mt-2 min-h-5 text-[12px] text-muted-foreground">{note ? o.loop.notYet : ""}</p>
           </form>
           <div className="flex flex-wrap items-center gap-x-8 gap-y-4 md:justify-end">
-            <ul className="flex flex-wrap gap-x-6 gap-y-2 text-[13px] font-medium">
-              {([o.social.github, o.social.linkedin, o.social.x] as const).map((s) => <li key={s}><a href="#" className={link}>{s}</a></li>)}
-            </ul>
             <LanguageSwitch />
           </div>
         </div>
@@ -72,7 +73,7 @@ export function Footer({ accounts, images }: { accounts: boolean; images: HomeIm
         <div className="mt-14 flex flex-col gap-4 border-t border-white/10 pt-6 text-[12px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>{o.copyright}</p>
           <ul className="flex flex-wrap gap-x-6 gap-y-2 font-medium tracking-[0.06em] uppercase">
-            {([o.links.imprint, o.links.privacy, o.links.terms] as const).map((s) => <li key={s}><a href="#" className="rounded-sm underline-offset-4 hover:text-foreground hover:underline">{s}</a></li>)}
+            {([[o.links.imprint, "/imprint"], [o.links.privacy, "/privacy"], [o.links.terms, "/terms"]] as const).map(([s, href]) => <li key={s}><Link href={href} className="rounded-sm underline-offset-4 hover:text-foreground hover:underline">{s}</Link></li>)}
           </ul>
         </div>
       </div>

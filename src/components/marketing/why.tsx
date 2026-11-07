@@ -33,7 +33,7 @@ export function Why() {
             <LogoTile className="size-9" />
             <h3 className="mt-5 text-[22px] font-medium tracking-[-0.01em]">{w.cardTitle}</h3>
             <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{w.cardBody}</p>
-            <Button asChild className={`${pill("light")} mt-7`}><Link href="#features">{w.cardLink}</Link></Button>
+            <Button asChild className={`${pill("light")} mt-7`}><Link href="/how-it-works">{w.cardLink}</Link></Button>
           </div>
         </div>
       </Reveal>
@@ -42,7 +42,7 @@ export function Why() {
 }
 
 /** The three outcomes, in the app's own words, drawn as a small flow in the app's dark colours: tool call → TEND → allowed, waiting, blocked. */
-function Flow() {
+export function Flow() {
   const t = useT();
   const w = t.front.why;
   const s = t.home.dash.stats;

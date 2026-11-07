@@ -12,7 +12,10 @@ import { pill } from "./pill";
 
 const SECTIONS = ["product", "features", "integrations", "security"] as const;
 
-/** The site's header: the logo, four anchors, sign in and create an account. On a phone the anchors and buttons are in a drawer. */
+/**
+ * The site's header: the logo, four links to the homepage's sections (written as `/#id`, so they work from every page of the site), sign in
+ * and create an account. On a phone the links and buttons are in a drawer.
+ */
 export function Nav({ accounts }: { accounts: boolean }) {
   const t = useT();
   const f = t.front;
@@ -24,7 +27,7 @@ export function Nav({ accounts }: { accounts: boolean }) {
       <div className="mx-auto flex h-20 max-w-[1240px] items-center justify-between px-6 md:px-8">
         <Logo />
         <nav aria-label={f.nav.label} className="hidden items-center gap-8 lg:flex">
-          {SECTIONS.map((id) => <a key={id} href={`#${id}`} className={link}>{f.nav[id]}</a>)}
+          {SECTIONS.map((id) => <Link key={id} href={`/#${id}`} className={link}>{f.nav[id]}</Link>)}
         </nav>
         <div className="hidden items-center gap-2.5 lg:flex">
           <Button asChild className={pill("light")}><Link href={signIn}>{f.signIn}</Link></Button>
@@ -48,7 +51,7 @@ export function Nav({ accounts }: { accounts: boolean }) {
               </div>
               <nav aria-label={f.nav.label} className="mt-10 grid gap-1">
                 {SECTIONS.map((id) => (
-                  <a key={id} href={`#${id}`} onClick={() => setOpen(false)} className="rounded-lg px-2 py-3 text-[17px] text-foreground transition-colors hover:bg-white/5">{f.nav[id]}</a>
+                  <Link key={id} href={`/#${id}`} onClick={() => setOpen(false)} className="rounded-lg px-2 py-3 text-[17px] text-foreground transition-colors hover:bg-white/5">{f.nav[id]}</Link>
                 ))}
               </nav>
               <div className="mt-auto grid gap-2.5">

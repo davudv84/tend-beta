@@ -2,6 +2,7 @@
 
 import { Fragment } from "react";
 import { ArrowRightIcon, CheckIcon, MinusIcon } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,7 @@ export function Honest() {
         <Row heading={h.doesnt} keys={DOESNT} Icon={MinusIcon} shift />
       </div>
       <Reveal className="mt-12 text-center">
-        <Button asChild className={pill("light")}><a href="#">{h.button} <ArrowRightIcon className="size-4" aria-hidden /></a></Button>
+        <Button asChild className={pill("light")}><Link href="/security">{h.button} <ArrowRightIcon className="size-4" aria-hidden /></Link></Button>
       </Reveal>
     </section>
   );

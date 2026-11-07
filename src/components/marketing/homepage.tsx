@@ -1,14 +1,11 @@
 "use client";
 
-import { useT } from "@/i18n/client";
-import { cn } from "@/lib/utils";
 import { Cta } from "./cta";
 import { Features } from "./features";
-import { Footer } from "./footer";
 import { Hero } from "./hero";
 import { Honest } from "./honest";
 import { Integrations } from "./integrations";
-import { Nav } from "./nav";
+import { SiteFrame } from "./site-frame";
 import { Why } from "./why";
 import type { HomeImages } from "./types";
 
@@ -18,20 +15,14 @@ import type { HomeImages } from "./types";
  * app screen gets the app's dark tokens under `.mk .ui-next[data-theme="dark"]`, so it renders as the app does in dark.
  */
 export function Homepage({ accounts, images, fontClass }: { accounts: boolean; images: HomeImages; fontClass: string }) {
-  const t = useT();
   return (
-    <div className={cn("mk min-h-dvh font-sans", fontClass)}>
-      <a href="#main" className="sr-only z-50 focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:rounded-full focus:bg-white focus:px-4 focus:py-2 focus:text-[14px] focus:text-[#171717]">{t.front.skip}</a>
-      <Nav accounts={accounts} />
-      <main id="main">
-        <Hero accounts={accounts} images={images} />
-        <Why />
-        <Features images={images} />
-        <Integrations images={images} />
-        <Honest />
-        <Cta accounts={accounts} />
-      </main>
-      <Footer accounts={accounts} images={images} />
-    </div>
+    <SiteFrame accounts={accounts} images={images} fontClass={fontClass}>
+      <Hero accounts={accounts} images={images} />
+      <Why />
+      <Features images={images} />
+      <Integrations images={images} />
+      <Honest />
+      <Cta accounts={accounts} />
+    </SiteFrame>
   );
 }
