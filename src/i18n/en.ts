@@ -584,7 +584,7 @@ export const en = {
       eyebrow: "AI agent control · Beta",
       proof: (integrations: number, checks: number) => `${integrations} integrations verified · ${checks} checks each`,
       worksWith: "Works with",
-      screen: "The Approvals screen of TEND. Two requests are waiting for a decision: ops-agent wants to pay invoice 2026-118 (4,800 EUR), and repo-helper, a Claude Code agent, wants to run git push --force. Each can be allowed once or not allowed. Below them, the decision history.",
+      screen: "The Overview screen of TEND. Two of three agents are running and two requests need an answer: ops-agent wants to pay invoice 2026-118 (4,800 EUR), and repo-helper, a Claude Code agent, wants to run git push --force. Each can be allowed once or not allowed. Below them, the agents with what each is doing, and the recent activity.",
       landscape: "Dusk over forested hills",
     },
     why: {

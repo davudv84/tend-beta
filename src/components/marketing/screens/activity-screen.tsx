@@ -36,7 +36,7 @@ export function ActivityScreen() {
             <span className="-ml-1 inline-flex items-center gap-1 px-1 py-1 text-small text-muted-foreground"><ChevronRightIcon className="size-3.5" />{g.moreFilters}</span>
           </div>
           <section className="border-t border-border">
-            <h2 className="bg-[#fafafa] px-6 py-2 text-[13px] font-medium text-muted-foreground">{t.time.today}</h2>
+            <h2 className="bg-[#fafafa] px-6 py-2 text-[13px] font-medium text-muted-foreground dark:bg-sunken">{t.time.today}</h2>
             <DecisionRows rows={ACTIVITY} />
           </section>
         </Card>

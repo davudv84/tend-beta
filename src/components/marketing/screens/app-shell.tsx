@@ -12,9 +12,10 @@ const SETUP: [NavKey, Icon][] = [["integrations", PlusIcon], ["verification", Sh
 
 /**
  * A still copy of the app's shell (ui/shell.tsx): the same sidebar with the same words, and nothing live behind it. The app's own
- * components render the content. Shown inside ScreenFrame, so it is decorative and inert.
+ * components render the content. Shown inside ScreenFrame, so it is decorative and inert. Dark by default, as the app looks when a
+ * person has chosen dark: the `dark` class turns on the components' `dark:` styles, `data-theme` the app's dark tokens (globals.css).
  */
-export function AppShell({ active, waiting = 0, online = 2, children }: { active: NavKey; waiting?: number; online?: number; children: React.ReactNode }) {
+export function AppShell({ active, waiting = 0, online = 2, theme = "dark", children }: { active: NavKey; waiting?: number; online?: number; theme?: "dark" | "light"; children: React.ReactNode }) {
   const t = useT();
   const g = t.ui.gateway;
   const item = (key: NavKey | "settings", Icon: Icon) => {
@@ -28,8 +29,8 @@ export function AppShell({ active, waiting = 0, online = 2, children }: { active
     );
   };
   return (
-    <div className="ui-next grid h-full min-h-full grid-cols-[232px_minmax(0,1fr)]" data-theme="light">
-      <aside className="flex min-w-0 flex-col justify-between border-r border-border bg-[#faf9f7]">
+    <div className={cn("ui-next grid h-full min-h-full grid-cols-[232px_minmax(0,1fr)]", theme === "dark" && "dark")} data-theme={theme}>
+      <aside className="flex min-w-0 flex-col justify-between border-r border-border bg-[#faf9f7] dark:bg-sunken/50">
         <div className="grid gap-6 pt-6">
           <span className="flex items-center gap-3 px-5"><BrandMark className="size-6 shrink-0 text-primary" /><span className="text-[15px] font-semibold tracking-[0.16em]">TEND</span></span>
           <div className="grid gap-3">

@@ -253,8 +253,10 @@
   color-scheme: light;
 }
 
-/* Dark: chosen explicitly, or followed from the system when the preference is "system". */
-:root:has(.ui-next[data-theme="dark"]) {
+/* Dark: chosen explicitly, or followed from the system when the preference is "system". `.mk .ui-next[data-theme="dark"]` is an
+   app screen shown on the homepage in dark; it outranks `.mk .ui-next` above, which gives the light tokens. */
+:root:has(.ui-next[data-theme="dark"]),
+.mk .ui-next[data-theme="dark"] {
   --background: #131211;
   --surface: #1a1917;
   --elevated: #211f1c;
@@ -374,9 +376,10 @@
 }
 
 /* ============================================================================================================
-   The public homepage (components/marketing): a black site that shows the app's own screens, in white, inside it.
+   The public homepage (components/marketing): a black site that shows the app's own screens, in the app's dark theme, inside it.
    `.mk` re-defines the variable names the shared components use, so the button, badges and language switch follow;
-   `.mk .ui-next` (in the selector list above) gives an embedded app screen its light tokens back.
+   `.mk .ui-next` and `.mk .ui-next[data-theme="dark"]` (in the selector lists above) give an embedded app screen the app's own
+   tokens back, light or dark.
    ============================================================================================================ */
 @theme inline {
   --font-serif: var(--font-newsreader), "Newsreader", Georgia, serif;

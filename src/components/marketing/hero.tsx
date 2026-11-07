@@ -10,13 +10,15 @@ import { Eyebrow } from "./eyebrow";
 import { Bushes, Landscape } from "./landscape";
 import { pill } from "./pill";
 import { ScreenFrame } from "./screen-frame";
-import { ApprovalsScreen } from "./screens/approvals-screen";
+import { OverviewScreen } from "./screens/overview-screen";
 import type { HomeImages } from "./types";
 
 /** Verified integrations, from the catalog and the verification report; "verified" cannot be claimed from here. */
 export const VERIFIED = INTEGRATIONS.filter((i) => statusOf(i) === "verified");
 /** Six for the strip under the hero: these first, if verified, then any other verified one with an official mark. */
 const PREFERRED: IntegrationId[] = ["claudeCode", "claude", "mcp", "langchain", "crewai", "ollama"];
+/** The Overview screen's size: the app at a laptop's width, as tall as the whole page in the longer language (German). */
+const SCREEN = { width: 1280, height: 2064 };
 const WORKS_WITH = [...PREFERRED.map((id) => VERIFIED.find((i) => i.id === id)), ...VERIFIED.filter((i) => i.logo && !PREFERRED.includes(i.id))].filter((i) => !!i).slice(0, 6);
 
 export function Hero({ accounts, images }: { accounts: boolean; images: HomeImages }) {
@@ -38,8 +40,9 @@ export function Hero({ accounts, images }: { accounts: boolean; images: HomeImag
         </div>
       </div>
 
-      <div className="relative z-0 mx-auto mt-12 max-w-[1180px] px-4 md:mt-16 md:px-8">
-        <ScreenFrame label={f.hero.screen} address={`tend · ${t.ui.nav.approvals}`}><ApprovalsScreen /></ScreenFrame>
+      {/* The whole Overview page, top to bottom, above the foreground, so nothing on it is hidden. */}
+      <div className="relative z-20 mx-auto mt-12 max-w-[1180px] px-4 md:mt-16 md:px-8">
+        <ScreenFrame label={f.hero.screen} width={SCREEN.width} height={SCREEN.height} address={`tend · ${t.ui.nav.home}`}><OverviewScreen /></ScreenFrame>
       </div>
 
       <Foreground images={images} />

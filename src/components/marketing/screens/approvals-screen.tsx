@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Badge, Card } from "@/ui/primitives";
 import { HISTORY, INVOICE_REQUEST, OPS_AGENT, PUSH_REQUEST, REPO_HELPER, type DemoDecision } from "../demo-data";
 import { AppShell } from "./app-shell";
+import { DARK_TONE } from "./dark-tones";
 
 const TABS = ["authorizations", "queue", "log", "controls", "connected"] as const;
 
@@ -46,7 +47,10 @@ export function ApprovalsScreen() {
   );
 }
 
-/** One waiting request, as ui/request-card.tsx lays it out, with the demo's own times (minutes, not clock readings). */
+/**
+ * One waiting request, as ui/request-card.tsx lays it out at a desktop width, with the demo's own times (minutes, not clock readings).
+ * No breakpoints: the screen is drawn at a fixed width, so it looks the same on a phone as on a desktop.
+ */
 export function DemoRequestCard({ request, agentName }: { request: typeof INVOICE_REQUEST; agentName: string }) {
   const t = useT();
   const h = t.home.request;
@@ -57,7 +61,7 @@ export function DemoRequestCard({ request, agentName }: { request: typeof INVOIC
   const loud = kind === "spend" || kind === "unknown" || kind === "run";
   const button = "h-11 rounded-full px-6 text-ui";
   return (
-    <article className="rounded-2xl border border-border bg-surface p-5 shadow-[0_1px_2px_rgb(0_0_0/0.03)] md:p-6">
+    <article className="rounded-2xl border border-border bg-surface p-6 shadow-[0_1px_2px_rgb(0_0_0/0.03)]">
       <p className={loud ? "text-small font-medium text-foreground" : "text-small text-muted-foreground"}>{h.kind[kind]}</p>
       <h3 className="mt-2 text-heading text-balance">{sentence}</h3>
       <p className="mt-2 text-small text-muted-foreground">{h.asked(t.time.ago(request.askedMinutesAgo, "m"))} · {h.lapsesIn(request.lapsesInMinutes)}</p>
@@ -67,8 +71,8 @@ export function DemoRequestCard({ request, agentName }: { request: typeof INVOIC
           <blockquote className={cn("mt-2 rounded-2xl bg-sunken px-5 py-4 break-words whitespace-pre-wrap", hook ? "font-mono text-[14px] [overflow-wrap:anywhere]" : "text-body")}>{request.detail}</blockquote>
         </>
       )}
-      <dl className="mt-4 grid gap-x-5 gap-y-0.5 text-small sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-y-1.5">
-        {request.resource && !hook && <><dt className="text-faint">{h.rows.item}</dt><dd className="mb-2 font-mono text-caption break-all sm:mb-0">{request.resource}</dd></>}
+      <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-1.5 text-small">
+        {request.resource && !hook && <><dt className="text-faint">{h.rows.item}</dt><dd className="font-mono text-caption break-all">{request.resource}</dd></>}
         {why && <><dt className="text-faint">{h.why}</dt><dd className="text-pretty">{why}</dd></>}
       </dl>
       <div className="mt-6 flex flex-wrap gap-2.5">
@@ -84,21 +88,22 @@ export function DemoRequestCard({ request, agentName }: { request: typeof INVOIC
 const TONE = { ran: "neutral", allowed: "neutral", approved: "neutral", blocked: "danger", rejected: "danger", needs_approval: "attention" } as const;
 
 /** Decisions as the Approvals history and the Activity screen tabulate them (ui/decision-table.tsx), with the app's columns and words. */
-export function DecisionRows({ rows, className }: { rows: DemoDecision[]; className?: string }) {
+export function DecisionRows({ rows, compact, className }: { rows: DemoDecision[]; compact?: boolean; className?: string }) {
   const t = useT();
+  const pad = compact ? "px-6 py-3" : "px-6 py-3.5";
   const why = (d: DemoDecision) => (d.why.kind === "rule" ? t.timelinePage.rule(d.why.rule) : d.why.kind === "person" ? t.timelinePage.by.person : (t.timelinePage.reasons[d.why.reason] ?? d.why.reason));
   return (
     <div className={cn("overflow-x-auto", className)}>
       <table className="w-full min-w-[640px] text-left text-[14px]">
-        <thead className="bg-[#fafafa] text-[13px] text-muted-foreground"><tr>{t.home.overview.columns.map((c) => <th key={c} scope="col" className="px-6 py-3 font-normal">{c}</th>)}</tr></thead>
+        <thead className="bg-[#fafafa] text-[13px] text-muted-foreground dark:bg-sunken"><tr>{t.home.overview.columns.map((c) => <th key={c} scope="col" className="px-6 py-3 font-normal">{c}</th>)}</tr></thead>
         <tbody className="divide-y divide-border">
           {rows.map((d) => (
             <tr key={d.time + d.detail}>
-              <td className="px-6 py-3.5 whitespace-nowrap text-muted-foreground tabular-nums">{d.time}</td>
-              <td className="px-6 py-3.5 font-medium">{d.agent.name}</td>
-              <td className="px-6 py-3.5 font-mono text-[13px] [overflow-wrap:anywhere]">{d.detail}<span className="mt-0.5 block text-[12px] text-faint">{d.tool}.{d.action}</span></td>
-              <td className="px-6 py-3.5"><Badge tone={TONE[d.outcome]}>{t.timelinePage.outcome[d.outcome]}</Badge></td>
-              <td className="px-6 py-3.5 text-muted-foreground">{why(d)}</td>
+              <td className={`${pad} whitespace-nowrap text-muted-foreground tabular-nums`}>{d.time}</td>
+              <td className={`${pad} font-medium whitespace-nowrap`}>{d.agent.name}</td>
+              <td className={`${pad} font-mono text-[13px] [overflow-wrap:anywhere]`}>{d.detail}<span className="mt-0.5 block text-[12px] text-faint">{d.tool}.{d.action}</span></td>
+              <td className={pad}><Badge tone={TONE[d.outcome]} className={DARK_TONE[TONE[d.outcome]]}>{t.timelinePage.outcome[d.outcome]}</Badge></td>
+              <td className={`${pad} text-muted-foreground`}>{why(d)}</td>
             </tr>
           ))}
         </tbody>

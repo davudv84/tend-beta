@@ -1,7 +1,8 @@
-// Invented data for the screens on the homepage. Two agents, their requests and a few decisions, shaped like the app's own records
+// Invented data for the screens on the homepage. Three agents, their requests and a few decisions, shaped like the app's own records
 // so the same words and components apply. Nothing here is ever sent anywhere; times are given as minutes, so the screens read the
 // same on the server and in every browser.
 import { presetRules } from "@/lib/agent-presets";
+import type { IntegrationId } from "@/lib/integrations-catalog";
 import type { RuleLike } from "@/lib/permissions";
 import type { Agent, Authorization } from "@/lib/types";
 
@@ -12,6 +13,7 @@ const agent = (id: string, name: string, model: string, provider: Agent["provide
 
 export const OPS_AGENT = agent("ag_demo_ops", "ops-agent", "claude-haiku-4-5", "Anthropic");
 export const REPO_HELPER = agent("ag_demo_repo", "repo-helper", "Claude Code", "Custom");
+export const RESEARCH_AGENT = agent("ag_demo_research", "research-agent", "LangChain", "Anthropic");
 
 /** The Balanced preset's own rules (lib/agent-presets.ts), so the demo shows the sentences the app would really show. */
 const BALANCED = presetRules("balanced");
@@ -22,7 +24,7 @@ export const SHELL_ALLOW_RULE = BALANCED.find((r) => r.tool === "shell" && r.act
 
 type Pending = Omit<Authorization, "createdAt" | "expiresAt" | "alerts"> & { askedMinutesAgo: number; lapsesInMinutes: number };
 
-/** The two requests waiting on the hero's Approvals screen. */
+/** The two requests waiting on the hero's Overview screen. */
 export const INVOICE_REQUEST: Pending = {
   id: "az_demo_invoice", agentId: OPS_AGENT.id, tool: "pay_invoice", action: "pay", resource: "2026-118",
   detail: "Pay invoice 2026-118: 4,800 EUR to Acme GmbH", status: "pending", reason: "approval_required", askedMinutesAgo: 2, lapsesInMinutes: 8,
@@ -58,3 +60,24 @@ export const ACTIVITY: DemoDecision[] = [
   { time: "13:30", agent: REPO_HELPER, detail: "Read: src/app/page.tsx", tool: "file.read", action: "Read", outcome: "allowed", why: { kind: "reason", reason: "policy_allowed" } },
   HISTORY[2],
 ];
+
+/**
+ * The Overview screen in the hero: the agents as its list shows them (ui/agent-row.tsx), waiting ones first, each with the mark of
+ * the product it runs on and its latest request. `doing` is the word the row puts before a request that did not simply run.
+ */
+export interface DemoAgentLine {
+  agent: Agent;
+  integration: IntegrationId;
+  live: boolean;
+  doing?: "waiting" | "blocked" | "rejected";
+  detail: string;
+  minutesAgo: number;
+}
+export const AGENT_LINES: DemoAgentLine[] = [
+  { agent: OPS_AGENT, integration: "claude", live: true, doing: "waiting", detail: INVOICE_REQUEST.detail!, minutesAgo: 2 },
+  { agent: REPO_HELPER, integration: "claudeCode", live: true, doing: "waiting", detail: PUSH_REQUEST.detail!, minutesAgo: 4 },
+  { agent: RESEARCH_AGENT, integration: "langchain", live: false, detail: "Open: https://docs.stripe.com/api/invoices", minutesAgo: 38 },
+];
+
+/** Overview's four numbers. Blocked counts the two decisions above that did not run (the key read and the email). */
+export const OVERVIEW_STATS = { running: 2, agents: AGENT_LINES.length, waiting: 2, auto: 14, blocked: 2 };

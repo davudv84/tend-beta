@@ -573,7 +573,7 @@ export const de: Dict = {
       eyebrow: "Kontrolle über KI-Agenten · Beta",
       proof: (integrations: number, checks: number) => `${integrations} Integrationen verifiziert · je ${checks} Prüfungen`,
       worksWith: "Funktioniert mit",
-      screen: "Der Bildschirm „Freigaben“ in TEND. Zwei Anfragen warten auf eine Entscheidung: ops-agent möchte die Rechnung 2026-118 bezahlen (4.800 EUR), und repo-helper, ein Claude-Code-Agent, möchte git push --force ausführen. Jede kann einmal erlaubt oder abgelehnt werden. Darunter der Entscheidungsverlauf.",
+      screen: "Der Bildschirm „Übersicht“ in TEND. Zwei von drei Agenten laufen, und zwei Anfragen brauchen eine Antwort: ops-agent möchte die Rechnung 2026-118 bezahlen (4.800 EUR), und repo-helper, ein Claude-Code-Agent, möchte git push --force ausführen. Jede kann einmal erlaubt oder abgelehnt werden. Darunter die Agenten mit dem, was jeder gerade tut, und die letzte Aktivität.",
       landscape: "Abenddämmerung über bewaldeten Hügeln",
     },
     why: {
