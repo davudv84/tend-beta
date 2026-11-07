@@ -29,7 +29,9 @@ export function AppShell({ active, waiting = 0, online = 2, theme = "dark", chil
     );
   };
   return (
-    <div className={cn("ui-next grid h-full min-h-full grid-cols-[232px_minmax(0,1fr)]", theme === "dark" && "dark")} data-theme={theme}>
+    // One row as tall as the window: the sidebar always shows its bottom (server, notifications, settings, account), as the app's sticky
+    // sidebar does, while a page longer than the window runs on below its edge.
+    <div className={cn("ui-next grid h-full min-h-full grid-cols-[232px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]", theme === "dark" && "dark")} data-theme={theme}>
       <aside className="flex min-w-0 flex-col justify-between border-r border-border bg-[#faf9f7] dark:bg-sunken/50">
         <div className="grid gap-6 pt-6">
           <span className="flex items-center gap-3 px-5"><BrandMark className="size-6 shrink-0 text-primary" /><span className="text-[15px] font-semibold tracking-[0.16em]">TEND</span></span>
@@ -56,7 +58,7 @@ export function AppShell({ active, waiting = 0, online = 2, theme = "dark", chil
           </span>
         </div>
       </aside>
-      <div className="min-w-0 bg-background">{children}</div>
+      <div className="min-w-0 overflow-hidden bg-background">{children}</div>
     </div>
   );
 }
