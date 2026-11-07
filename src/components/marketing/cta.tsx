@@ -36,5 +36,5 @@ export function Cta({ accounts }: { accounts: boolean }) {
   );
 }
 
-/** The Activity page's whole height in a 1728px-wide window, as in the hero, with room for the longer German words. */
+/** The Activity page's whole height in a 1728px-wide window, with room for the longer German words. The hero's window is the same size. */
 const SCREEN_HEIGHT = 964;

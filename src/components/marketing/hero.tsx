@@ -17,9 +17,11 @@ import type { HomeImages } from "./types";
 export const VERIFIED = INTEGRATIONS.filter((i) => statusOf(i) === "verified");
 /** Six for the strip under the hero: these first, if verified, then any other verified one with an official mark. */
 const PREFERRED: IntegrationId[] = ["claudeCode", "claude", "mcp", "langchain", "crewai", "ollama"];
-/** The Overview screen's size: the app in a 1728px-wide window (a 16-inch MacBook's), so the sidebar, the content column and the margins
- * beside it sit as they do in the app; tall enough for its top down to the agents in the longer language (German). */
-const SCREEN = { width: 1728, height: 1352 };
+/**
+ * The Overview screen's size: the same window as the Activity screen on the closing card (cta.tsx), a 1728 × 964 window (a 16-inch
+ * MacBook's), so both screens on the page are the same size. The page runs on below the window's edge, as it does in the app.
+ */
+const SCREEN = { width: 1728, height: 964 };
 /**
  * How wide the hero picture is drawn. It covers a box much taller than the picture's own shape, so it is drawn wider than the
  * window (about 1.8 windows on a desktop, 4 on a phone) and cropped; saying so lets the browser fetch a sharp enough copy. On a phone
@@ -47,9 +49,12 @@ export function Hero({ accounts, images }: { accounts: boolean; images: HomeImag
         </div>
       </div>
 
-      {/* The Overview down to its agents, above the foreground, so nothing on it is hidden. */}
-      <div className="relative z-20 mx-auto mt-12 max-w-[1180px] px-4 md:mt-16 md:px-8">
+      {/* The Overview, above the foreground, so nothing on it is hidden. */}
+      {/* As wide as the closing card's window: the same 1240px column, inset by that card's border and padding. */}
+      <div className="relative z-20 mt-12 px-6 md:mt-16 md:px-8">
+        <div className="mx-auto max-w-[1240px] px-[21px] sm:px-[29px] md:px-[49px] lg:px-[57px]">
         <ScreenFrame label={f.hero.screen} width={SCREEN.width} height={SCREEN.height} address={`tend · ${t.ui.nav.home}`}><OverviewScreen /></ScreenFrame>
+        </div>
       </div>
 
       <Foreground images={images} />
