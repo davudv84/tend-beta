@@ -29,12 +29,12 @@ export function Cta({ accounts }: { accounts: boolean }) {
               <Button asChild className={`${pill("light", "lg")} mt-6`}><Link href={accounts ? "/account/sign-up" : "/operator"}>{t.front.create}</Link></Button>
             </div>
           </div>
-          <ScreenFrame label={c.screen} width={1280} height={SCREEN_HEIGHT} address={`tend · ${t.ui.nav.activity}`} className="mt-10 md:mt-14"><ActivityScreen /></ScreenFrame>
+          <ScreenFrame label={c.screen} width={1728} height={SCREEN_HEIGHT} address={`tend · ${t.ui.nav.activity}`} className="mt-10 md:mt-14"><ActivityScreen /></ScreenFrame>
         </div>
       </Reveal>
     </section>
   );
 }
 
-/** The Activity page's whole height at 1280 wide, with room for the longer German words. */
+/** The Activity page's whole height in a 1728px-wide window, as in the hero, with room for the longer German words. */
 const SCREEN_HEIGHT = 964;

@@ -6,13 +6,13 @@ import { useT } from "@/i18n/client";
 import { INTEGRATIONS } from "@/lib/integrations-catalog";
 import { cn } from "@/lib/utils";
 import { Card, CardHeader, buttonClass } from "@/ui/primitives";
-import { ACTIVITY, AGENT_LINES, INVOICE_REQUEST, OPS_AGENT, OVERVIEW_STATS, PUSH_REQUEST, REPO_HELPER, type DemoAgentLine } from "../demo-data";
+import { AGENT_LINES, INVOICE_REQUEST, OPS_AGENT, OVERVIEW_STATS, PUSH_REQUEST, REPO_HELPER, type DemoAgentLine } from "../demo-data";
 import { AppShell } from "./app-shell";
-import { DecisionRows, DemoRequestCard } from "./approvals-screen";
+import { DemoRequestCard } from "./approvals-screen";
 
 /**
- * The Overview screen as the app shows it (app/(next)/home/view.tsx), top to bottom: the four numbers, the two requests that need an
- * answer, the agents and what each is doing, the recent activity, and what TEND covers.
+ * The top of the Overview screen as the app shows it (app/(next)/home/view.tsx): the four numbers, the two requests that need an
+ * answer, and the agents with what each is doing. It stops there, so the hero stays short; Activity has its own screen further down.
  */
 export function OverviewScreen() {
   const t = useT();
@@ -64,17 +64,6 @@ export function OverviewScreen() {
             <span className="inline-flex items-center gap-2 text-[14px] text-muted-foreground"><PlusIcon className="size-4" strokeWidth={1.75} />{d.add}</span>
           </footer>
         </Card>
-
-        <Card className="mt-10">
-          <CardHeader title={h.recent.title} right={more(h.recent.all)} />
-          <div className="border-t border-border"><DecisionRows rows={ACTIVITY.slice(0, 5)} compact /></div>
-        </Card>
-
-        <section className="mt-10 border-t border-border pt-6">
-          <h2 className="text-[15px] font-medium">{d.covers.title}</h2>
-          <p className="mt-2 max-w-[72ch] text-[14px] text-pretty text-muted-foreground">{d.covers.yes} {d.covers.no}</p>
-          <span className="mt-3 inline-block">{more(d.covers.link)}</span>
-        </section>
       </div>
     </AppShell>
   );

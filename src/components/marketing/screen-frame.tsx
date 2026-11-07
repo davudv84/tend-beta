@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * assistive technology and inert, with `label` as its text alternative. Before JavaScript runs, the browser's own container
  * arithmetic sets the zoom where it can; afterwards a measurement does.
  */
-export function ScreenFrame({ children, label, width = 1280, height = 800, className, address }: { children: React.ReactNode; label: string; width?: number; height?: number; className?: string; address?: string }) {
+export function ScreenFrame({ children, label, width = 1728, height = 1000, className, address }: { children: React.ReactNode; label: string; width?: number; height?: number; className?: string; address?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState<number | null>(null);
   useLayoutEffect(() => {

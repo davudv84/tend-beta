@@ -88,9 +88,9 @@ export function DemoRequestCard({ request, agentName }: { request: typeof INVOIC
 const TONE = { ran: "neutral", allowed: "neutral", approved: "neutral", blocked: "danger", rejected: "danger", needs_approval: "attention" } as const;
 
 /** Decisions as the Approvals history and the Activity screen tabulate them (ui/decision-table.tsx), with the app's columns and words. */
-export function DecisionRows({ rows, compact, className }: { rows: DemoDecision[]; compact?: boolean; className?: string }) {
+export function DecisionRows({ rows, className }: { rows: DemoDecision[]; className?: string }) {
   const t = useT();
-  const pad = compact ? "px-6 py-3" : "px-6 py-3.5";
+  const pad = "px-6 py-3.5";
   const why = (d: DemoDecision) => (d.why.kind === "rule" ? t.timelinePage.rule(d.why.rule) : d.why.kind === "person" ? t.timelinePage.by.person : (t.timelinePage.reasons[d.why.reason] ?? d.why.reason));
   return (
     <div className={cn("overflow-x-auto", className)}>

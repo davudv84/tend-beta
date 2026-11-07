@@ -17,8 +17,15 @@ import type { HomeImages } from "./types";
 export const VERIFIED = INTEGRATIONS.filter((i) => statusOf(i) === "verified");
 /** Six for the strip under the hero: these first, if verified, then any other verified one with an official mark. */
 const PREFERRED: IntegrationId[] = ["claudeCode", "claude", "mcp", "langchain", "crewai", "ollama"];
-/** The Overview screen's size: the app at a laptop's width, as tall as the whole page in the longer language (German). */
-const SCREEN = { width: 1280, height: 2064 };
+/** The Overview screen's size: the app in a 1728px-wide window (a 16-inch MacBook's), so the sidebar, the content column and the margins
+ * beside it sit as they do in the app; tall enough for its top down to the agents in the longer language (German). */
+const SCREEN = { width: 1728, height: 1352 };
+/**
+ * How wide the hero picture is drawn. It covers a box much taller than the picture's own shape, so it is drawn wider than the
+ * window (about 1.8 windows on a desktop, 4 on a phone) and cropped; saying so lets the browser fetch a sharp enough copy. On a phone
+ * it settles for less than the full width, as only a narrow middle strip shows there.
+ */
+const HERO_SIZES = "(max-width: 767px) 175vw, 180vw";
 const WORKS_WITH = [...PREFERRED.map((id) => VERIFIED.find((i) => i.id === id)), ...VERIFIED.filter((i) => i.logo && !PREFERRED.includes(i.id))].filter((i) => !!i).slice(0, 6);
 
 export function Hero({ accounts, images }: { accounts: boolean; images: HomeImages }) {
@@ -27,7 +34,7 @@ export function Hero({ accounts, images }: { accounts: boolean; images: HomeImag
   return (
     <section className="relative isolate overflow-hidden pt-32 pb-6 md:pt-40">
       {/* The picture sits at the bottom of the hero; the page's black runs into its sky. */}
-      <Landscape src={images.hero} alt={f.hero.landscape} preload className="-z-20 top-auto h-[84%]" position="center bottom" mask="linear-gradient(to bottom, transparent, black 28%)" />
+      <Landscape src={images.hero} alt={f.hero.landscape} preload sizes={HERO_SIZES} className="-z-20 top-auto h-[84%]" position="center bottom" mask="linear-gradient(to bottom, transparent, black 28%)" />
       <div aria-hidden className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,rgb(5_6_5/0.35),rgb(5_6_5/0)_35%,rgb(5_6_5/0)_70%,rgb(5_6_5/0.85)_100%)]" />
 
       <div className="mx-auto max-w-[1240px] px-6 text-center md:px-8">
@@ -40,7 +47,7 @@ export function Hero({ accounts, images }: { accounts: boolean; images: HomeImag
         </div>
       </div>
 
-      {/* The whole Overview page, top to bottom, above the foreground, so nothing on it is hidden. */}
+      {/* The Overview down to its agents, above the foreground, so nothing on it is hidden. */}
       <div className="relative z-20 mx-auto mt-12 max-w-[1180px] px-4 md:mt-16 md:px-8">
         <ScreenFrame label={f.hero.screen} width={SCREEN.width} height={SCREEN.height} address={`tend · ${t.ui.nav.home}`}><OverviewScreen /></ScreenFrame>
       </div>
@@ -70,6 +77,6 @@ export function Hero({ accounts, images }: { accounts: boolean; images: HomeImag
 function Foreground({ images }: { images: HomeImages }) {
   const base = "pointer-events-none absolute inset-x-0 bottom-0 z-10";
   if (images.heroForeground) return <div aria-hidden className={`${base} h-[40%]`}><Image src={images.heroForeground} alt="" fill sizes="100vw" className="object-cover object-bottom" /></div>;
-  if (images.hero) return <div aria-hidden className={`${base} h-[84%] [mask-image:linear-gradient(to_top,black_0%,black_11%,transparent_30%)]`}><Image src={images.hero} alt="" fill sizes="100vw" className="object-cover object-bottom" /></div>;
+  if (images.hero) return <div aria-hidden className={`${base} h-[84%] [mask-image:linear-gradient(to_top,black_0%,black_11%,transparent_30%)]`}><Image src={images.hero} alt="" fill sizes={HERO_SIZES} className="object-cover object-bottom" /></div>;
   return <div aria-hidden className={`${base} h-[28%]`}><Bushes /></div>;
 }
