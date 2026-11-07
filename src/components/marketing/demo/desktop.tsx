@@ -13,7 +13,6 @@ import { Page } from "@/ui/page";
 import { Card, buttonClass } from "@/ui/primitives";
 import { StatsGrid } from "@/ui/stats-grid";
 import { AllClear, DemoCard, DemoToast, useActivityRows, useStats } from "./parts";
-import { usePulse } from "./pulse";
 import type { Demo } from "./use-demo";
 
 type View = "home" | "activity";
@@ -27,7 +26,6 @@ const LIVE: NavKey[] = ["home", "activity"];
 export function DemoDesktop({ demo }: { demo: Demo }) {
   const t = useT();
   const [view, setView] = useState<View>("home");
-  const pulse = usePulse(demo.arrivals);
   return (
     <div className="ui-next dark relative overflow-hidden rounded-2xl border border-white/[0.12] bg-background shadow-[0_50px_140px_-40px_rgb(0_0_0/0.9),0_0_0_1px_rgb(0_0_0/0.6)]" data-theme="dark">
       <div className="grid h-10 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.07] bg-[#1b1a18] px-4">
@@ -36,15 +34,15 @@ export function DemoDesktop({ demo }: { demo: Demo }) {
         <span className="justify-self-end text-[12px] text-[#a9a296]">{t.front.demo.label}</span>
       </div>
       <div className="grid h-[1010px] grid-cols-[232px_minmax(0,1fr)] xl:h-[900px]">
-        <Sidebar view={view} setView={setView} waiting={demo.waiting.length} pulse={pulse} />
-        <div className="min-w-0 overflow-y-auto overscroll-contain">{view === "home" ? <Overview demo={demo} pulse={pulse} /> : <Activity demo={demo} />}</div>
+        <Sidebar view={view} setView={setView} waiting={demo.waiting.length} />
+        <div className="min-w-0 overflow-y-auto overscroll-contain">{view === "home" ? <Overview demo={demo} /> : <Activity demo={demo} />}</div>
       </div>
       <DemoToast demo={demo} className="absolute right-6 bottom-6 z-10" />
     </div>
   );
 }
 
-function Sidebar({ view, setView, waiting, pulse }: { view: View; setView: (v: View) => void; waiting: number; pulse: boolean }) {
+function Sidebar({ view, setView, waiting }: { view: View; setView: (v: View) => void; waiting: number }) {
   const t = useT();
   const g = t.ui.gateway;
   const still = "cursor-default hover:bg-transparent hover:text-muted-foreground dark:hover:bg-transparent";
@@ -65,7 +63,7 @@ function Sidebar({ view, setView, waiting, pulse }: { view: View; setView: (v: V
                       <Icon className={navIconClass(active)} strokeWidth={1.75} aria-hidden />
                       <span>{t.ui.nav[it.key]}</span>
                       {it.key === "approvals" && waiting > 0 && (
-                        <span className={cn(navBadgeClass("full"), "transition-transform duration-300 motion-reduce:transition-none", pulse && "scale-125 border-primary text-primary")}>
+                        <span className={navBadgeClass("full")}>
                           <span className="sr-only">{t.ui.waitingLabel(waiting)}: </span>{waiting}
                         </span>
                       )}
@@ -103,12 +101,12 @@ function Sidebar({ view, setView, waiting, pulse }: { view: View; setView: (v: V
   );
 }
 
-function Overview({ demo, pulse }: { demo: Demo; pulse: boolean }) {
+function Overview({ demo }: { demo: Demo }) {
   const t = useT();
   const h = t.home;
   const d = h.dash;
   const reduce = useReducedMotion();
-  const stats = useStats(demo, cn("transition-colors duration-700", pulse && "bg-primary/[0.12]"));
+  const stats = useStats(demo);
   const n = demo.waiting.length;
   return (
     <Page full>
@@ -125,27 +123,23 @@ function Overview({ demo, pulse }: { demo: Demo; pulse: boolean }) {
 
       <section className="mt-10">
         <h3 className="text-[17px] font-medium">{d.needs}</h3>
-        <div className="mt-4 min-h-[470px]">
-          {demo.done ? (
-            <AllClear demo={demo} className="min-h-[300px]" />
-          ) : (
-            <ul className="grid grid-cols-2 items-start gap-4">
-              <AnimatePresence initial={false} mode="popLayout">
-                {demo.waiting.map((w) => (
-                  <motion.li
-                    key={w.request.id}
-                    layout={!reduce}
-                    initial={reduce ? false : { opacity: 0, x: 32 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, scale: 0.94, y: -12 }}
-                    transition={{ duration: reduce ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    <DemoCard waiting={w} onDecide={(decision) => demo.decide(w.request.id, decision)} />
-                  </motion.li>
-                ))}
-              </AnimatePresence>
-            </ul>
-          )}
+        <div className="mt-4 min-h-[460px]">
+          {/* The card leaves, and then "All clear" takes its place. */}
+          <AnimatePresence initial={false} mode="wait">
+            {demo.waiting[0] ? (
+              <motion.div
+                key="card"
+                className="grid grid-cols-2 items-start gap-4"
+                exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, scale: 0.96, y: -12, transition: { duration: 0.28 } }}
+              >
+                <DemoCard waiting={demo.waiting[0]} onDecide={(decision) => demo.decide(demo.waiting[0].request.id, decision)} />
+              </motion.div>
+            ) : (
+              <motion.div key="clear" initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduce ? 0 : 0.3 }}>
+                <AllClear className="min-h-[300px]" />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </section>
     </Page>

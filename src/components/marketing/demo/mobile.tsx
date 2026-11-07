@@ -9,7 +9,6 @@ import { BrandMark } from "@/ui/brand-mark";
 import { DecisionRows } from "@/ui/decision-table";
 import { StatsGrid } from "@/ui/stats-grid";
 import { AllClear, DemoCard, DemoToast, useActivityRows, useStats } from "./parts";
-import { usePulse } from "./pulse";
 import type { Demo, Waiting } from "./use-demo";
 
 type Tab = "home" | "approvals" | "activity";
@@ -27,7 +26,6 @@ export function DemoMobile({ demo }: { demo: Demo }) {
   const t = useT();
   const d = t.front.demo;
   const [tab, setTab] = useState<Tab>("home");
-  const pulse = usePulse(demo.arrivals);
   const n = demo.waiting.length;
   return (
     <div
@@ -40,12 +38,12 @@ export function DemoMobile({ demo }: { demo: Demo }) {
         <span className="flex items-center gap-3"><BrandMark className="size-6 text-primary" /><span className="text-[15px] font-semibold tracking-[0.16em]">TEND</span></span>
         <button type="button" onClick={() => setTab("approvals")} aria-label={d.bell(n)} className="relative grid size-11 place-items-center rounded-full text-foreground outline-none focus-visible:outline-2 focus-visible:outline-primary">
           <BellIcon className="size-5" strokeWidth={1.75} aria-hidden />
-          {n > 0 && <span aria-hidden className={cn("absolute top-1.5 right-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground tabular-nums transition-transform duration-300 motion-reduce:transition-none", pulse && "scale-125")}>{n}</span>}
+          {n > 0 && <span aria-hidden className="absolute top-1.5 right-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground tabular-nums">{n}</span>}
         </button>
       </header>
 
       <div className="min-h-[640px] px-4 pt-6 pb-8">
-        {tab === "home" && <Home demo={demo} pulse={pulse} />}
+        {tab === "home" && <Home demo={demo} />}
         {tab === "approvals" && <Approvals demo={demo} />}
         {tab === "activity" && <ActivityTab demo={demo} />}
       </div>
@@ -77,10 +75,10 @@ function Title({ children, note }: { children: React.ReactNode; note?: React.Rea
   );
 }
 
-function Home({ demo, pulse }: { demo: Demo; pulse: boolean }) {
+function Home({ demo }: { demo: Demo }) {
   const t = useT();
   const d = t.home.dash;
-  const stats = useStats(demo, cn("transition-colors duration-700", pulse && "bg-primary/[0.12]"));
+  const stats = useStats(demo);
   const n = demo.waiting.length;
   return (
     <>
@@ -98,7 +96,7 @@ function Approvals({ demo }: { demo: Demo }) {
   return (
     <>
       <Title>{t.ui.nav.approvals}</Title>
-      <Focus demo={demo} stack />
+      <Focus demo={demo} />
     </>
   );
 }
@@ -116,36 +114,33 @@ function ActivityTab({ demo }: { demo: Demo }) {
   );
 }
 
-/** The first waiting request in focus, where it is in the queue, and how to swipe. With `stack`, the next one shows behind it. */
-function Focus({ demo, stack }: { demo: Demo; stack?: boolean }) {
+/** The waiting request in focus, and how to swipe it. */
+function Focus({ demo }: { demo: Demo }) {
   const t = useT();
   const d = t.front.demo;
   const reduce = useReducedMotion();
-  const [first, next] = demo.waiting;
+  const [first] = demo.waiting;
   const [leaving, setLeaving] = useState(0);
-  if (demo.done) return <AllClear demo={demo} className="mt-4" />;
-  if (!first) return <p className="mt-4 rounded-2xl border border-dashed border-border px-5 py-10 text-center text-[15px] text-muted-foreground">{t.home.dash.allQuiet}</p>;
+  // The card leaves the way it was swiped (or fades, after a button), and then "All clear" takes its place.
   return (
     <div className="mt-4">
-      <p className="mb-3 text-[14px] text-muted-foreground">{d.position(1, demo.waiting.length)}</p>
-      <div className="relative">
-        {stack && next && <div aria-hidden className="absolute inset-x-3 -bottom-2.5 top-3 rounded-2xl border border-border bg-surface/60" />}
-        <AnimatePresence initial={false} mode="popLayout" custom={leaving}>
+      <AnimatePresence initial={false} mode="wait" custom={leaving}>
+        {first ? (
           <motion.div
-            key={first.request.id}
+            key="card"
             custom={leaving}
-            initial={reduce ? false : { opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0, x: 0 }}
             exit={reduce ? { opacity: 0, transition: { duration: 0 } } : "gone"}
             variants={{ gone: (dir: number) => ({ opacity: 0, x: dir * 420, transition: { duration: 0.28 } }) }}
-            transition={{ duration: reduce ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
-            className="relative"
           >
             <Swipe waiting={first} reduce={!!reduce} onDecide={(decision) => { setLeaving(decision === "allowed" ? 1 : -1); demo.decide(first.request.id, decision); }} />
+            <p aria-hidden className="mt-3 text-center text-[14px] text-muted-foreground">{d.swipe}</p>
           </motion.div>
-        </AnimatePresence>
-      </div>
-      <p aria-hidden className={cn("text-center text-[14px] text-muted-foreground", stack && next ? "mt-6" : "mt-3")}>{d.swipe}</p>
+        ) : (
+          <motion.div key="clear" initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduce ? 0 : 0.3 }}>
+            <AllClear />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

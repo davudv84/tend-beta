@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback } from "react";
 import { CheckIcon, XIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/client";
 import type { DecisionRow } from "@/ui/decision-table";
 import { RequestCardView } from "@/ui/request-card-view";
@@ -26,7 +25,7 @@ export function DemoCard({ waiting, onDecide, className }: { waiting: Waiting; o
   const t = useT();
   const h = t.home.request;
   const d = t.front.demo;
-  const { request: q, left, arrivedAt } = waiting;
+  const { request: q, left } = waiting;
   const words = d.requests[q.id];
   const kind = q.kind === "spend" || q.kind === "run" ? h.kind[q.kind] : d.kinds[q.kind];
   const asked = q.askedMinutesAgo ? t.time.ago(q.askedMinutesAgo, "m") : d.justNow;
@@ -47,19 +46,19 @@ export function DemoCard({ waiting, onDecide, className }: { waiting: Waiting; o
       details={[
         { label: d.rows.agent, value: q.agent },
         { label: d.rows.tool, value: `${q.tool} · ${q.action}`, mono: true },
-        { label: d.rows.asked, value: arrivedAt ?? asked },
+        { label: d.rows.asked, value: asked },
         { label: d.rows.rule, value: words.rule },
       ]}
     />
   );
 }
 
-/** The four numbers, from the demo's state. The waiting count pulses once when a request arrives. */
-export function useStats(demo: Demo, pulse: string): Stat[] {
+/** The four numbers, from the demo's state. */
+export function useStats(demo: Demo): Stat[] {
   const s = useT().home.dash.stats;
   return [
     { label: s.running, value: 2, note: s.of(3) },
-    { label: s.waiting, value: demo.waiting.length, note: s.now, className: pulse },
+    { label: s.waiting, value: demo.waiting.length, note: s.now },
     { label: s.auto, value: demo.auto, note: s.day },
     { label: s.blocked, value: demo.blocked, note: s.day },
   ];
@@ -103,22 +102,21 @@ export function DemoToast({ demo, className }: { demo: Demo; className?: string 
   );
 }
 
-/** What changed, said to a screen reader: allowed, not allowed, expired, or a new request. */
+/** What changed, said to a screen reader: allowed, not allowed or expired. */
 export function Announcer({ demo }: { demo: Demo }) {
   const d = useT().front.demo;
   const a = demo.announce;
-  const text = !a ? "" : typeof a.text === "string" ? d.announce[a.text] : d.announce.arrived(d.requests[a.text.arrived].sentence);
+  const text = a ? d.announce[a] : "";
   return <p aria-live="polite" className="sr-only">{text}</p>;
 }
 
-/** All five answered: the empty state and the way to start again. */
-export function AllClear({ demo, className }: { demo: Demo; className?: string }) {
+/** Answered: nothing waits any more. */
+export function AllClear({ className }: { className?: string }) {
   const d = useT().front.demo;
   return (
     <div className={cn("flex flex-col items-center justify-center gap-5 rounded-2xl border border-dashed border-border px-6 py-12 text-center", className)}>
       <span className="grid size-10 place-items-center rounded-full bg-primary/15 text-primary"><CheckIcon className="size-5" strokeWidth={2} aria-hidden /></span>
       <p className="max-w-[30ch] text-[15px] text-foreground">{d.empty}</p>
-      <Button variant="secondary" className="h-11 rounded-full border-border px-6 text-ui" onClick={demo.restart}>{d.restart}</Button>
     </div>
   );
 }
