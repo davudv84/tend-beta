@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 import { Badge, Card } from "@/ui/primitives";
 import { HISTORY, INVOICE_REQUEST, OPS_AGENT, PUSH_REQUEST, REPO_HELPER, type DemoDecision } from "../demo-data";
 import { AppShell } from "./app-shell";
-import { DARK_TONE } from "./dark-tones";
 
 const TABS = ["authorizations", "queue", "log", "controls", "connected"] as const;
 
@@ -102,7 +101,7 @@ export function DecisionRows({ rows, className }: { rows: DemoDecision[]; classN
               <td className={`${pad} whitespace-nowrap text-muted-foreground tabular-nums`}>{d.time}</td>
               <td className={`${pad} font-medium whitespace-nowrap`}>{d.agent.name}</td>
               <td className={`${pad} font-mono text-[13px] [overflow-wrap:anywhere]`}>{d.detail}<span className="mt-0.5 block text-[12px] text-faint">{d.tool}.{d.action}</span></td>
-              <td className={pad}><Badge tone={TONE[d.outcome]} className={DARK_TONE[TONE[d.outcome]]}>{t.timelinePage.outcome[d.outcome]}</Badge></td>
+              <td className={pad}><Badge tone={TONE[d.outcome]}>{t.timelinePage.outcome[d.outcome]}</Badge></td>
               <td className={`${pad} text-muted-foreground`}>{why(d)}</td>
             </tr>
           ))}

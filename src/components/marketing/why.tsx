@@ -11,7 +11,6 @@ import { LogoTile } from "./logo";
 import { pill } from "./pill";
 import { Reveal } from "./reveal";
 import { INVOICE_REQUEST } from "./demo-data";
-import { DARK_TONE } from "./screens/dark-tones";
 
 /** Why TEND: one wide card with the path a tool call takes on the left, and the reason in words on the right. */
 export function Why() {
@@ -65,15 +64,15 @@ export function Flow() {
           <span className="grid size-11 place-items-center rounded-xl bg-[#ede8de] text-[#131211]"><BrandMark className="size-6" /></span>
           <Fan />
           <div className="col-span-3 mt-5 grid justify-items-start gap-3 border-l border-white/[0.16] pl-4 sm:col-span-1 sm:mt-0 sm:border-0 sm:pl-0">
-            <Badge tone="good" className={DARK_TONE.good}>{s.auto}</Badge>
+            <Badge tone="good">{s.auto}</Badge>
             <span className="relative inline-flex">
-              <Badge tone="attention" className={DARK_TONE.attention}>{s.waiting}</Badge>
+              <Badge tone="attention">{s.waiting}</Badge>
               <span className="absolute top-[14px] left-[96px] hidden items-start whitespace-nowrap sm:flex">
                 <MousePointer2Icon className="size-4 fill-white text-white" strokeWidth={1.5} />
                 <span className="-mt-0.5 ml-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-[#171717]">{w.flow.bubble}</span>
               </span>
             </span>
-            <Badge tone="danger" className={DARK_TONE.danger}>{s.blocked}</Badge>
+            <Badge tone="danger">{s.blocked}</Badge>
           </div>
         </div>
         <p className="mt-8 border-t border-white/[0.1] pt-4 text-[11px] text-[#a9a296]">{t.home.request.promise}</p>

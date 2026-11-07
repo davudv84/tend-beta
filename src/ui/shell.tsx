@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ActivityIcon, CircleCheckIcon, CpuIcon, FileTextIcon, LayoutGridIcon, LogOutIcon, MenuIcon, PlusIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, XIcon } from "lucide-react";
+import { LogOutIcon, MenuIcon, XIcon } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { LanguageSwitch } from "@/components/language-switch";
 import { NotificationCenter, useNotificationPolling } from "@/components/notification-center";
@@ -18,19 +18,9 @@ import { type ThemePref } from "@/ui/prefs";
 import { useUiPrefs } from "@/ui/prefs-context";
 import { BrandMark } from "@/ui/brand-mark";
 import { useDocumentTheme } from "@/ui/theme";
+import { ACCESS, GROUPS, SETTINGS, label, navBadgeClass, navIconClass, navItemClass, type Item, type Mode } from "@/ui/nav";
 
 const THEMES: ThemePref[] = ["system", "light", "dark"];
-type NavKey = "home" | "assistants" | "approvals" | "activity" | "policies" | "verification" | "integrations" | "settings" | "access";
-type Item = { key: NavKey; href: string; icon: typeof LayoutGridIcon; match: RegExp };
-const item = (key: NavKey, href: string, icon: Item["icon"], match: RegExp): Item => ({ key, href, icon, match });
-// Two groups: the daily screens (what is running, what waits for you, what happened, the rules), then setup (adding an agent, checking
-// what TEND can confirm). Existing addresses are kept, so nothing that links to them breaks.
-const GROUPS: { key: "daily" | "setup"; items: Item[] }[] = [
-  { key: "daily", items: [item("home", "/home", LayoutGridIcon, /^\/home(\/|$)/), item("assistants", "/agents", CpuIcon, /^\/agents(\/|$)/), item("approvals", "/oversight", CircleCheckIcon, /^\/oversight(\/|$)/), item("activity", "/timeline", ActivityIcon, /^\/timeline(\/|$)/), item("policies", "/policies", FileTextIcon, /^\/policies(\/|$)/)] },
-  { key: "setup", items: [item("integrations", "/connect", PlusIcon, /^\/(integrations|connect|developers)(\/|$)/), item("verification", "/verification", ShieldCheckIcon, /^\/verification(\/|$)/)] },
-];
-const SETTINGS = item("settings", "/settings", SlidersHorizontalIcon, /^\/settings(\/|$)/);
-const ACCESS = item("access", "/admin/users", UsersIcon, /^\/admin(\/|$)/);
 
 /** How many requests wait for this person: the one number the navigation shows. */
 function useWaiting() {
@@ -47,12 +37,6 @@ function useWaiting() {
   );
 }
 
-/**
- * `full`: labels always shown (the desktop sidebar and the phone drawer). Otherwise labels appear from the `lg` width up, and
- * a tablet gets the compact rail: icons only, every name still available to a screen reader and as a tooltip.
- */
-type Mode = "responsive" | "full";
-const label = (m: Mode) => (m === "full" ? "" : "sr-only lg:not-sr-only");
 
 function Wordmark({ mode }: { mode: Mode }) {
   return (
@@ -74,18 +58,12 @@ function NavLink({ item: it, waiting, mode }: { item: Item; waiting: number; mod
       href={it.href}
       aria-current={active ? "page" : undefined}
       title={name}
-      className={cn(
-        "relative flex h-9 items-center gap-3 text-[14px] outline-none transition-colors duration-150",
-        "before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:bg-primary before:opacity-0 before:transition-opacity before:duration-150",
-        "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
-        mode === "full" ? "px-5" : "justify-center px-0 lg:justify-start lg:px-5",
-        active ? "bg-primary/[0.06] font-medium text-foreground before:opacity-100" : "text-muted-foreground hover:bg-black/[0.035] hover:text-foreground dark:hover:bg-white/[0.05]",
-      )}
+      className={navItemClass(active, mode)}
     >
-      <Icon className={cn("size-4 shrink-0 transition-colors duration-150", active && "text-primary")} strokeWidth={1.75} aria-hidden />
+      <Icon className={navIconClass(active)} strokeWidth={1.75} aria-hidden />
       <span className={label(mode)}>{name}</span>
       {it.key === "approvals" && waiting > 0 && (
-        <span className={cn("grid h-[18px] min-w-[18px] place-items-center border border-border bg-background px-1 text-[11px] font-medium text-foreground tabular-nums", mode === "full" ? "ml-auto" : "absolute top-0.5 right-0.5 lg:static lg:ml-auto")}>
+        <span className={navBadgeClass(mode)}>
           <span className="sr-only">{t.ui.waitingLabel(waiting)}: </span>
           {waiting}
         </span>

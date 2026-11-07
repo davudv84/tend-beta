@@ -42,7 +42,7 @@ test("no interface text is empty, and every text function returns text", () => {
 
 test("German text is actually translated", () => {
   // Words that are the same in both languages, and technical terms that stay as they are.
-  const same = new Set(["Gateway", "Operator", "Filter", "Status", "Details", "Agent", "Name", "Offline", "Banner", "System", "Navigation", "optional", "Sanctuary", "Agents", "Reflections", "Check-ins", "Timeline", "Research Lab", "Oversight", "API contract", "English", "Deutsch", "Switch to English", "Auf Deutsch umstellen", "DEMO", "auto", "Labs", "Frameworks", "Beta", "Integration", "Cookies", "© 2026 TEND"]);
+  const same = new Set(["Gateway", "Operator", "Filter", "Status", "Details", "Agent", "Name", "Offline", "Banner", "System", "Navigation", "optional", "Sanctuary", "Agents", "Reflections", "Check-ins", "Timeline", "Research Lab", "Oversight", "API contract", "English", "Deutsch", "Switch to English", "Auf Deutsch umstellen", "DEMO", "auto", "Labs", "Frameworks", "Beta", "Integration", "Cookies", "© 2026 TEND", "git push --force origin main"]);
   const de = new Map(leaves(DICTS.de).map(([path, , v]) => [path, v]));
   const identical = leaves(DICTS.en)
     .filter(([path, kind, v]) => kind === "string" && /[a-z]/i.test(v as string) && !path.startsWith("intl") && !path.endsWith(".code"))

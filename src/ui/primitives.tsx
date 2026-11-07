@@ -20,11 +20,12 @@ export function CardHeader({ title, sub, right, id }: { title: string; sub?: str
 }
 
 export type Tone = "good" | "attention" | "danger" | "neutral";
+// Each tone has a tint for the light theme and one made for the dark surfaces, so a status reads as quietly in both.
 const TONE: Record<Tone, string> = {
-  good: "bg-[#eef6f2] text-[#176b50]",
-  attention: "bg-[#fff4e5] text-[#92400e]",
-  danger: "bg-[#fef1f0] text-[#b42318]",
-  neutral: "bg-[#f5f5f5] text-[#404040]",
+  good: "bg-[#eef6f2] text-[#176b50] dark:bg-[rgb(141_187_165/0.14)] dark:text-[#a6cbb8]",
+  attention: "bg-[#fff4e5] text-[#92400e] dark:bg-[rgb(217_165_91/0.14)] dark:text-[#e4ba7a]",
+  danger: "bg-[#fef1f0] text-[#b42318] dark:bg-[rgb(217_128_106/0.15)] dark:text-[#eba491]",
+  neutral: "bg-[#f5f5f5] text-[#404040] dark:bg-[rgb(237_232_222/0.07)] dark:text-[#d2cbbe]",
 };
 const MARK: Record<Tone, string> = { good: "rounded-full bg-current", attention: "rotate-45 bg-current", danger: "bg-current", neutral: "rounded-full border border-current" };
 
