@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/i18n/client";
-import { Flow } from "../why";
+import { Flow } from "../flow";
 import { CardGrid, EndBand, InfoCard, PageHeader, PageSection, Panel, Steps } from "../page-parts";
 
 /** How it works: the path of one tool call, the four steps, checkpoint and gateway, and what happens when something fails. */

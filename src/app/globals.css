@@ -385,40 +385,41 @@
   --font-serif: var(--font-newsreader), "Newsreader", Georgia, serif;
 }
 @theme {
-  --color-mk-bg: #050605;
-  --color-mk-surface: #0d0f0e;
-  --color-mk-raised: #141715;
+  --color-mk-bg: #181818;
+  --color-mk-surface: #1d1d1d;
+  --color-mk-raised: #242424;
   --color-mk-text: #f2f2ef;
   --color-mk-muted: #a1a6a3;
   --color-mk-accent: #176b50;
   --color-mk-green: #5fb892;
   --color-mk-line: rgb(255 255 255 / 0.08);
+  --color-mk-dim: #8c8c8c;
 }
 
 .mk {
-  --background: #050605;
-  --surface: #0d0f0e;
-  --elevated: #141715;
-  --sunken: #0d0f0e;
-  --foreground: #f2f2ef;
-  --muted-foreground: #a1a6a3;
-  --faint: #a1a6a3;
+  --background: #181818;
+  --surface: #1d1d1d;
+  --elevated: #242424;
+  --sunken: #141414;
+  --foreground: #ededed;
+  --muted-foreground: #a3a3a3;
+  --faint: #a3a3a3;
   --border: rgb(255 255 255 / 0.08);
   --input: rgb(255 255 255 / 0.16);
-  --primary: #f2f2ef;
-  --primary-foreground: #050605;
+  --primary: #ededed;
+  --primary-foreground: #181818;
   --primary-hover: #ffffff;
   --tint: rgb(95 184 146 / 0.12);
   --ring: #5fb892;
   --accent: rgb(95 184 146 / 0.12);
-  --accent-foreground: #f2f2ef;
-  --secondary: #141715;
-  --secondary-foreground: #f2f2ef;
-  --muted: #141715;
-  --card: #0d0f0e;
-  --card-foreground: #f2f2ef;
-  --popover: #141715;
-  --popover-foreground: #f2f2ef;
+  --accent-foreground: #ededed;
+  --secondary: #242424;
+  --secondary-foreground: #ededed;
+  --muted: #242424;
+  --card: #1d1d1d;
+  --card-foreground: #ededed;
+  --popover: #242424;
+  --popover-foreground: #ededed;
   --destructive: #d9806a;
   --clay: #d9806a;
   --sage: #5fb892;
@@ -433,17 +434,46 @@
 }
 /* The page behind the homepage is black too, so overscroll never shows white. */
 :root:has(.mk) {
-  background: #050605;
+  background: #181818;
 }
 :root:has(.mk) body {
-  background: #050605;
-  color: #f2f2ef;
+  background: #181818;
+  color: #ededed;
+}
+/* The site's headlines: large, light and tight, in the one sans face. */
+.mk .mk-display {
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.mk .mk-heading {
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+/* A caret that blinks in the site's terminals. */
+@keyframes mk-caret {
+  50% { opacity: 0; }
+}
+.mk-caret {
+  animation: mk-caret 1s steps(1) infinite;
+}
+/* A horizontal strip that scrolls by swiping, without a visible scrollbar. */
+.mk-strip {
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+}
+.mk-strip::-webkit-scrollbar {
+  display: none;
 }
 .mk :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-/* The app's icon tiles in white circles on the dark page (the orbit, the "works with" strip). */
+/* The app's icon tiles in white circles on the dark page. */
 .mk .mk-light {
   --background: #ffffff;
   --foreground: #171717;
@@ -457,7 +487,7 @@
 .mk-stripes {
   background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.09) 0 1px, transparent 1px 9px);
 }
-/* A block fades up once it scrolls into view (reveal.tsx); the orbit drifts slowly (orbit.tsx). Both still under reduced motion. */
+/* A block fades up once it scrolls into view (reveal.tsx); still under reduced motion. */
 .mk [data-reveal="hidden"] {
   opacity: 0;
   transform: translateY(16px);
@@ -467,26 +497,13 @@
   transform: none;
   transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
 }
-@keyframes mk-orbit {
-  to { transform: rotate(360deg); }
-}
-@keyframes mk-orbit-back {
-  to { transform: rotate(-360deg); }
-}
-.mk-orbit-ring {
-  animation: mk-orbit var(--mk-orbit-duration, 120s) linear infinite;
-}
-.mk-orbit-item {
-  animation: mk-orbit-back var(--mk-orbit-duration, 120s) linear infinite;
-}
 @media (prefers-reduced-motion: reduce) {
   .mk [data-reveal] {
     opacity: 1;
     transform: none;
     transition: none;
   }
-  .mk-orbit-ring,
-  .mk-orbit-item {
+  .mk-caret {
     animation: none;
   }
 }

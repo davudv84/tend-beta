@@ -1,78 +1,60 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
-import { IntegrationLogo } from "@/components/integration-logo";
-import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/client";
+import { BRAND_ICONS } from "@/lib/brand-icons";
 import { INTEGRATIONS, SCENARIOS, statusOf, type IntegrationId } from "@/lib/integrations-catalog";
-import { Eyebrow } from "./eyebrow";
-import { Bushes, Landscape } from "./landscape";
-import { pill } from "./pill";
 import { HeroDemo } from "./demo/hero-demo";
+import { Container, PrimaryLink, QuietLink } from "./kit";
+import { Landscape } from "./landscape";
 import type { HomeImages } from "./types";
 
 /** Verified integrations, from the catalog and the verification report; "verified" cannot be claimed from here. */
 export const VERIFIED = INTEGRATIONS.filter((i) => statusOf(i) === "verified");
 /** Six for the strip under the hero: these first, if verified, then any other verified one with an official mark. */
 const PREFERRED: IntegrationId[] = ["claudeCode", "claude", "mcp", "langchain", "crewai", "ollama"];
-/**
- * How wide the hero picture is drawn. It covers a box much taller than the picture's own shape, so it is drawn wider than the
- * window (about 1.8 windows on a desktop, 4 on a phone) and cropped; saying so lets the browser fetch a sharp enough copy. On a phone
- * it settles for less than the full width, as only a narrow middle strip shows there.
- */
-const HERO_SIZES = "(max-width: 767px) 175vw, 180vw";
 const WORKS_WITH = [...PREFERRED.map((id) => VERIFIED.find((i) => i.id === id)), ...VERIFIED.filter((i) => i.logo && !PREFERRED.includes(i.id))].filter((i) => !!i).slice(0, 6);
 
+/**
+ * The top of the homepage, laid out as sim.ai's: the headline on the left, the sentence and the two buttons on the right, then the
+ * app itself, clickable, in a wide frame with the dusk picture behind it, and the strip of what it works with.
+ */
 export function Hero({ accounts, images }: { accounts: boolean; images: HomeImages }) {
   const t = useT();
   const f = t.front;
   return (
-    <section className="relative isolate overflow-hidden pt-32 pb-6 md:pt-40">
-      {/* The picture sits at the bottom of the hero; the page's black runs into its sky. */}
-      <Landscape src={images.hero} alt={f.hero.landscape} preload sizes={HERO_SIZES} className="-z-20 top-auto h-[84%]" position="center bottom" mask="linear-gradient(to bottom, transparent, black 28%)" />
-      <div aria-hidden className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,rgb(5_6_5/0.35),rgb(5_6_5/0)_35%,rgb(5_6_5/0)_70%,rgb(5_6_5/0.85)_100%)]" />
+    <section aria-labelledby="hero-title">
+      <Container className="grid gap-7 pt-14 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] md:items-end md:gap-12 md:pt-24">
+        <h1 id="hero-title" className="mk-display max-w-[13ch] text-[clamp(2.75rem,6.6vw,5.5rem)]">{f.title}</h1>
+        <div className="md:pb-2">
+          <p className="max-w-[40ch] text-[17px] leading-[1.45] text-foreground/80 md:text-[18px]">{f.body}</p>
+          <div className="mt-6 grid gap-2.5 sm:flex sm:flex-wrap sm:items-center">
+            <PrimaryLink href={accounts ? "/account/sign-up" : "/operator"} size="lg">{f.create}</PrimaryLink>
+            <QuietLink href="/how-it-works" size="lg">{f.hero.howItWorks}</QuietLink>
+          </div>
+          <p className="mt-4 text-[13px] text-muted-foreground">{f.hero.proof(VERIFIED.length, SCENARIOS.length)}</p>
+        </div>
+      </Container>
 
-      <div className="mx-auto max-w-[1240px] px-6 text-center md:px-8">
-        <Eyebrow>{f.hero.eyebrow}</Eyebrow>
-        <h1 className="mx-auto mt-6 max-w-[17ch] font-serif text-[clamp(2.75rem,7.2vw,5.5rem)] leading-[1.02] font-light tracking-[-0.03em] text-balance">{f.title}</h1>
-        <p className="mx-auto mt-5 max-w-[46ch] text-[16px] text-foreground/80 md:text-[17px]">{f.body}</p>
-        <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-6">
-          <Button asChild className={pill("light", "lg")}><Link href={accounts ? "/account/sign-up" : "/operator"}>{f.create}</Link></Button>
-          <p className="text-[13px] text-foreground/75">{f.hero.proof(VERIFIED.length, SCENARIOS.length)}</p>
+      {/* The app in a frame, the picture behind it, as sim.ai shows its own workspace. */}
+      <div className="mt-12 px-3 sm:px-5 md:mt-16">
+        <div className="relative isolate mx-auto max-w-[1480px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#121212] px-3 pt-3 pb-3 sm:px-6 sm:pt-6 lg:px-[6%] lg:pt-[4.5%] lg:pb-[4.5%]">
+          <Landscape src={images.hero} alt={f.hero.landscape} preload sizes="(max-width: 1480px) 100vw, 1480px" position="center 62%" className="-z-10" />
+          <div aria-hidden className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,rgb(18_18_18/0.25),rgb(18_18_18/0.05)_40%,rgb(18_18_18/0.35))]" />
+          <HeroDemo />
         </div>
       </div>
 
-      {/* The interactive demo, above the foreground: a desktop app window from 1024px up, the app on a phone below that. */}
-      <div className="relative z-20 mt-12 px-4 md:mt-16 md:px-8">
-        <div className="mx-auto max-w-[1240px]"><HeroDemo /></div>
-      </div>
-
-      <Foreground images={images} />
-
-      <div className="relative z-20 mx-auto mt-10 flex max-w-[1240px] flex-col gap-6 px-6 md:mt-14 md:flex-row md:items-center md:justify-between md:px-8">
-        <p className="max-w-[16ch] text-[13px] leading-snug text-foreground/80">{f.hero.worksWith}</p>
-        <ul className="flex flex-wrap items-center gap-x-7 gap-y-3">
+      <Container className="flex flex-col gap-6 py-10 md:flex-row md:items-center md:justify-between md:py-14">
+        <p className="text-[13px] text-muted-foreground">{f.hero.worksWith}</p>
+        <ul className="grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-3 md:flex md:flex-wrap md:items-center md:gap-x-10">
           {WORKS_WITH.map((i) => (
-            <li key={i.id} className="flex items-center gap-2.5">
-              <span className="mk-light"><IntegrationLogo entry={i} className="size-8 rounded-full" /></span>
-              <span className="text-[14px] font-medium">{i.name}</span>
+            <li key={i.id} className="flex items-center gap-2.5 text-foreground/70">
+              {i.logo && <svg aria-hidden viewBox="0 0 24 24" className="size-5 shrink-0 fill-current"><path d={BRAND_ICONS[i.logo].path} /></svg>}
+              <span className="text-[15px] font-medium tracking-[-0.01em]">{i.name}</span>
             </li>
           ))}
         </ul>
-      </div>
+      </Container>
     </section>
   );
-}
-
-/**
- * What overlaps the bottom of the screen: the cut-out foreground picture when it exists; until then the hero picture itself,
- * laid over the same box and masked to its lowest band, so the bushes rise over the screen pixel for pixel; without any picture,
- * drawn bushes.
- */
-function Foreground({ images }: { images: HomeImages }) {
-  const base = "pointer-events-none absolute inset-x-0 bottom-0 z-10";
-  if (images.heroForeground) return <div aria-hidden className={`${base} h-[40%]`}><Image src={images.heroForeground} alt="" fill sizes="100vw" className="object-cover object-bottom" /></div>;
-  if (images.hero) return <div aria-hidden className={`${base} h-[84%] [mask-image:linear-gradient(to_top,black_0%,black_11%,transparent_30%)]`}><Image src={images.hero} alt="" fill sizes={HERO_SIZES} className="object-cover object-bottom" /></div>;
-  return <div aria-hidden className={`${base} h-[28%]`}><Bushes /></div>;
 }

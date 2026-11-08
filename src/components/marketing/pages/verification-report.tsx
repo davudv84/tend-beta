@@ -26,7 +26,7 @@ export function VerificationReportPage({ accounts }: { accounts: boolean }) {
     <>
       <PageHeader eyebrow={p.eyebrow} title={p.title} lead={p.lead}>
         <p className="mt-8 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <span className="font-serif text-[48px] leading-none font-light tabular-nums">{verified}</span>
+          <span className="mk-display text-[56px] leading-none tabular-nums">{verified}</span>
           <span className="text-[14px] text-muted-foreground">{p.summary(verified, rows.length)} · {p.lastRun(day((REPORT as { generatedAt?: string }).generatedAt))}</span>
         </p>
       </PageHeader>
@@ -35,7 +35,7 @@ export function VerificationReportPage({ accounts }: { accounts: boolean }) {
         <ol className="flex flex-wrap gap-2.5">
           {SCENARIOS.map((s, i) => (
             <li key={s} className="inline-flex h-10 items-center gap-2.5 rounded-full border border-border bg-mk-surface pr-4 pl-1.5 text-[14px]">
-              <span aria-hidden className="grid size-7 place-items-center rounded-full bg-white text-[12px] font-semibold text-[#171717] tabular-nums">{i + 1}</span>{g.scenarios[s]}
+              <span aria-hidden className="grid size-7 place-items-center rounded-full border border-white/[0.14] text-[12px] font-medium tabular-nums">{i + 1}</span>{g.scenarios[s]}
             </li>
           ))}
         </ol>
