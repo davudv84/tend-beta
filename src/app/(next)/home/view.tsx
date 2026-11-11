@@ -15,6 +15,7 @@ import { useStore } from "@/lib/store";
 import { AgentRow, lastRequest } from "@/ui/agent-row";
 import { AnswerCard } from "@/ui/answer-card";
 import { DecisionTable } from "@/ui/decision-table";
+import { StatsGrid, type Stat } from "@/ui/stats-grid";
 import { FirstRun } from "@/ui/first-run";
 import { Page, PageSkeleton } from "@/ui/page";
 import { Card, CardHeader, TextLink, buttonClass } from "@/ui/primitives";
@@ -63,11 +64,11 @@ export default function View() {
   // An agent whose checks found a problem is said in words on Overview, never only as a colour.
   const atRisk = real.filter((a) => protectionOf(a, runs.get(a.id)).state === "attention");
   const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? id;
-  const stats: [string, number, string, string?][] = [
-    [d.stats.running, running, d.stats.of(real.length)],
-    [d.stats.waiting, waiting.length, d.stats.now, waiting.length ? "/oversight" : undefined],
-    [d.stats.auto, auto, d.stats.day],
-    [d.stats.blocked, blocked, d.stats.day, blocked ? "/timeline" : undefined],
+  const stats: Stat[] = [
+    { label: d.stats.running, value: running, note: d.stats.of(real.length) },
+    { label: d.stats.waiting, value: waiting.length, note: d.stats.now, href: waiting.length ? "/oversight" : undefined },
+    { label: d.stats.auto, value: auto, note: d.stats.day },
+    { label: d.stats.blocked, value: blocked, note: d.stats.day, href: blocked ? "/timeline" : undefined },
   ];
 
   return (
@@ -87,14 +88,7 @@ export default function View() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
-        {stats.map(([label, n, note, href]) => {
-          const body = <><dt className="text-[13px] text-muted-foreground">{label}</dt><dd className="mt-2 text-[28px] leading-none font-medium tabular-nums">{n}</dd><dd className="mt-2 text-[13px] text-muted-foreground">{note}</dd></>;
-          return href
-            ? <Link key={label} href={href} className="bg-background px-5 py-4 outline-none transition-colors hover:bg-black/[0.025] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary dark:hover:bg-white/[0.04]"><div>{body}</div></Link>
-            : <div key={label} className="bg-background px-5 py-4">{body}</div>;
-        })}
-      </dl>
+      <StatsGrid stats={stats} className="mt-6" />
 
       {waiting.length > 0 && (
         <section aria-labelledby="ov-needs" className="mt-10">

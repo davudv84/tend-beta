@@ -21,9 +21,9 @@ const OVERCLAIM = /fully protected|fully secure|\bsecure[sd]?\b|\bsafe(ly)?\b|gu
 // "safe or unsafe" appears once in the Not Verified note, to say that Not Verified is neither; it is the only allowed use.
 const ALLOWED = [/weder sicher noch unsicher/i, /not the same as safe or unsafe/i];
 
-test("no protection, Home or Connect text claims safety, security or a guarantee, in English or German", () => {
+test("no protection, Home, Connect or homepage text claims safety, security or a guarantee, in English or German", () => {
   for (const locale of ["en", "de"] as const) {
-    const bad = [...strings(DICTS[locale].protection), ...strings(DICTS[locale].home), ...strings(DICTS[locale].ui), ...strings(DICTS[locale].connect)].filter((s) => OVERCLAIM.test(s) && !ALLOWED.some((a) => a.test(s)));
+    const bad = [...strings(DICTS[locale].protection), ...strings(DICTS[locale].home), ...strings(DICTS[locale].ui), ...strings(DICTS[locale].connect), ...strings(DICTS[locale].front)].filter((s) => OVERCLAIM.test(s) && !ALLOWED.some((a) => a.test(s)));
     assert.deepEqual(bad, [], `${locale}: overclaiming text`);
   }
 });

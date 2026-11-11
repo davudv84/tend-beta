@@ -18,17 +18,20 @@ test("no bulk answers: only one request is ever answered by one action, and Home
 });
 
 test("the exact content of a request is never inside Details: it comes first, in the card itself", () => {
-  const card = src("src/ui/request-card.tsx");
+  // The card's markup is RequestCardView (shared with the homepage's demo); RequestCard gives it the recorded request.
+  const card = src("src/ui/request-card-view.tsx");
   const content = card.indexOf("<blockquote"), disclosure = card.indexOf("<Disclosure");
   assert.ok(content > 0 && disclosure > content, "the quotation is rendered before, and outside, the disclosure");
   assert.ok(card.indexOf("{sentence}") < disclosure, "so is the sentence saying who asks for what");
-  assert.ok(card.indexOf("h.allow") > content && card.indexOf("h.allow") < disclosure, "and so are the answers");
+  assert.ok(card.indexOf("labels.allow") > content && card.indexOf("labels.allow") < disclosure, "and so are the answers");
+  assert.match(src("src/ui/request-card.tsx"), /exact=\{/, "and the app's card passes the exact content to that place, not to Details");
 });
 
 test("showing details by default only changes how much is open, never what is available", () => {
-  const card = src("src/ui/request-card.tsx"), view = src("src/app/(next)/home/view.tsx"), disclosure = src("src/ui/disclosure.tsx");
+  const card = src("src/ui/request-card.tsx"), cardView = src("src/ui/request-card-view.tsx"), view = src("src/app/(next)/home/view.tsx"), disclosure = src("src/ui/disclosure.tsx");
   assert.equal(card.match(/prefs\.details/g)?.length, 1);
-  assert.match(card, /<Disclosure[^>]*open=\{prefs\.details\}/, "the preference is only the starting state of the disclosure");
+  assert.match(card, /detailsOpen=\{prefs\.details\}/, "the preference is only the starting state of the disclosure");
+  assert.match(cardView, /<Disclosure[^>]*open=\{detailsOpen\}/, "which the card's markup passes on as just that");
   assert.equal(/details/i.test(view.replace(/h\.[a-zA-Z.]*details/g, "")) && /prefs/.test(view), false, "Home logic never branches on the preference");
   assert.equal(/prefs|useUiPrefs/.test(disclosure), false, "the disclosure itself knows nothing about the preference");
   assert.match(disclosure, /chosen \?\? initial/, "and a person's own choice wins over the default");
@@ -109,13 +112,15 @@ test("the whole application is one product: every screen sits in the one shell, 
   const walk = (dir: string): string[] => readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
   const pages = walk("src/app").filter((f) => f.endsWith("page.tsx") && !f.startsWith("src/app/api"));
   // The account pages (sign-in, sign-up and the pages opened from mails) come before there is anything to navigate: one card, no shell.
-  // So does the first-run setup guide (/welcome): a focused sequence of steps with its own frame and a way out to Home.
-  const outside = pages.filter((f) => !f.startsWith("src/app/(next)/") && !f.startsWith("src/app/account/") && !["src/app/page.tsx", "src/app/prototype/page.tsx", "src/app/welcome/page.tsx"].includes(f));
-  assert.deepEqual(outside, [], "every screen is in the redesigned group (the front page, the account pages, the setup guide and the kept research prototype are the only others)");
+  // So does the first-run setup guide (/welcome): a focused sequence of steps with its own frame and a way out to Home. The public
+  // site's pages (How it works, Security, Docs, the legal pages…) are in (site): the front page's frame, not the app's.
+  const outside = pages.filter((f) => !f.startsWith("src/app/(next)/") && !f.startsWith("src/app/account/") && !f.startsWith("src/app/(site)/") && !["src/app/page.tsx", "src/app/prototype/page.tsx", "src/app/welcome/page.tsx"].includes(f));
+  assert.deepEqual(outside, [], "every screen is in the redesigned group (the front page and the public site, the account pages, the setup guide and the kept research prototype are the only others)");
   assert.match(src("src/app/welcome/view.tsx"), /useDocumentTheme\(/, "the setup guide follows the one theme hook");
   assert.match(src("src/app/account/layout.tsx"), /<AccountFrame>/, "the account pages share one frame");
   assert.equal(existsSync(path.join(root, "src/components/app-shell.tsx")), false, "the old navigation shell is gone");
-  const shell = src("src/ui/shell.tsx");
+  // The entries themselves live in ui/nav.ts, so the homepage's demo can draw them without loading the app.
+  const shell = src("src/ui/nav.ts");
   for (const href of ["/home", "/agents", "/oversight", "/timeline", "/policies", "/verification", "/connect", "/settings"]) assert.ok(shell.includes(`"${href}"`), `the navigation reaches ${href}`);
   assert.match(src("src/app/(next)/connect/view.tsx"), /href="\/integrations"/, "the full list of integrations stays one click from Connect");
   assert.match(src("src/app/(next)/integrations/view.tsx"), /href=\{`\/connect\?provider=/, "connecting an agent stays one click from Integrations");
@@ -142,7 +147,7 @@ test("the sidebar's gateway module only reports what the connection shows, and n
 });
 
 test("every destination in the sidebar has a screen, and each private screen handles signed-out and loading itself", () => {
-  const nav = src("src/ui/shell.tsx");
+  const nav = src("src/ui/nav.ts");
   for (const href of ["/home", "/agents", "/timeline", "/oversight", "/policies", "/verification", "/connect", "/settings"]) {
     assert.ok(nav.includes(`"${href}"`), `${href} is in the sidebar`);
     assert.ok(existsSync(path.join(root, "src/app/(next)", href, "view.tsx")), `${href} has a screen`);
