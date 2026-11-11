@@ -1,5 +1,7 @@
 # TEND: a checkpoint between your AI agent and what it is able to do
 
+**Live site and read-only demo:** https://tend-beta-mauve.vercel.app · TEND is in beta: test it with fictional data only.
+
 An AI agent that can send emails, change records or spend money is only as safe as the last thing it decided to do. TEND sits in front of those actions. Before a tool
 runs, your agent asks TEND. TEND answers in one of three ways: **allow** (your rule says this is fine), **ask me** (a person sees the exact action and decides, and the
 approval works once, for that action only), or **never**. Everything is written to a log. You run it on your own computer; nothing is hosted, and your API keys never reach TEND.
@@ -9,7 +11,7 @@ approval works once, for that action only), or **never**. Everything is written 
 You need Node 20.12 or newer (Node 22 or 24 is best), git and a terminal. No account, no API key, no file to edit.
 
 ```bash
-git clone <the repository address you were sent> tend
+git clone https://github.com/davudv84/tend-beta.git tend
 cd tend
 npm ci
 npm run demo
