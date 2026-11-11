@@ -588,6 +588,38 @@ export const en = {
     create: "Create an account",
     signIn: "Sign in",
     prototype: "About the research prototype",
+    demo: "Try the live demo",
+    demoNote: "Read-only, with sample agents. No sign-up.",
+    demoOpening: "Opening the demo…",
+    demoFailed: "The demo could not be opened. Try again in a moment.",
+    video: { title: "TEND with a real Claude Code", caption: "76 seconds, recorded on a real machine: a routine command runs, a read of an SSH-key file is blocked, a delete waits for a person. Silent, with captions.", label: "Demo video of TEND controlling Claude Code" },
+    how: {
+      title: "How it works",
+      steps: [
+        { title: "Connect", body: "One command adds TEND’s hooks to Claude Code. From then on, every tool call asks TEND first." },
+        { title: "Decide", body: "Pick Balanced, Strict or Monitor. Routine work runs; anything that publishes, deletes or reaches the network waits for your yes." },
+        { title: "Keep the record", body: "Every call is on record with the rule or the person that decided it. An approval lets that exact request run once." },
+      ],
+    },
+    example: {
+      title: "Three calls, three answers",
+      sub: "What TEND does with Balanced rules. The agent asks; the rule decides before anything runs.",
+      columns: ["The agent asks to run", "Decision", "Why"],
+      rows: [
+        { outcome: "Allowed", reason: "Routine commands run on their own." },
+        { outcome: "Needs approval", reason: "Publishing waits for a person." },
+        { outcome: "Blocked", reason: "Anything touching .ssh is never allowed." },
+      ],
+    },
+    limits: {
+      title: "What TEND doesn’t claim",
+      items: [
+        "TEND sees only calls that pass through its hooks or its API. Anything an agent does outside them, TEND cannot see or stop.",
+        "Hook rules match the text of a command, so an agent can phrase around them. TEND says so on every agent’s page.",
+        "Claude Code is tested end to end. Cursor’s hooks are supported but not yet verified. Any other agent can ask TEND through its HTTP API.",
+      ],
+    },
+    closing: { title: "See it for yourself", body: "The demo holds four sample agents with real decisions on record. It is read-only, so there is nothing to break." },
   },
 
   reviewUi: {
@@ -1418,6 +1450,7 @@ export const en = {
     title: "Policies", sub: "Policies decide what each agent may do. Anything they do not list is blocked.",
     all: "All policies", count: (n: number) => `${n} ${n === 1 ? "policy" : "policies"}`, none: "No agent is connected yet. Connect one under Integrations, then its policy appears here.",
     policyOf: (n: string) => `${n}’s policy`, enforced: "Enforced: Tend refuses anything not allowed.", monitored: "Monitoring only until the policy is saved.",
+    hookRules: (preset: string) => `Rules for every tool call its hooks report: ${preset}.`, hookCustom: "custom rules", editHook: "Change rules",
     edit: "Edit policy", done: "Done", failed: "The policy could not be loaded.", custom: "Custom rule", empty: "Nothing here.", blockedNote: "Anything not listed above is blocked.",
     groups: { allow: { title: "Can do", note: "Runs straight away and is logged." }, approve: { title: "Needs approval", note: "Held until a person decides. Nothing runs before then." }, deny: { title: "Never allowed", note: "Refused every time." } },
   },

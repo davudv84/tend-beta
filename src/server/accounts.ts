@@ -239,6 +239,29 @@ export async function passwordSignIn(db: DB, req: Request, input: unknown, now =
   });
 }
 
+/**
+ * "Try the live demo": a session in the shared read-only demo account (config.demoAccount) without its password. The account is read-only
+ * on the server (requireOperator refuses every change it asks for) and holds sample agents with no keys, so this hands out nothing a visitor
+ * could not already see with the published demo password. Bounded per caller address, so the session table cannot be flooded.
+ */
+export async function demoSignIn(db: DB, req: Request, now = Date.now()) {
+  requireAccounts();
+  const d = config.demoAccount;
+  if (!d) throw new HttpError(404, "demo_off", "There is no demo on this server.");
+  const client = clientIp(req);
+  if (!(await spend(db, `account:demo:${client}`, 20, { windowMs: HOUR, now })).ok) throw new HttpError(429, "rate_limited", "Too many demo sign-ins from here. Try again later.", { retryAfter: 600 });
+  await ensureDemoAccount(db, now);
+  const u = await db.get<{ id: string; read_only: number }>("SELECT id, read_only FROM users WHERE email = ?", d.email);
+  // An account at the demo address that is not read-only is somebody's own: never sign anyone into it this way.
+  if (!u || !u.read_only) throw new HttpError(404, "demo_off", "There is no demo on this server.");
+  await signOut(db, req, now);
+  return db.tx(async (q) => {
+    const s = await createSession(q, { now, client, userId: u.id });
+    await audit(q, "signin.succeeded", { sessionId: s.id, client, userId: u.id, reason: "demo", now });
+    return s;
+  });
+}
+
 /** Forgot password. Same answer for every address; only an existing, enabled account gets a link. */
 export async function requestReset(db: DB, req: Request, input: unknown, now = Date.now()) {
   requireAccounts();

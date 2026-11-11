@@ -7,7 +7,7 @@ import { AgentSelect } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/i18n/client";
-import { GROUPS, inGroup, visibleAgent, type Group } from "@/lib/activity";
+import { byAction, GROUPS, inGroup, visibleAgent, type Group } from "@/lib/activity";
 import { timeline, type EventKind } from "@/lib/derive";
 import { clock, dayLabel, useNow } from "@/lib/format";
 import { useStore } from "@/lib/store";
@@ -39,7 +39,9 @@ export default function View() {
   const names = useMemo(() => new Map(agents.map((a) => [a.id, a.name])), [agents]);
   const name = (id: string) => names.get(id) ?? id;
   const all = useMemo(() => timeline(checkIns, log, taskEvents).filter(visibleAgent(agents, samples)), [checkIns, log, taskEvents, agents, samples]);
-  const list = all.filter((e) => kinds.has(e.kind) && inGroup(e, group) && (agent === "all" || e.agentId === agent));
+  // One row per action; a row stays when any of its steps matches the filters.
+  const rows = useMemo(() => byAction(all), [all]);
+  const list = rows.filter((r) => (agent === "all" || r.agentId === agent) && r.steps.some((s) => kinds.has(s.kind)) && r.steps.some((s) => inGroup(s, group)));
   const counts = useMemo(() => {
     const m = Object.fromEntries(KINDS.map((k) => [k, 0])) as Record<EventKind, number>;
     for (const e of all) if (agent === "all" || e.agentId === agent) m[e.kind]++;

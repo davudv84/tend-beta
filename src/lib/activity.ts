@@ -57,3 +57,40 @@ export const visibleAgent = (agents: Pick<Agent, "id" | "origin">[], includeSamp
   const ids = new Set(agents.filter((a) => includeSamples || a.origin === "connected").map((a) => a.id));
   return (e: { agentId: string }) => ids.has(e.agentId);
 };
+
+/** A row on Activity: the newest event of an action, with every step that action went through (oldest first). */
+export type ActionRow = TimelineEvent & { steps: TimelineEvent[] };
+
+/**
+ * One row per action. Events that are steps of the same authorization (asked, decided, ran, reported after it ran) fold into one row: its
+ * newest event, which says how the action ended, carrying the earlier steps. Events without an authorization stay rows of their own.
+ * `events` is newest first, as timeline() returns it.
+ */
+export function byAction(events: TimelineEvent[]): ActionRow[] {
+  const rows: ActionRow[] = [];
+  const at = new Map<string, ActionRow>();
+  for (const e of events) {
+    const row = e.authorizationId ? at.get(e.authorizationId) : undefined;
+    if (row) { row.steps.unshift(e); continue; }
+    const fresh = { ...e, steps: [e] };
+    rows.push(fresh);
+    if (e.authorizationId) at.set(e.authorizationId, fresh);
+  }
+  return rows;
+}
+
+/** The path an action took, in order and without repeats: ["allowed", "ran"], ["needs_approval", "approved", "ran"]. */
+export function trailOf(row: ActionRow): Outcome[] {
+  const out: Outcome[] = [];
+  for (const s of row.steps) {
+    const o = outcomeOf(s);
+    if (o && out.at(-1) !== o) out.push(o);
+  }
+  return out;
+}
+
+/** The step that decided the action (a rule or a person), whose reason the row shows; the row itself when no step decided anything. */
+export function decidingStep(row: ActionRow): TimelineEvent {
+  const decides: Outcome[] = ["blocked", "rejected", "approved", "allowed", "needs_approval"];
+  return row.steps.findLast((s) => decides.includes(outcomeOf(s) as Outcome)) ?? row;
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TimelineEvent } from "./derive.ts";
-import { inGroup, outcomeOf, visibleAgent } from "./activity.ts";
+import { byAction, decidingStep, inGroup, outcomeOf, trailOf, visibleAgent } from "./activity.ts";
 
 const log = (type: string, args?: Record<string, unknown>): TimelineEvent => ({ id: type, at: 1, agentId: "a", kind: "authorization", actor: "system", say: { k: "log", type, args } as never });
 const tool = (outcome?: string): TimelineEvent => ({ id: "t", at: 1, agentId: "a", kind: "task", actor: "agent", outcome, say: { k: "task", type: "tool.called", title: "x" } });
@@ -37,4 +37,23 @@ test("sample assistants are left out unless asked for", () => {
   assert.equal(visibleAgent(agents, false)({ agentId: "demo" }), false);
   assert.equal(visibleAgent(agents, false)({ agentId: "real" }), true);
   assert.equal(visibleAgent(agents, true)({ agentId: "demo" }), true);
+});
+
+test("one action is one row: its steps fold into the newest, events without an authorization stay apart", () => {
+  const step = (id: string, at: number, ev: TimelineEvent, authorizationId?: string): TimelineEvent => ({ ...ev, id, at, ...(authorizationId && { authorizationId }) });
+  const events = [
+    step("rep", 5, tool("success"), "az1"),
+    step("ran", 4, log("authorization_consumed"), "az1"),
+    step("other", 3, log("agent_paused")),
+    step("ok", 2, log("authorization_approved"), "az1"),
+    step("ask", 1, log("authorization_requested", { reason: "approval_required", rule: { tool: "shell", action: "*", effect: "approve" } }), "az1"),
+    step("deny", 0, log("authorization_denied", { reason: "policy_denied" }), "az2"),
+  ];
+  const rows = byAction(events);
+  assert.deepEqual(rows.map((r) => r.id), ["rep", "other", "deny"], "newest first, one row per action");
+  assert.deepEqual(rows[0].steps.map((s) => s.id), ["ask", "ok", "ran", "rep"], "steps oldest first");
+  assert.deepEqual(trailOf(rows[0]), ["needs_approval", "approved", "ran"], "the two 'ran' steps say it once");
+  assert.equal(decidingStep(rows[0]).id, "ok", "a person's decision is what decided it");
+  assert.equal(decidingStep(rows[2]).id, "deny");
+  assert.equal(decidingStep(rows[1]).id, "other", "nothing decided: the row itself");
 });

@@ -577,6 +577,38 @@ export const de: Dict = {
     create: "Konto erstellen",
     signIn: "Anmelden",
     prototype: "Über den Forschungsprototyp",
+    demo: "Live-Demo ansehen",
+    demoNote: "Nur lesend, mit Beispiel-Agenten. Ohne Registrierung.",
+    demoOpening: "Demo wird geöffnet…",
+    demoFailed: "Die Demo konnte nicht geöffnet werden. Versuchen Sie es gleich noch einmal.",
+    video: { title: "TEND mit echtem Claude Code", caption: "76 Sekunden, auf einem echten Rechner aufgenommen: Ein Routinebefehl läuft, das Lesen einer SSH-Schlüsseldatei wird blockiert, ein Löschen wartet auf einen Menschen. Ohne Ton, mit Untertiteln.", label: "Demo-Video: TEND steuert Claude Code" },
+    how: {
+      title: "So funktioniert es",
+      steps: [
+        { title: "Verbinden", body: "Ein Befehl fügt Claude Code die Hooks von TEND hinzu. Ab dann fragt jeder Werkzeugaufruf zuerst TEND." },
+        { title: "Entscheiden", body: "Wählen Sie Ausgewogen, Streng oder Nur beobachten. Routinearbeit läuft; alles, was veröffentlicht, löscht oder ins Netz geht, wartet auf Ihr Ja." },
+        { title: "Nachvollziehen", body: "Jeder Aufruf wird mit der Regel oder der Person aufgezeichnet, die entschieden hat. Eine Freigabe lässt genau diese Anfrage einmal laufen." },
+      ],
+    },
+    example: {
+      title: "Drei Aufrufe, drei Antworten",
+      sub: "Was TEND mit den Regeln „Ausgewogen“ tut. Der Agent fragt; die Regel entscheidet, bevor etwas läuft.",
+      columns: ["Der Agent will ausführen", "Entscheidung", "Warum"],
+      rows: [
+        { outcome: "Erlaubt", reason: "Routinebefehle laufen von selbst." },
+        { outcome: "Braucht Freigabe", reason: "Veröffentlichen wartet auf einen Menschen." },
+        { outcome: "Blockiert", reason: "Alles, was .ssh berührt, ist nie erlaubt." },
+      ],
+    },
+    limits: {
+      title: "Was TEND nicht behauptet",
+      items: [
+        "TEND sieht nur Aufrufe, die durch seine Hooks oder seine API laufen. Was ein Agent außerhalb davon tut, kann TEND weder sehen noch stoppen.",
+        "Hook-Regeln prüfen den Text eines Befehls, ein Agent kann sie also umgehen. TEND sagt das auf der Seite jedes Agenten.",
+        "Claude Code ist durchgehend getestet. Die Hooks für Cursor werden unterstützt, sind aber noch nicht geprüft. Jeder andere Agent kann TEND über die HTTP-API fragen.",
+      ],
+    },
+    closing: { title: "Sehen Sie selbst", body: "Die Demo enthält vier Beispiel-Agenten mit echten, aufgezeichneten Entscheidungen. Sie ist nur lesend, Sie können also nichts kaputt machen." },
   },
 
   reviewUi: {
@@ -1407,6 +1439,7 @@ export const de: Dict = {
     title: "Richtlinien", sub: "Richtlinien legen fest, was jeder Agent darf. Alles, was sie nicht aufführen, ist blockiert.",
     all: "Alle Richtlinien", count: (n) => `${n} ${n === 1 ? "Richtlinie" : "Richtlinien"}`, none: "Noch kein Agent verbunden. Verbinden Sie einen unter Integrationen, dann erscheint hier seine Richtlinie.",
     policyOf: (n) => `Richtlinie von ${n}`, enforced: "Durchgesetzt: Tend verweigert alles, was nicht erlaubt ist.", monitored: "Nur Beobachtung, bis die Richtlinie gespeichert wird.",
+    hookRules: (preset) => `Regeln für jeden Tool-Aufruf, den seine Hooks melden: ${preset}.`, hookCustom: "eigene Regeln", editHook: "Regeln ändern",
     edit: "Richtlinie bearbeiten", done: "Fertig", failed: "Die Richtlinie konnte nicht geladen werden.", custom: "Eigene Regel", empty: "Hier ist nichts.", blockedNote: "Alles, was oben nicht steht, ist blockiert.",
     groups: { allow: { title: "Darf", note: "Läuft sofort und wird protokolliert." }, approve: { title: "Braucht Freigabe", note: "Wartet, bis ein Mensch entscheidet. Vorher läuft nichts." }, deny: { title: "Nie erlaubt", note: "Wird jedes Mal abgelehnt." } },
   },

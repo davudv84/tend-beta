@@ -17,7 +17,7 @@ import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n";
 import { DAY, summarize, timeline } from "@/lib/derive";
 import { shortDate, useNow } from "@/lib/format";
-import { outcomeOf } from "@/lib/activity";
+import { byAction, outcomeOf } from "@/lib/activity";
 import { useAgent, useStore } from "@/lib/store";
 import { entryOf } from "@/ui/agent-row";
 import { assistantStatus } from "@/ui/assistant-status";
@@ -58,7 +58,7 @@ export default function View() {
       mine,
       month: summarize(month),
       pending: mine.filter((c) => c.review?.status === "pending").length,
-      events: timeline(mine.slice(0, 30), log.filter((l) => l.agentId === id), taskEvents.filter((t) => t.agentId === id)).filter((e) => e.kind !== "check_in" && e.kind !== "task" || outcomeOf(e)).slice(0, 20),
+      events: byAction(timeline(mine.slice(0, 30), log.filter((l) => l.agentId === id), taskEvents.filter((t) => t.agentId === id)).filter((e) => e.kind !== "check_in" && e.kind !== "task" || outcomeOf(e))).slice(0, 20),
     };
   }, [checkIns, log, taskEvents, id, clock]);
 

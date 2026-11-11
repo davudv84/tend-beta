@@ -2,7 +2,7 @@
 // routes.test.ts makes sure every operator route calls requireOperator, so refusing there covers every route that changes anything.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hashPassword, passwordSignIn, register, requestReset, verifyEmail, setAccess } from "./accounts.ts";
+import { demoSignIn, hashPassword, passwordSignIn, register, requestReset, verifyEmail, setAccess } from "./accounts.ts";
 import { memoryDb, type DB } from "./db.ts";
 import { refreshDemo } from "./demo-account.ts";
 import { requireOperator } from "./http.ts";
@@ -134,4 +134,29 @@ test("the sample activity tops up at most every few minutes and keeps at most tw
   const waiting = (await db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM authorizations WHERE status = 'pending' AND expires_at > ?", Date.now() + 4 * 60_000))!.n;
   assert.ok(waiting >= 1 && waiting <= 2, `waiting: ${waiting}`);
   await db.close();
+});
+
+test("Try the live demo: one click gives a read-only demo session, never one into somebody's own account, and is bounded per address", async () => {
+  const db = await memoryDb();
+  delete process.env.TEND_DEMO_ACCOUNT;
+  assert.equal(await code(demoSignIn(db, post())), "demo_off", "no demo configured, no session");
+  process.env.TEND_DEMO_ACCOUNT = `${EMAIL} ${await hashPassword(PW)}`;
+  const s = await demoSignIn(db, post());
+  const session = (await currentSession(db, as(s.value)))!;
+  assert.equal(session.readOnly, true);
+  assert.equal(await code(requireOperator(as(s.value, "POST"), db)), "read_only_account", "every change is still refused");
+  // The same address, past its budget, is refused.
+  const same = () => new Request("http://tend.test/api/account/demo", { method: "POST", headers: { host: "tend.test", "x-forwarded-for": "10.9.9.9" } });
+  for (let i = 0; i < 20; i++) await demoSignIn(db, same());
+  assert.equal(await code(demoSignIn(db, same())), "rate_limited");
+  await db.close();
+  // Somebody's own account at the demo address is never entered this way.
+  const db2 = await memoryDb();
+  delete process.env.TEND_DEMO_ACCOUNT;
+  const r = await register(db2, post(), { email: EMAIL, password: OTHER });
+  await verifyEmail(db2, post(), { token: /#token=([A-Za-z0-9_-]{43})/.exec(r.outbox[0].text)![1], password: OTHER });
+  process.env.TEND_DEMO_ACCOUNT = `${EMAIL} ${await hashPassword(PW)}`;
+  assert.equal(await code(demoSignIn(db2, post())), "demo_off");
+  delete process.env.TEND_DEMO_ACCOUNT;
+  await db2.close();
 });

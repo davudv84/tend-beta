@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Coverage, hookOf, PresetPicker } from "@/components/assistant-connect";
 import { SignIn } from "@/components/sign-in";
 import { ToolPermissions } from "@/components/tool-permissions";
 import { useT } from "@/i18n/client";
+import { presetOf } from "@/lib/agent-presets";
 import { realAssistants } from "@/lib/home";
 import type { PolicyView } from "@/lib/permissions";
 import { useStore } from "@/lib/store";
@@ -13,7 +15,11 @@ import { Badge, Card, CardHeader, buttonClass } from "@/ui/primitives";
 
 const GROUPS = [["allow", "good"], ["approve", "attention"], ["deny", "danger"]] as const;
 
-/** What each agent may do, from the policy the server holds for it. One policy per agent today. */
+/**
+ * What each agent may do, from the policy the server holds for it. One policy per agent today. A coding assistant connected through hooks
+ * (Claude Code, Cursor) is decided by its hook rules, so its page shows those (what they enforce, what they only record, what TEND can't
+ * reach) and the preset picker, not the gateway tool list, which never applies to it.
+ */
 export default function View() {
   const t = useT();
   const g = t.policiesPage;
@@ -38,6 +44,8 @@ export default function View() {
   const mine = loaded && loaded.id === id ? loaded : null;
   const view = mine?.view ?? null;
   const failed = !!mine && !mine.view;
+  const hook = agent ? hookOf(agent) : null;
+  const preset = view && view.enforcement === "enforce" ? presetOf(view.rules) : null;
 
   if (status === "signin") return <Page><SignIn compact /></Page>;
   if (!ready) return <PageSkeleton label={t.home.loading} />;
@@ -67,11 +75,13 @@ export default function View() {
               <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
                 <div className="min-w-0">
                   <h2 className="text-[20px] font-semibold tracking-[-0.01em]">{g.policyOf(agent.name)}</h2>
-                  <p className="mt-1 text-[14px] text-muted-foreground">{view ? (view.enforcement === "enforce" ? g.enforced : g.monitored) : ""}</p>
+                  <p className="mt-1 text-[14px] text-muted-foreground">{view ? (hook ? g.hookRules(preset ? t.assistant.presets[preset].name : g.hookCustom) : view.enforcement === "enforce" ? g.enforced : g.monitored) : ""}</p>
                 </div>
-                <button type="button" onClick={() => setEditing((v) => !v)} className={buttonClass("secondary")}>{editing ? g.done : g.edit}</button>
+                <button type="button" onClick={() => setEditing((v) => !v)} className={buttonClass("secondary")}>{editing ? g.done : hook ? g.editHook : g.edit}</button>
               </header>
-              {editing ? <div className="border-t border-border px-6 py-6"><ToolPermissions key={agent.id} agentId={agent.id} /></div> : failed ? <p role="alert" className="border-t border-border px-6 py-5 text-[14px] text-[#b42318]">{g.failed}</p> : !view ? <div className="border-t border-border px-6 py-8"><div aria-busy="true" className="h-24 animate-pulse rounded-lg bg-sunken" /></div> : (
+              {editing ? <div className="border-t border-border px-6 py-6">{hook ? <PresetPicker key={agent.id} agentId={agent.id} titled={false} onSaved={() => setEditing(false)} /> : <ToolPermissions key={agent.id} agentId={agent.id} />}</div> : failed ? <p role="alert" className="border-t border-border px-6 py-5 text-[14px] text-[#b42318]">{g.failed}</p> : !view ? <div className="border-t border-border px-6 py-8"><div aria-busy="true" className="h-24 animate-pulse rounded-lg bg-sunken" /></div> : hook ? (
+                <div className="border-t border-border px-6 pb-6"><Coverage view={view} integration={hook} /></div>
+              ) : (
                 <>
                   {!view.valid && <p role="alert" className="border-t border-border bg-[#fff4e5] px-6 py-3 text-[14px] text-[#92400e]">{t.tools.invalid}</p>}
                   {GROUPS.map(([effect, tone]) => {

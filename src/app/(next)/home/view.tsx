@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { PlusIcon } from "lucide-react";
 import { SignIn } from "@/components/sign-in";
 import { useT } from "@/i18n/client";
-import { outcomeOf, visibleAgent } from "@/lib/activity";
+import { byAction, outcomeOf, visibleAgent } from "@/lib/activity";
 import { timeline } from "@/lib/derive";
 import { useNow } from "@/lib/format";
 import { homeQueue, orderAssistants, protectionOf, realAssistants } from "@/lib/home";
@@ -47,7 +47,7 @@ export default function View() {
   const runs = useRuns(useMemo(() => real.map((a) => a.id), [real]), ready && canAct);
   const queue = useMemo(() => homeQueue(agents, authorizations, now), [agents, authorizations, now]);
   const ordered = useMemo(() => orderAssistants(agents, runs, queue.waiting), [agents, runs, queue.waiting]);
-  const events = useMemo(() => timeline(checkIns, log, taskEvents).filter(visibleAgent(agents, false)).filter((e) => e.kind !== "check_in" && e.kind !== "task" || outcomeOf(e)), [checkIns, log, taskEvents, agents]);
+  const events = useMemo(() => byAction(timeline(checkIns, log, taskEvents).filter(visibleAgent(agents, false)).filter((e) => e.kind !== "check_in" && e.kind !== "task" || outcomeOf(e))), [checkIns, log, taskEvents, agents]);
 
   if (status === "signin" || (ready && !canAct))
     return <Page><h1 className="text-section text-balance">{h.signedOut.title}</h1><p className="mt-4 max-w-[52ch] text-lead text-muted-foreground">{h.signedOut.body}</p><div className="mt-10 max-w-sm">{status === "signin" ? <SignIn compact /> : <Link href="/operator" className={buttonClass()}>{h.signedOut.action}</Link>}</div></Page>;

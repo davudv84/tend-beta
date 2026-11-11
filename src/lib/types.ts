@@ -120,6 +120,8 @@ export interface LogEntry {
   checkInId?: string;
   /** Alerts: the tool call that triggered them. */
   eventId?: string;
+  /** Authorization steps: which request they belong to, so Activity can show one row per action. */
+  authorizationId?: string;
 }
 
 export interface Task {

@@ -122,14 +122,14 @@ export function applyEvents(p: Projection, events: WireEvent[]): Projection {
           ...(Number(d.expiresAt) && status !== "denied" && { expiresAt: Number(d.expiresAt) }), ...(status !== "pending" && { decidedAt: e.at }),
         });
         const a = authArgs(d);
-        log(e, status === "denied" ? "authorization_denied" : "authorization_requested", `${name(e.agentId)} asked to run ${a.tool} · ${a.action}: ${status}`, { args: a, ...(str(d.detail) && { note: str(d.detail), detail: str(d.detail) }) });
+        log(e, status === "denied" ? "authorization_denied" : "authorization_requested", `${name(e.agentId)} asked to run ${a.tool} · ${a.action}: ${status}`, { args: a, authorizationId: id, ...(str(d.detail) && { note: str(d.detail), detail: str(d.detail) }) });
         break;
       }
       case "authorization.consumed": case "authorization.expired": case "authorization.cancelled": {
         const status = e.type.slice("authorization.".length) as AuthorizationStatus;
         const az = patchAuth(str(d.authorizationId) ?? "", () => ({ status, closedAt: e.at }));
         const a = { ...authArgs(d), ...(az && { tool: az.tool, action: az.action, resource: az.resource }) };
-        log(e, `authorization_${status}` as LogType, `Authorization for ${a.tool} · ${a.action} ${status}`, { args: a, ...(az?.detail && { note: az.detail, detail: az.detail }) });
+        log(e, `authorization_${status}` as LogType, `Authorization for ${a.tool} · ${a.action} ${status}`, { args: a, ...(str(d.authorizationId) && { authorizationId: str(d.authorizationId) }), ...(az?.detail && { note: az.detail, detail: az.detail }) });
         break;
       }
       case "review.decided": {
@@ -140,7 +140,7 @@ export function applyEvents(p: Projection, events: WireEvent[]): Projection {
         }));
         if (az) {
           log(e, `authorization_${status}`, `${status === "approved" ? "Approved" : "Rejected"} ${name(e.agentId)}’s request to run ${az.tool} · ${az.action}`,
-            { args: { tool: az.tool, action: az.action, resource: az.resource }, ...(str(d.note) && { note: str(d.note) }), ...(az.detail && { detail: az.detail }) });
+            { args: { tool: az.tool, action: az.action, resource: az.resource }, authorizationId: az.id, ...(str(d.note) && { note: str(d.note) }), ...(az.detail && { detail: az.detail }) });
           break;
         }
         const hit = findReview(str(d.reviewId) ?? "");

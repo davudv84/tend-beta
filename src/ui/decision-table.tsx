@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/i18n/client";
-import { outcomeOf, type Outcome } from "@/lib/activity";
+import { decidingStep, outcomeOf, trailOf, type ActionRow, type Outcome } from "@/lib/activity";
 import type { TimelineEvent } from "@/lib/derive";
 import { clock } from "@/lib/format";
 import { Badge, type Tone } from "@/ui/primitives";
@@ -30,7 +30,8 @@ export function reasonOf(t: ReturnType<typeof useT>, e: TimelineEvent) {
 
 /** Events as a table: when, which agent, what was attempted, how it ended, and why. The same on Overview and Activity. */
 /** `nameOf` is left out on a single agent's own page, where an agent column would only repeat its name. */
-export function DecisionTable({ events, nameOf, compact }: { events: TimelineEvent[]; nameOf?: (id: string) => string; compact?: boolean }) {
+/** Rows from byAction() show how the action ended, the path it took to get there, and the reason of the step that decided it. */
+export function DecisionTable({ events, nameOf, compact }: { events: (TimelineEvent | ActionRow)[]; nameOf?: (id: string) => string; compact?: boolean }) {
   const t = useT();
   const pad = compact ? "px-3 py-3 sm:px-6" : "px-3 py-3.5 sm:px-6";
   // On a phone the time, agent and reason columns give way so the request and outcome stay readable; the agent moves under the
@@ -42,15 +43,18 @@ export function DecisionTable({ events, nameOf, compact }: { events: TimelineEve
         <thead className="bg-[#fafafa] text-[13px] text-muted-foreground dark:bg-sunken"><tr>{t.home.overview.columns.map((c, i) => (i === 1 && !nameOf ? null : <th key={c} scope="col" className={`px-3 py-3 font-normal sm:px-6 ${i === 0 || i === 1 || i === 4 ? optional : ""}`}>{c}</th>))}</tr></thead>
         <tbody className="divide-y divide-border">
           {events.map((e) => {
-            const o = outcomeOf(e);
+            const trail = "steps" in e ? trailOf(e) : [];
+            const o = trail.at(-1) ?? outcomeOf(e);
+            const why = reasonOf(t, "steps" in e ? decidingStep(e) : e);
+            const path = trail.length > 1 && <span className="mt-1 block text-[12px] text-faint">{trail.map((x) => t.timelinePage.outcome[x]).join(" → ")}</span>;
             return (
               <tr key={e.id}>
                 <td className={`${pad} ${optional} whitespace-nowrap text-muted-foreground tabular-nums`}><time dateTime={new Date(e.at).toISOString()} title={new Date(e.at).toLocaleString(t.intl.date)}>{clock(e.at)}</time></td>
                 {nameOf && <td className={`${pad} ${optional} font-medium`}>{nameOf(e.agentId)}</td>}
                 {/* The exact request as the agent sent it, with the recorded tool and action under it. */}
                 <td className={`${pad} font-mono text-[13px] [overflow-wrap:anywhere]`}>{e.detail ?? actionOf(e)}<span className="mt-0.5 block text-[12px] text-faint">{nameOf && <span className="font-sans sm:hidden">{nameOf(e.agentId)}{e.detail && " · "}</span>}{e.detail && actionOf(e)}</span></td>
-                <td className={pad}>{o && <Badge tone={TONE[o] ?? "neutral"}>{t.timelinePage.outcome[o]}</Badge>}<span className="mt-1.5 block text-[13px] text-muted-foreground sm:hidden">{reasonOf(t, e)}</span></td>
-                <td className={`${pad} ${optional} text-muted-foreground`}>{reasonOf(t, e)}</td>
+                <td className={pad}>{o && <Badge tone={TONE[o] ?? "neutral"}>{t.timelinePage.outcome[o]}</Badge>}{path}<span className="mt-1.5 block text-[13px] text-muted-foreground sm:hidden">{why}</span></td>
+                <td className={`${pad} ${optional} text-muted-foreground`}>{why}</td>
               </tr>
             );
           })}

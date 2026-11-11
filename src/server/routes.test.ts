@@ -69,6 +69,7 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "account/verify:POST": "account",
   "account/resend:POST": "account",
   "account/sign-in:POST": "account",
+  "account/demo:POST": "account", // a session in the read-only demo account; same-site only, bounded per address (accounts.ts demoSignIn)
   "account/forgot:POST": "account",
   "account/reset:POST": "account",
   "admin/users:GET": "admin",
