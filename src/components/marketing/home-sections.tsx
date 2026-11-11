@@ -1,19 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon, CircleCheckIcon, LinkIcon, LockIcon, MinusIcon, ScrollTextIcon, TicketCheckIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { SCENARIOS } from "@/lib/integrations-catalog";
 import { cn } from "@/lib/utils";
 import { VERIFIED } from "./hero";
-import { Band, Container, PrimaryLink, QuietLink, Terminal } from "./kit";
+import { Band, Container, PrimaryLink, QuietLink, Screen, Terminal, prefersReducedMotion } from "./kit";
 import { Landscape } from "./landscape";
-import { ActivityMini } from "./panels/activity";
-import { AgentsMini, IntegrationsPanel } from "./panels/agents";
-import { ApprovalsMini } from "./panels/approvals";
-import { ChecksMini, GatewayMini } from "./panels/checks";
-import { RulesMini, TryCall } from "./panels/rules";
+import { ActivityPanel } from "./panels/activity";
+import { AgentsPanel, IntegrationsPanel } from "./panels/agents";
+import { ApprovalsPanel } from "./panels/approvals";
+import { ChecksPanel, GatewayMini } from "./panels/checks";
+import { RulesPanel, TryCall, type Stage } from "./panels/rules";
 import { Reveal } from "./reveal";
 import { TERMINALS } from "./site-data";
 import type { HomeImages } from "./types";
@@ -41,12 +42,25 @@ export function Stats() {
   );
 }
 
-/** "One checkpoint for every AI agent": two cards with a live screen each, then the big card where a visitor tries a call. */
+const PLATFORM = [["decide", CircleCheckIcon, "/product/approvals"], ["prove", ScrollTextIcon, "/product/activity"]] as const;
+/** An app screen in a card: at its real layout from 768px up, the phone's below, both a little smaller than life. */
+const BIG = "w-[380px] md:w-[860px] [zoom:0.85]";
+const SMALL = "w-[480px] md:w-[760px] [zoom:0.6]";
+
+/**
+ * "One checkpoint for every AI agent", laid out as sim.ai's platform section: two cards with the app's own screen in each, where the
+ * card under the pointer (or holding the focus) widens and lights up and the other steps back; then the wide card, where one tool call
+ * plays through once (an agent asks, TEND checks the rules, a person decides, it runs) while the headline names each step. After
+ * that the visitor tries calls themselves. On a phone the two cards are stacked and both lit.
+ */
 export function Platform() {
   const t = useT();
   const p = t.front.platform;
   const tc = t.front.tryCall;
-  const card = "relative flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-mk-surface";
+  const reduce = useReducedMotion();
+  const [active, setActive] = useState(0);
+  const [stage, setStage] = useState<Stage>("ask");
+  const card = "relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-mk-surface";
   return (
     <Band id="product" label="platform-title">
       <Container className="py-16 md:py-24">
@@ -54,24 +68,34 @@ export function Platform() {
           <h2 id="platform-title" className="mk-display mx-auto max-w-[18ch] text-[clamp(2.25rem,5vw,3.75rem)]">{p.title}</h2>
           <p className="mx-auto mt-5 max-w-[48ch] text-[16px] leading-relaxed text-muted-foreground">{p.body}</p>
         </Reveal>
-        <div className="mt-12 grid gap-4 md:mt-16 md:grid-cols-2">
-          {([["decide", CircleCheckIcon, <ApprovalsMini key="a" request="push" />, "/product/approvals"], ["prove", ScrollTextIcon, <ActivityMini key="b" />, "/product/activity"]] as const).map(([key, Icon, screen, href], i) => (
-            <Reveal key={key} delay={i * 80} className={card}>
-              <div className="p-6 md:p-8">
-                <Icon aria-hidden className="size-9 text-foreground/80" strokeWidth={1} />
-                <h3 className="mt-5 text-[22px] font-medium tracking-[-0.02em]"><Link href={href} className="outline-none hover:underline hover:underline-offset-4">{p[key].title}</Link></h3>
-                <p className="mt-2 max-w-[40ch] text-[15px] text-muted-foreground">{p[key].body}</p>
+        <Reveal className="mt-12 grid gap-4 md:mt-16 md:flex">
+          {PLATFORM.map(([key, Icon, href], i) => {
+            const on = active === i;
+            return (
+              <div key={key} onPointerEnter={() => setActive(i)} onFocus={() => setActive(i)}
+                className={cn(card, "md:h-[580px] md:basis-0 md:transition-[flex-grow,background-color] md:duration-500 md:ease-out", on ? "md:grow-[1.7] md:bg-[#262626]" : "md:grow")}>
+                <div className={cn("p-6 transition-opacity duration-500 md:p-8", !on && "md:opacity-40")}>
+                  <Icon aria-hidden className="size-9 text-foreground/80" strokeWidth={1} />
+                  <h3 className="mt-5 text-[22px] font-medium tracking-[-0.02em]"><Link href={href} className="outline-none hover:underline hover:underline-offset-4">{p[key].title}</Link></h3>
+                  <p className="mt-2 max-w-[36ch] text-[15px] text-muted-foreground">{p[key].body}</p>
+                </div>
+                <Screen inner={BIG} className={cn("mt-auto ml-6 h-[320px] rounded-tl-xl transition-opacity duration-500 md:ml-8 md:h-auto md:flex-1", on ? "mk-rise" : "md:opacity-30")}>
+                  {key === "decide" ? <ApprovalsPanel /> : <ActivityPanel />}
+                </Screen>
               </div>
-              <div className="mt-auto px-6 pb-6 md:px-8 md:pb-8"><div className="max-w-[440px]">{screen}</div></div>
-            </Reveal>
-          ))}
-        </div>
+            );
+          })}
+        </Reveal>
         <Reveal className={cn(card, "mt-4 px-5 py-10 sm:px-8 md:px-12 md:py-14")}>
           <div className="text-center">
-            <h3 className="mk-heading text-[clamp(1.75rem,3.4vw,2.5rem)]">{tc.title}</h3>
+            <h3 className="mk-heading text-[clamp(1.75rem,3.4vw,2.5rem)]">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span key={stage} className="block" initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, y: -10, transition: { duration: 0.16 } }}>{tc.steps[stage]}</motion.span>
+              </AnimatePresence>
+            </h3>
             <p className="mx-auto mt-3 max-w-[50ch] text-[15px] text-muted-foreground">{tc.body}</p>
           </div>
-          <div className="mx-auto mt-10 max-w-[920px]"><TryCall /></div>
+          <div className="mx-auto mt-10 max-w-[920px]"><TryCall autoplay onStage={setStage} /></div>
         </Reveal>
       </Container>
     </Band>
@@ -79,36 +103,86 @@ export function Platform() {
 }
 
 const CARDS = ["approvals", "rules", "activity", "agents", "checks", "gateway", "cli", "integrations"] as const;
-const HREF: Record<(typeof CARDS)[number], string> = {
+type CardKey = (typeof CARDS)[number];
+const HREF: Record<CardKey, string> = {
   approvals: "/product/approvals", rules: "/product/rules", activity: "/product/activity", agents: "/product/agents", checks: "/product/checks",
   gateway: "/how-it-works#modes", cli: "/docs", integrations: "/verification-report",
 };
+/** The cards that show one of the app's screens, at its real layout and made smaller; the other three are drawn to fit the card. */
+const APP_SCREEN: Partial<Record<CardKey, React.ReactNode>> = { approvals: <ApprovalsPanel />, rules: <RulesPanel />, activity: <ActivityPanel />, agents: <AgentsPanel />, checks: <ChecksPanel /> };
+/** How fast the strip drifts by itself, in pixels a second. */
+const DRIFT = 26;
 
-/** The swipeable strip of everything TEND has, each with a live screen, as sim.ai's "Everything AI agents need to do real work". */
+/**
+ * The strip of everything TEND has, each card with the app's screen in it, as sim.ai's "Everything AI agents need to do real work".
+ * It has no end in either direction: the cards are drawn three times in a row and the strip stays inside the middle copy by stepping
+ * one copy's width whenever it leaves it, which nobody can see because the copies are identical. It drifts slowly to the left by
+ * itself and stops while the pointer or the focus is on it, for a moment after anyone scrolls it, when it is off screen, and for good
+ * under reduced motion. The two outer copies are hidden from screen readers and the keyboard.
+ * ponytail: one copy has to be wider than half the window (eight cards are about 3500px); add a fourth copy if cards are ever removed.
+ */
 export function Everything() {
   const t = useT();
   const e = t.front.everything;
   const strip = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    const period = () => (el.children[CARDS.length] as HTMLElement).offsetLeft - (el.children[0] as HTMLElement).offsetLeft;
+    const wrap = () => {
+      const w = period();
+      if (el.scrollLeft < w * 0.5) el.scrollLeft += w;
+      else if (el.scrollLeft >= w * 1.5) el.scrollLeft -= w;
+    };
+    el.scrollLeft = period();
+    let idle = 0;
+    const onScroll = () => { clearTimeout(idle); idle = window.setTimeout(wrap, 150); };
+    el.addEventListener("scroll", onScroll, { passive: true });
+
+    let frame = 0, last = 0, pos = el.scrollLeft, wrote = el.scrollLeft, quietUntil = 0, visible = false, held = false;
+    // The pointer or the focus is on it: it stays where it is.
+    const hold = () => { held = true; };
+    const release = () => { held = false; };
+    const on = [["pointerenter", hold], ["pointerleave", release], ["focusin", hold], ["focusout", release]] as const;
+    for (const [name, fn] of on) el.addEventListener(name, fn);
+    const io = new IntersectionObserver(([x]) => { visible = x.isIntersecting; });
+    io.observe(el);
+    const tick = (now: number) => {
+      const dt = Math.min(64, now - last);
+      last = now;
+      // Somebody moved it (a swipe, the wheel, an arrow): leave it alone for a moment.
+      if (Math.abs(el.scrollLeft - wrote) > 2) quietUntil = now + 2500;
+      if (visible && !held && now > quietUntil) {
+        const w = period();
+        pos += (dt * DRIFT) / 1000;
+        if (pos >= w * 1.5) pos -= w;
+        el.scrollLeft = pos;
+      } else pos = el.scrollLeft;
+      wrote = el.scrollLeft;
+      frame = requestAnimationFrame(tick);
+    };
+    if (!prefersReducedMotion()) frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(idle);
+      io.disconnect();
+      el.removeEventListener("scroll", onScroll);
+      for (const [name, fn] of on) el.removeEventListener(name, fn);
+    };
+  }, []);
   const move = (dir: 1 | -1) => {
     const el = strip.current;
     const card = el?.querySelector("li");
     if (!el || !card) return;
-    el.scrollBy({ left: dir * (card.getBoundingClientRect().width + 16), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    el.scrollBy({ left: dir * (card.getBoundingClientRect().width + 16), behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
-  const screen = (k: (typeof CARDS)[number]) => {
-    switch (k) {
-      case "approvals": return <ApprovalsMini />;
-      case "rules": return <RulesMini />;
-      case "activity": return <ActivityMini />;
-      case "agents": return <AgentsMini />;
-      case "checks": return <ChecksMini />;
-      case "gateway": return <GatewayMini />;
-      case "cli": return <Terminal {...TERMINALS.home} minHeight={200} compact />;
-      case "integrations": return <IntegrationsPanel small />;
-    }
+  const screen = (k: CardKey) => {
+    if (APP_SCREEN[k]) return <Screen inner={SMALL} className="h-full rounded-tl-xl">{APP_SCREEN[k]}</Screen>;
+    const drawn = k === "gateway" ? <GatewayMini /> : k === "cli" ? <Terminal {...TERMINALS.home} minHeight={200} compact /> : <IntegrationsPanel small />;
+    return <Screen inner="w-[calc(100%-1rem)]" className="h-full">{drawn}</Screen>;
   };
   // The strip starts where the page's content starts, and runs to the window's edge.
-  const gutter = "px-5 scroll-px-5 sm:px-8 sm:scroll-px-8 xl:px-[calc((100vw-1200px)/2+2rem)] xl:scroll-px-[calc((100vw-1200px)/2+2rem)]";
+  const gutter = "px-5 sm:px-8 xl:px-[calc((100vw-1200px)/2+2rem)]";
   return (
     <Band id="features" label="everything-title">
       <div className="py-16 md:py-24">
@@ -123,15 +197,13 @@ export function Everything() {
           </div>
         </Container>
         <ul ref={strip} className={cn("mk-strip relative mt-10 flex gap-4 overflow-x-auto pb-2 md:mt-12", gutter)}>
-          {CARDS.map((k) => (
-            <li key={k} className="w-[82vw] max-w-[340px] shrink-0 snap-start sm:w-[320px]">
-              <div className="flex h-[340px] items-start overflow-hidden rounded-2xl border border-white/[0.08] bg-mk-surface p-4 [mask-image:linear-gradient(to_bottom,black_82%,transparent)]">
-                <div className="w-full">{screen(k)}</div>
-              </div>
+          {[0, 1, 2].flatMap((copy) => CARDS.map((k) => (
+            <li key={`${copy}-${k}`} aria-hidden={copy !== 1 || undefined} inert={copy !== 1} className="w-[82vw] max-w-[420px] shrink-0 sm:w-[420px]">
+              <div className="h-[340px] overflow-hidden rounded-2xl border border-white/[0.08] bg-mk-surface pt-4 pl-4 [mask-image:linear-gradient(to_bottom,black_82%,transparent)]">{screen(k)}</div>
               <h3 className="mt-5 text-[17px] font-medium"><Link href={HREF[k]} className="group inline-flex items-center gap-1 outline-none hover:underline hover:underline-offset-4">{e.cards[k][0]}<ArrowRightIcon className="size-3.5 opacity-60 transition-transform group-hover:translate-x-0.5" strokeWidth={2} aria-hidden /></Link></h3>
               <p className="mt-1.5 max-w-[34ch] text-[14px] leading-snug text-muted-foreground">{e.cards[k][1]}</p>
             </li>
-          ))}
+          )))}
         </ul>
       </div>
     </Band>

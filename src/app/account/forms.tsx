@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { CheckIcon, MailIcon } from "lucide-react";
+import { CheckIcon, EyeIcon, EyeOffIcon, MailIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,8 +31,8 @@ const forgetLink = () => history.replaceState(null, "", location.pathname);
 function Title({ children, body }: { children: React.ReactNode; body?: React.ReactNode }) {
   return (
     <header className="mb-6">
-      <h1 className="text-h2 leading-snug text-balance">{children}</h1>
-      {body && <p className="mt-2 text-small text-pretty text-muted-foreground">{body}</p>}
+      <h1 className="text-[28px] leading-[1.15] font-medium tracking-[-0.02em] text-balance">{children}</h1>
+      {body && <p className="mt-2 text-ui text-pretty text-muted-foreground">{body}</p>}
     </header>
   );
 }
@@ -46,18 +46,19 @@ function Field({ label, hint, ...props }: React.ComponentProps<typeof Input> & {
     </div>
   );
 }
-function PasswordField({ label, hint, value, onChange, autoComplete }: { label: string; hint?: string; value: string; onChange: (v: string) => void; autoComplete: string }) {
+function PasswordField({ label, hint, value, onChange, autoComplete, placeholder, aside }: { label: string; hint?: string; value: string; onChange: (v: string) => void; autoComplete: string; placeholder?: string; aside?: React.ReactNode }) {
   const t = useT();
   const id = useId();
   const [shown, setShown] = useState(false);
   return (
     <div className="grid gap-2">
-      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-baseline justify-between gap-3"><Label htmlFor={id}>{label}</Label>{aside}</div>
       <div className="relative">
-        <Input id={id} type={shown ? "text" : "password"} autoComplete={autoComplete} value={value} onChange={(e) => onChange(e.target.value)} required
-          className="h-11 rounded-xl pr-20 text-ui" aria-describedby={hint ? `${id}-hint` : undefined} />
-        <button type="button" onClick={() => setShown(!shown)} aria-pressed={shown} className="absolute top-1/2 right-2 -translate-y-1/2 rounded-lg px-2.5 py-1 text-caption text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
-          {shown ? t.account.hide : t.account.show}
+        <Input id={id} type={shown ? "text" : "password"} autoComplete={autoComplete} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} required
+          className="h-11 rounded-xl pr-12 text-ui" aria-describedby={hint ? `${id}-hint` : undefined} />
+        <button type="button" onClick={() => setShown(!shown)} aria-pressed={shown} aria-label={shown ? t.account.hide : t.account.show} title={shown ? t.account.hide : t.account.show}
+          className="absolute top-1/2 right-1.5 grid size-8 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
+          {shown ? <EyeOffIcon className="size-4" strokeWidth={1.75} aria-hidden /> : <EyeIcon className="size-4" strokeWidth={1.75} aria-hidden />}
         </button>
       </div>
       {hint && <p id={`${id}-hint`} className="text-caption text-faint">{hint}</p>}
@@ -106,18 +107,21 @@ export function SignIn({ admin = true }: { admin?: boolean }) {
   };
   return (
     <>
-      <Title>{a.signIn.title}</Title>
-      <form onSubmit={submit} className="grid gap-4">
-        <Field label={a.email} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <PasswordField label={a.password} autoComplete="current-password" value={password} onChange={setPassword} />
-        <div className="-mt-1 text-right text-small"><A href="/account/forgot">{a.signIn.forgot}</A></div>
+      <Title body={a.signIn.welcome}>{a.signIn.title}</Title>
+      <form onSubmit={submit} className="grid gap-5">
+        <Field label={a.email} type="email" autoComplete="email" placeholder={a.emailPlaceholder} value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <PasswordField label={a.password} autoComplete="current-password" placeholder={a.passwordPlaceholder} value={password} onChange={setPassword}
+          aside={<Link href="/account/forgot" className="rounded-sm text-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{a.signIn.forgot}</Link>} />
         {error && <Alert>{error.text}</Alert>}
         {error?.code === "email_unverified" && (resent
           ? <p role="status" className="text-small text-muted-foreground">{a.signIn.resent}</p>
           : <Button type="button" variant="secondary" className="h-10 rounded-full border-border text-small" onClick={() => void resend()}>{a.signIn.resend}</Button>)}
         <Submit busy={busy} label={a.signIn.submit} busyLabel={a.signIn.busy} />
       </form>
-      <Foot>{a.signIn.noAccount} <A href="/account/sign-up">{a.signIn.create}</A></Foot>
+      {/* Creating an account is the button at the top of the page (frame.tsx). */}
+      <p className="mt-6 text-center text-small text-muted-foreground">
+        {a.signIn.read} <Link href="/terms" className="text-foreground underline underline-offset-4">{t.front.footer.links.terms}</Link> {a.signIn.and} <Link href="/privacy" className="text-foreground underline underline-offset-4">{t.front.footer.links.privacy}</Link>.
+      </p>
       {admin && <p className="mt-3 text-center text-caption"><Link href="/operator" className="text-faint hover:text-foreground">{a.signIn.admin}</Link></p>}
     </>
   );

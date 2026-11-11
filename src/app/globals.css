@@ -463,8 +463,22 @@
 /* A horizontal strip that scrolls by swiping, without a visible scrollbar. */
 .mk-strip {
   scrollbar-width: none;
-  scroll-snap-type: x mandatory;
   overscroll-behavior-x: contain;
+}
+/* An app screen steps forward when its card becomes the lit one (home-sections.tsx, Platform). */
+@keyframes mk-rise {
+  from {
+    opacity: 0.35;
+    transform: translateY(10px);
+  }
+}
+.mk .mk-rise {
+  animation: mk-rise 0.55s var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk .mk-rise {
+    animation: none;
+  }
 }
 .mk-strip::-webkit-scrollbar {
   display: none;

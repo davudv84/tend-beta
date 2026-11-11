@@ -81,6 +81,19 @@ export function AppPanel({ title, icon: Icon, right, children, className, bodyCl
   );
 }
 
+/**
+ * One of the app's screens shown as a picture of itself: drawn at the size `inner` gives it (a width, and a zoom to make it smaller)
+ * and cut by the card it sits in, as a window is by a frame. It can't be clicked or tabbed into, so nothing half-hidden takes the
+ * focus; the same screen is live on its product page.
+ */
+export function Screen({ children, className, inner }: { children: React.ReactNode; className?: string; inner: string }) {
+  return (
+    <div aria-hidden inert className={cn("pointer-events-none overflow-hidden", className)}>
+      <div className={inner}>{children}</div>
+    </div>
+  );
+}
+
 /** The small "Example" tag in a screen's header, so invented data never reads as real. */
 export function ExampleTag() {
   const t = useT();

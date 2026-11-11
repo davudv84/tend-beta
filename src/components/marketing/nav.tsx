@@ -8,13 +8,13 @@ import { LanguageSwitch } from "@/components/language-switch";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 import { StatsGrid } from "@/ui/stats-grid";
-import { AppPanel, Container, PrimaryLink } from "./kit";
+import { AppPanel, Container, PrimaryLink, Screen } from "./kit";
 import { Logo } from "./logo";
-import { ActivityMini } from "./panels/activity";
-import { AgentsMini } from "./panels/agents";
-import { ApprovalsMini } from "./panels/approvals";
-import { ChecksMini } from "./panels/checks";
-import { RulesMini } from "./panels/rules";
+import { ActivityPanel } from "./panels/activity";
+import { AgentsPanel } from "./panels/agents";
+import { ApprovalsPanel } from "./panels/approvals";
+import { ChecksPanel } from "./panels/checks";
+import { RulesPanel } from "./panels/rules";
 import { PRODUCTS, type ProductSlug } from "./site-data";
 
 const ICON: Record<ProductSlug | "overview", typeof ShieldIcon> = { overview: LayoutGridIcon, approvals: CircleCheckIcon, rules: ShieldIcon, activity: ActivityIcon, agents: BotIcon, checks: ShieldCheckIcon };
@@ -118,7 +118,7 @@ export function Nav({ accounts }: { accounts: boolean }) {
                   })}
                 </ul>
                 <div aria-hidden inert className="pointer-events-none relative h-[280px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#141414] p-6">
-                  <div className="mx-auto max-w-[380px]"><Preview k={preview} /></div>
+                  <div className="mx-auto max-w-[456px]"><Preview k={preview} /></div>
                   <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#141414] to-transparent" />
                 </div>
               </Container>
@@ -134,11 +134,9 @@ export function Nav({ accounts }: { accounts: boolean }) {
 function Preview({ k }: { k: PreviewKey }) {
   const t = useT();
   const s = t.home.dash.stats;
-  if (k === "approvals") return <ApprovalsMini />;
-  if (k === "rules") return <RulesMini />;
-  if (k === "activity") return <ActivityMini />;
-  if (k === "agents") return <AgentsMini />;
-  if (k === "checks") return <ChecksMini />;
+  // The app's own screens at their real layout, made smaller.
+  const real = k === "approvals" ? <ApprovalsPanel /> : k === "rules" ? <RulesPanel /> : k === "activity" ? <ActivityPanel /> : k === "agents" ? <AgentsPanel /> : k === "checks" ? <ChecksPanel /> : null;
+  if (k === "approvals" || k === "rules" || k === "activity" || k === "agents" || k === "checks") return <Screen inner="w-[760px] [zoom:0.6]">{real}</Screen>;
   if (k === "overview") return <AppPanel title={t.ui.nav.home} icon={LayoutGridIcon} bodyClassName="p-3"><StatsGrid stats={[{ label: s.running, value: 3, note: s.of(4) }, { label: s.waiting, value: 2, note: s.now }, { label: s.auto, value: 14, note: s.day }, { label: s.blocked, value: 2, note: s.day }]} className="lg:grid-cols-2" /></AppPanel>;
   const c = t.front.kit.connect;
   return (

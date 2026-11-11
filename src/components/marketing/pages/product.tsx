@@ -2,22 +2,25 @@
 
 import { useT } from "@/i18n/client";
 import { Closing } from "../home-sections";
-import { Band, Caption, Container, DisplayTitle, ExploreLink, PrimaryLink, QuietLink, Terminal } from "../kit";
-import { ActivityMini, ActivityPanel, ChainPanel, DayPanel } from "../panels/activity";
-import { AgentsMini, AgentsPanel, ConnectPanel, IntegrationsPanel } from "../panels/agents";
-import { ApprovalsMini, ApprovalsPanel, ExactPanel, PhonePanel } from "../panels/approvals";
-import { ChecksMini, ChecksPanel, ScenariosPanel } from "../panels/checks";
-import { CentralPolicyPanel, ConditionPanel, RulesMini, RulesPanel } from "../panels/rules";
+import { Band, Caption, Container, DisplayTitle, ExploreLink, PrimaryLink, QuietLink, Screen, Terminal } from "../kit";
+import { ActivityPanel, ChainPanel, DayPanel } from "../panels/activity";
+import { AgentsPanel, ConnectPanel, IntegrationsPanel } from "../panels/agents";
+import { ApprovalsPanel, ExactPanel, PhonePanel } from "../panels/approvals";
+import { ChecksPanel, ScenariosPanel } from "../panels/checks";
+import { CentralPolicyPanel, ConditionPanel, RulesPanel } from "../panels/rules";
 import { TERMINALS, type ProductSlug } from "../site-data";
 import type { HomeImages } from "../types";
 
+/** The page's own screen in small, over the headline: the real one, at its real layout. */
+const small = (screen: React.ReactNode) => <Screen inner="w-[480px] md:w-[760px] [zoom:0.6]">{screen}</Screen>;
+
 /** What each product page shows: a small screen on top, the big one, two smaller ones, and where each caption's link leads. */
 const PAGES: Record<ProductSlug, { top: React.ReactNode; main: React.ReactNode; a: React.ReactNode; b: React.ReactNode; href: [string, string, string]; cli: string }> = {
-  approvals: { top: <ApprovalsMini />, main: <ApprovalsPanel />, a: <ExactPanel />, b: <PhonePanel />, href: ["/how-it-works#steps", "/security", "/docs"], cli: "/docs" },
-  rules: { top: <RulesMini />, main: <RulesPanel />, a: <ConditionPanel />, b: <CentralPolicyPanel />, href: ["/how-it-works#steps", "/docs", "/how-it-works"], cli: "/docs" },
-  activity: { top: <ActivityMini />, main: <ActivityPanel />, a: <ChainPanel />, b: <DayPanel />, href: ["/how-it-works#steps", "/security#doesnt", "/product/approvals"], cli: "/docs" },
-  agents: { top: <AgentsMini />, main: <AgentsPanel />, a: <ConnectPanel />, b: <IntegrationsPanel />, href: ["/docs", "/docs", "/verification-report"], cli: "/docs" },
-  checks: { top: <ChecksMini />, main: <ChecksPanel />, a: <ScenariosPanel />, b: <IntegrationsPanel />, href: ["/verification-report", "/verification-report", "/docs"], cli: "/verification-report" },
+  approvals: { top: small(<ApprovalsPanel />), main: <ApprovalsPanel />, a: <ExactPanel />, b: <PhonePanel />, href: ["/how-it-works#steps", "/security", "/docs"], cli: "/docs" },
+  rules: { top: small(<RulesPanel />), main: <RulesPanel />, a: <ConditionPanel />, b: <CentralPolicyPanel />, href: ["/how-it-works#steps", "/docs", "/how-it-works"], cli: "/docs" },
+  activity: { top: small(<ActivityPanel />), main: <ActivityPanel />, a: <ChainPanel />, b: <DayPanel />, href: ["/how-it-works#steps", "/security#doesnt", "/product/approvals"], cli: "/docs" },
+  agents: { top: small(<AgentsPanel />), main: <AgentsPanel />, a: <ConnectPanel />, b: <IntegrationsPanel />, href: ["/docs", "/docs", "/verification-report"], cli: "/docs" },
+  checks: { top: small(<ChecksPanel />), main: <ChecksPanel />, a: <ScenariosPanel />, b: <IntegrationsPanel />, href: ["/verification-report", "/verification-report", "/docs"], cli: "/verification-report" },
 };
 
 /**

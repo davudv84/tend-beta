@@ -166,21 +166,3 @@ export function DayPanel() {
     </AppPanel>
   );
 }
-
-/** Three entries in small, each linked to the one before: for a card and the menu's preview. */
-export function ActivityMini() {
-  const t = useT();
-  return (
-    <AppPanel title={t.ui.nav.activity} icon={ActivityIcon} right={<span className="flex items-center gap-1"><LinkIcon className="size-3" strokeWidth={1.75} aria-hidden />#</span>}>
-      <ul className="divide-y divide-border">
-        {LOG.slice(2, 5).map((e) => (
-          <li key={e.id} className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 text-[12px]">
-            <span className="text-muted-foreground tabular-nums">{e.time}</span>
-            <span className="min-w-0"><span className="block truncate font-mono text-[11px]">{e.tool}.{ACTION[e.tool]}</span><span className="block truncate text-[11px] text-muted-foreground">{agentOf(e.agent).name} · #{e.hash}</span></span>
-            <OutcomeBadge outcome={e.outcome} className="h-5 text-[11px]" />
-          </li>
-        ))}
-      </ul>
-    </AppPanel>
-  );
-}

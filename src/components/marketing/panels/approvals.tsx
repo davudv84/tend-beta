@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { BellIcon, CheckIcon, CircleCheckIcon, InboxIcon, XIcon } from "lucide-react";
+import { BellIcon, CheckIcon, CircleCheckIcon, XIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/ui/brand-mark";
@@ -105,29 +105,6 @@ export function ApprovalsPanel() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-    </AppPanel>
-  );
-}
-
-/** One request in small, answerable: for a card in the carousel and the platform section. */
-export function ApprovalsMini({ request = "invoice" }: { request?: RequestKey }) {
-  const t = useT();
-  const k = t.front.kit;
-  const h = t.home.request;
-  const r = REQUESTS.find((x) => x.key === request)!;
-  const [answer, setAnswer] = useState<Answer | null>(null);
-  return (
-    <AppPanel title={t.ui.nav.approvals} icon={InboxIcon} bodyClassName="grid gap-3 p-4">
-      <p className="flex items-center gap-2 text-[12px] font-medium"><span aria-hidden className="size-1.5 rotate-45 bg-amber" />{t.home.dash.stats.waiting}</p>
-      <p className="text-[14px] font-medium">{k.requests[r.key].sentence}</p>
-      <p className="rounded-lg bg-sunken px-3 py-2 text-[12px]">{k.requests[r.key].exact}</p>
-      <div aria-live="polite" className="min-h-10">
-        {answer ? (
-          <p className="flex h-10 items-center gap-2 text-[13px] font-medium">{answer === "allowed" ? <CheckIcon className="size-4 text-primary" strokeWidth={2} aria-hidden /> : <XIcon className="size-4 text-clay" strokeWidth={2} aria-hidden />}{answer === "allowed" ? t.front.demo.toast.allowed : t.front.demo.toast.denied}</p>
-        ) : (
-          <div className="flex gap-2"><button type="button" onClick={() => setAnswer("allowed")} className={cn(buttonClass(), "h-9 px-3 text-[13px]")}>{h.allow}</button><button type="button" onClick={() => setAnswer("denied")} className={cn(buttonClass("secondary"), "h-9 px-3 text-[13px]")}>{h.deny}</button></div>
-        )}
       </div>
     </AppPanel>
   );

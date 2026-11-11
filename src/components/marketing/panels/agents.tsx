@@ -65,32 +65,6 @@ export function AgentsPanel() {
   );
 }
 
-/** Three agents in small: for a card and the menu's preview. */
-export function AgentsMini() {
-  const t = useT();
-  const a = t.front.kit.agents;
-  const [revoked, setRevoked] = useState(false);
-  return (
-    <AppPanel title={t.ui.nav.assistants} icon={BotIcon}>
-      <ul className="divide-y divide-border">
-        {AGENTS.slice(0, 3).map((x, i) => {
-          const off = i === 1 && revoked;
-          return (
-            <li key={x.key} className="flex items-center gap-2.5 px-3 py-2">
-              <AgentMark agent={x.key} className={cn("size-6", off && "opacity-50")} />
-              <span className={cn("min-w-0 flex-1 truncate text-[12px]", off && "text-muted-foreground line-through")}>{x.name}</span>
-              {i === 1 ? (
-                off ? <Badge tone="danger" className="h-5 text-[10.5px]">{a.revoked}</Badge>
-                  : <button type="button" onClick={() => setRevoked(true)} className="h-6 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:text-foreground">{a.revoke}</button>
-              ) : <Badge tone="good" className="h-5 text-[10.5px]">{a.running}</Badge>}
-            </li>
-          );
-        })}
-      </ul>
-    </AppPanel>
-  );
-}
-
 /** The Connect page's four steps, in small: name it, choose what it may do, answer its test request, read the result. */
 export function ConnectPanel() {
   const t = useT();

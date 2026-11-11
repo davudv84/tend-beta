@@ -57,25 +57,6 @@ export function ChecksPanel() {
   );
 }
 
-/** Three checks in small, for a card and the menu's preview. */
-export function ChecksMini() {
-  const t = useT();
-  const p = t.protection;
-  const ids: CheckId[] = ["forbidden_refused", "approval_once", "agent_isolated"];
-  return (
-    <AppPanel title={t.ui.nav.verification} icon={ShieldCheckIcon}>
-      <ul className="divide-y divide-border">
-        {ids.map((id) => (
-          <li key={id} className="grid gap-1 px-3 py-2">
-            <span className="text-[12px] leading-snug">{p.checks[id].title}</span>
-            <Badge tone={STATUS_TONE[EXAMPLE[id]]} className="h-5 justify-self-start text-[10.5px]">{p.status[EXAMPLE[id]]}</Badge>
-          </li>
-        ))}
-      </ul>
-    </AppPanel>
-  );
-}
-
 /** The seven scenarios every integration runs, run on the example one by one, only when asked. */
 export function ScenariosPanel() {
   const t = useT();

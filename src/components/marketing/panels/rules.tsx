@@ -1,25 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { AtSignIcon, CheckIcon, ListChecksIcon, LoaderCircleIcon, ShieldIcon, XIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 import { buttonClass } from "@/ui/primitives";
-import { AppPanel, ExampleTag, PrimaryLink } from "../kit";
+import { AppPanel, ExampleTag, PrimaryLink, useSeen } from "../kit";
 import { ACTION, AGENTS, CALLER, CALLS, DEFAULT_RULES, RULED, agentOf, decide, type Choice, type RuledTool, type ToolId, type Verdict } from "../site-data";
 import { AgentMark, ChoicePicker, VerdictBadge } from "./common";
 
 /** One tool with its rule: the plain name, the recorded name, and the choice. */
-function RuleRow({ tool, value, onChange, small }: { tool: RuledTool; value: Choice; onChange: (c: Choice) => void; small?: boolean }) {
+function RuleRow({ tool, value, onChange }: { tool: RuledTool; value: Choice; onChange: (c: Choice) => void }) {
   const k = useT().front.kit;
   return (
-    <li className={cn("flex justify-between gap-3", small ? "flex-col items-start gap-1.5 px-3 py-2" : "items-center px-4 py-3")}>
+    <li className="flex items-center justify-between gap-3 px-4 py-3">
       <span className="min-w-0">
-        <span className={cn("truncate", small ? "text-[12px]" : "block text-[14px]")}>{k.tools[tool]}</span>
-        <span className={cn("truncate font-mono text-muted-foreground", small ? "ml-2 text-[10.5px]" : "block text-[12px]")}>{tool}.{ACTION[tool]}</span>
+        <span className="block truncate text-[14px]">{k.tools[tool]}</span>
+        <span className="block truncate font-mono text-[12px] text-muted-foreground">{tool}.{ACTION[tool]}</span>
       </span>
-      <ChoicePicker tool={tool} value={value} onChange={onChange} label={k.tools[tool]} small={small} />
+      <ChoicePicker tool={tool} value={value} onChange={onChange} label={k.tools[tool]} />
     </li>
   );
 }
@@ -54,7 +54,7 @@ function Outcome({ tool, verdict, answer, onAnswer }: { tool: ToolId; verdict: V
 function CallList({ value, onPick, className }: { value: ToolId | null; onPick: (tool: ToolId) => void; className?: string }) {
   const k = useT().front.kit;
   return (
-    <ul className={cn("grid gap-1.5", className)}>
+    <ul className={cn("grid grid-cols-[minmax(0,1fr)] gap-1.5", className)}>
       {CALLS.map((tool) => {
         const on = value === tool;
         return (
@@ -99,23 +99,16 @@ export function RulesPanel() {
   );
 }
 
-/** Three rules in small, still changeable: for a card in the carousel and the menu's preview. */
-export function RulesMini() {
-  const k = useT().front.kit;
-  const [rules, setRules] = useState<Record<RuledTool, Choice>>(DEFAULT_RULES);
-  return (
-    <AppPanel title={k.policyOf(AGENTS[0].name)} icon={ShieldIcon}>
-      <ul className="divide-y divide-border">{(["read_ticket", "send_email", "delete_record"] as const).map((x) => <RuleRow key={x} small tool={x} value={rules[x]} onChange={(c) => setRules((r) => ({ ...r, [x]: c }))} />)}</ul>
-      <p className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">{k.unlistedNote}</p>
-    </AppPanel>
-  );
-}
+/** Where one call is on its way through TEND; the homepage's headline over the card names it. */
+export type Stage = "ask" | "check" | "decide" | "ran" | "blocked";
 
 /**
  * The homepage's "Try a tool call": the visitor picks what an agent asks for, TEND checks the rules for a moment, and the answer
- * appears, with Allow once and Don't allow when it waits. Nothing repeats on its own.
+ * appears, with Allow once and Don't allow when it waits. With `autoplay` one call plays through by itself, once, when the card
+ * scrolls into view (asked, checked, held, allowed), and stops for good as soon as the visitor picks or answers anything. Nothing
+ * repeats on its own, and nothing plays under reduced motion.
  */
-export function TryCall() {
+export function TryCall({ autoplay, onStage }: { autoplay?: boolean; onStage?: (stage: Stage) => void }) {
   const t = useT();
   const f = t.front;
   const k = f.kit;
@@ -123,15 +116,26 @@ export function TryCall() {
   const [tool, setTool] = useState<ToolId | null>(null);
   const [checking, setChecking] = useState(false);
   const [answer, setAnswer] = useState<"ran" | "nothing" | null>(null);
+  const [ref, seen] = useSeen<HTMLDivElement>();
+  const touched = useRef(false);
   useEffect(() => {
     if (!checking) return;
     const id = window.setTimeout(() => setChecking(false), reduce ? 0 : 750);
     return () => clearTimeout(id);
   }, [checking, reduce]);
-  const pick = (x: ToolId) => { setTool(x); setAnswer(null); setChecking(true); };
+  useEffect(() => {
+    if (!autoplay || !seen || reduce) return;
+    const ask = window.setTimeout(() => { if (!touched.current) { setTool("send_email"); setAnswer(null); setChecking(true); } }, 900);
+    const allow = window.setTimeout(() => { if (!touched.current) setAnswer("ran"); }, 900 + 750 + 2200);
+    return () => { clearTimeout(ask); clearTimeout(allow); };
+  }, [autoplay, seen, reduce]);
+  const pick = (x: ToolId) => { touched.current = true; setTool(x); setAnswer(null); setChecking(true); };
+  const answerIt = (a: "ran" | "nothing") => { touched.current = true; setAnswer(a); };
   const verdict = tool ? decide(DEFAULT_RULES, tool) : null;
+  const stage: Stage = !tool ? "ask" : checking ? "check" : verdict === "ask" && !answer ? "decide" : verdict === "allow" || answer === "ran" ? "ran" : "blocked";
+  useEffect(() => onStage?.(stage), [stage, onStage]);
   return (
-    <div className="ui-next dark grid grid-cols-1 gap-6 !bg-transparent md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-8" data-theme="dark">
+    <div ref={ref} className="ui-next dark grid grid-cols-1 gap-6 !bg-transparent md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-8" data-theme="dark">
       <div>
         <p className="text-[13px] font-medium text-muted-foreground">{f.tryCall.pick}</p>
         <CallList value={tool} onPick={pick} className="mt-3" />
@@ -158,7 +162,7 @@ export function TryCall() {
               <motion.div key={`${tool}`} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="grid gap-3">
                 <p className="flex items-center gap-2 text-[13px] text-muted-foreground"><AgentMark agent={CALLER[tool]} className="size-5" />{f.tryCall.asks(agentOf(CALLER[tool]).name)}</p>
                 <p className="rounded-lg bg-sunken px-3 py-2 text-[13px]">{k.calls[tool]}</p>
-                <Outcome tool={tool} verdict={verdict!} answer={answer} onAnswer={setAnswer} />
+                <Outcome tool={tool} verdict={verdict!} answer={answer} onAnswer={answerIt} />
               </motion.div>
             )}
           </AnimatePresence>
