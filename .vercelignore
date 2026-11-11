@@ -1,0 +1,19 @@
+# Upload only what the build needs. Everything else stays on this machine: local databases (.data), secrets (.env*, beta-envs),
+# videos (demo-video), Claude settings (.claude), build output (.next) and node_modules (Vercel installs its own).
+/*
+!/src
+!/public
+!/examples
+!/scripts
+!/docs
+!/package.json
+!/package-lock.json
+!/next.config.ts
+!/next-env.d.ts
+!/tsconfig.json
+!/components.json
+!/vercel.json
+!/.nvmrc
+**/node_modules
+**/.DS_Store
+**/__pycache__
