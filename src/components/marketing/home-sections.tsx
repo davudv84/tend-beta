@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { DemoButton } from "@/ui/demo-button";
 import { VERIFIED } from "./hero";
 import { Band, Container, ExploreLink, PrimaryLink, QuietLink, Screen, Terminal, prefersReducedMotion } from "./kit";
-import { Painting } from "./landscape";
+import { SkyPainting } from "./landscape";
 import { LazyMount } from "./lazy";
 import type { Stage } from "./panels/rules";
 import { Reveal } from "./reveal";
@@ -319,7 +319,7 @@ export function Closing({ accounts, demo }: { accounts: boolean; demo: boolean }
   const create = accounts ? "/account/sign-up" : "/operator";
   return (
     <Band label="closing-title" className="relative isolate overflow-hidden">
-      <Painting art="sky" alt={f.art.sky} className="-z-20" position="50% 40%" />
+      <SkyPainting alt={f.art.sky} className="-z-20" />
       <div aria-hidden className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,#181818_0%,rgb(24_24_24/0.35)_35%,rgb(24_24_24/0.35)_65%,#181818_100%)]" />
       <Container className="py-24 text-center md:py-36">
         <h2 id="closing-title" className="mk-display mx-auto text-[clamp(2.25rem,5.4vw,4rem)]">{f.closing.title.map((l, i) => <span key={l} className="block">{l}{i === 0 ? " " : ""}</span>)}</h2>

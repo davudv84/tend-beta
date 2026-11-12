@@ -38,7 +38,7 @@ export function outcomeOf(e: TimelineEvent): Outcome | null {
   }
 }
 
-const IN_GROUP: Record<Exclude<Group, "all">, Outcome[]> = {
+export const IN_GROUP: Record<Exclude<Group, "all">, Outcome[]> = {
   approvals: ["needs_approval", "approved", "rejected", "expired", "withdrawn", "review"],
   allowed: ["allowed", "ran"],
   blocked: ["blocked", "rejected"],

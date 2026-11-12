@@ -5,7 +5,7 @@ import { INTEGRATIONS, statusOf } from "@/lib/integrations-catalog";
 import { DemoButton } from "@/ui/demo-button";
 import { HeroDemo } from "./demo/hero-demo";
 import { Container, PrimaryLink, QuietLink } from "./kit";
-import { Painting } from "./landscape";
+import { HeroPainting } from "./landscape";
 
 /** Verified integrations, from the catalog and the verification report; "verified" cannot be claimed from here. */
 export const VERIFIED = INTEGRATIONS.filter((i) => statusOf(i) === "verified");
@@ -21,10 +21,8 @@ export function Hero({ accounts, demo }: { accounts: boolean; demo: boolean }) {
   const create = accounts ? "/account/sign-up" : "/operator";
   return (
     <section aria-labelledby="hero-title" className="relative isolate overflow-hidden">
-      <Painting art="valley" alt={f.art.valley} preload className="-z-20" position="50% 42%" />
-      {/* A soft edge under the header, and the bottom third fading to the page. */}
-      <div aria-hidden className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,#181818_0%,rgb(24_24_24/0)_14%,rgb(24_24_24/0)_62%,#181818_100%)]" />
-      <Container className="flex flex-col items-center pt-14 pb-16 text-center md:pt-20 md:pb-24">
+      <HeroPainting alt={f.art.valley} />
+      <Container className="flex flex-col items-center pt-14 pb-12 text-center md:pt-20 md:pb-14">
         <h1 id="hero-title" className="mk-display max-w-[16ch] text-[clamp(2.6rem,6.4vw,5.25rem)]">{f.title}</h1>
         <p className="mt-5 max-w-[44ch] text-[17px] leading-[1.45] text-foreground/80 md:text-[19px]">{f.body}</p>
         <div className="mt-8 grid w-full max-w-[360px] gap-2.5 sm:flex sm:w-auto sm:max-w-none sm:justify-center">
@@ -33,8 +31,9 @@ export function Hero({ accounts, demo }: { accounts: boolean; demo: boolean }) {
           {demo ? <QuietLink href={create} size="lg" className="bg-[#181818]/40 backdrop-blur-sm">{f.create}</QuietLink> : <QuietLink href="/how-it-works" size="lg" className="bg-[#181818]/40 backdrop-blur-sm">{f.hero.howItWorks}</QuietLink>}
         </div>
         {demo && <p className="mt-3 text-[13px] text-foreground/60">{f.liveDemoNote}</p>}
-        <div className="mt-12 w-full text-left md:mt-14"><HeroDemo /></div>
       </Container>
+      {/* The desktop window is wider than the text column; the phone is centred in it. */}
+      <div className="mx-auto w-full max-w-[1320px] px-5 pb-16 text-left sm:px-8 md:pb-24"><HeroDemo /></div>
     </section>
   );
 }

@@ -56,7 +56,7 @@ export function ProductPage({ slug, accounts, demo }: { slug: ProductSlug; accou
 
       <Container className="pb-14 md:pb-20">
         <h2 className="sr-only">{p.main[0]}</h2>
-        <LazyMount className="min-h-[560px]">{page.main}</LazyMount>
+        <LazyMount className={slug === "agents" ? "min-h-[270px]" : "min-h-[560px]"}>{page.main}</LazyMount>
         <Caption title={p.main[0]} body={p.main[1]} link={p.main[2]} href={page.href[0]} className="mt-8" />
       </Container>
 

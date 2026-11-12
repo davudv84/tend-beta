@@ -1,0 +1,23 @@
+{
+  "valley": {
+    "widths": [
+      1024,
+      1280,
+      1440,
+      1810
+    ],
+    "aspect": 2.2019
+  },
+  "valley-tall": {
+    "widths": [
+      480
+    ],
+    "aspect": 0.5839
+  },
+  "sky": {
+    "widths": [
+      720
+    ],
+    "aspect": 2.88
+  }
+}
