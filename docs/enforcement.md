@@ -14,8 +14,12 @@ that performs it asks first and obeys the answer.
   and only if the agent reports it.
 - Enforcement is real only when the credential that performs the action is **not** held by the agent: it lives in a tool
   gateway, an MCP proxy or the target service, and that component refuses to act without a consumed authorization.
-  The example in `examples/claude-agent/` is the cooperative form, a wrapper inside the agent's own process. It
-  demonstrates the protocol; it is not a security boundary against a compromised agent.
+  **This gateway model is the recommended default — use it for anything that moves money or touches a real system.** See
+  [gateway.md](gateway.md).
+- The example in `examples/claude-agent/` is the **cooperative** form, a wrapper inside the agent's own process. It is
+  quick to add and fine for a demo or an agent you already trust, but it **demonstrates the protocol; it is not a security
+  boundary against a compromised agent** — one that skips the wrapper, or holds the credential itself, acts without TEND.
+  Do not rely on it for real enforcement; put the credential behind the gateway instead.
 
 ## The flow
 
@@ -79,6 +83,10 @@ POST /api/v1/agents/{id}/policy      (operator session)
 - **Spending always needs a person.** For the gateway tools that move money (`pay_invoice`), `allow` is never honoured:
   saving a policy with such a rule is refused (422 `spend_requires_approval`), and a policy saved earlier is evaluated as
   `approve`. Tend can only recognise the tools it knows; the tool names of your own agent are yours to govern.
+- **No amount limits on gateway spend tools.** A gateway request carries the tool, action, resource and detail Tend derived,
+  never raw arguments, so a `when` condition on a gateway spend tool (e.g. "approve when amount ≤ 500") can never read the
+  amount and would silently never apply. Saving such a rule is **refused (422)** rather than giving a false sense of a cap;
+  the amount is in the `detail` a person reads and confirms on every approval.
 - **The permissions screen.** On a connected agent's page, operators choose per gateway tool: *Allow* (`allow`), *Ask me
   first* (`approve`) or *Never* (`deny`). It builds ordinary rules and saves them through the endpoint above; it
   shows what `GET /api/v1/agents/{id}/policy` reports (the decision the real evaluator would make per tool) and re-reads it

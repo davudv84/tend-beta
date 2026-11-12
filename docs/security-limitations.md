@@ -16,7 +16,8 @@ Read this before you put anything real behind TEND. This beta is for controlled 
 - **Runs each authorized call at most once.** Allowed calls are authorized and spent in one step; a retry after a lost answer, or the same
   tool-call id delivered twice, is refused rather than run again.
 - **Keeps a record.** Requests, decisions, policy changes and revocations are written to an append-only log in the same transaction as the change.
-  Each entry is hash-chained to the one before it, so a changed, removed or inserted entry shows up when the chain is checked (`npm run tend -- audit-verify`).
+  Each entry is hash-chained to the one before it, with its own sequence number bound into the hash, so a changed, removed or inserted entry shows up when the chain is checked (`npm run tend -- audit-verify`).
+  The command prints a **checkpoint** (first and head sequence numbers and hashes) to keep outside TEND; passing it back on a later run (`--checkpoint …`) also catches a deleted prefix of the log or an altered oldest entry, which a bare walk and a kept head hash alone would miss.
   Visitors of a public instance see only the shape of activity, never rules or request contents.
 - **Separate identities.** Each agent has its own key; revoking one does not affect another, and no agent can see or use another's approvals.
 
@@ -39,7 +40,7 @@ Read this before you put anything real behind TEND. This beta is for controlled 
   applies, an allow rule does not, so padding or reshaping an argument can make a request stricter, never looser. String comparisons ignore
   case; numbers and text are compared as text (1001 and "1001" are the same value).
 - **The hash chain detects tampering, it does not prevent it.** Someone who can write to the database can rewrite history and recompute the chain.
-  Keep the head hash that `audit-verify` prints somewhere outside TEND and compare it later.
+  Keep the **checkpoint** that `audit-verify` prints somewhere outside TEND and re-check against it (`--checkpoint …`): a rewrite up to that point, a deleted prefix, or an altered oldest entry no longer matches what you kept. Without a kept checkpoint, a full rewrite-and-recompute by a database owner is still undetectable.
 - **It cannot judge what a request means.** It binds an approval to exactly what was asked; if your code describes one thing and does another,
   TEND cannot tell. People approving can be tired or misled by the text they are shown.
 - **At most once, not exactly once.** If an agent crashes after spending an approval, the action ran zero times and only a missing report shows it.

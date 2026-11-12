@@ -11,7 +11,7 @@
 //   npm run tend -- simulate "<central policy>" --rule tool:action:effect [...]   what the change would have decided (read-only)
 //   npm run tend -- simulate --agent "<agent name>" --rule ... [--days 30]         an agent's own rules; --assign "<agent>" for a new central policy
 //   npm run tend -- audit [--agent "<agent name>"] [--last 30]     what TEND recorded, oldest first
-//   npm run tend -- audit-verify                                  checks the log's hash chain; keep the printed head hash somewhere else
+//   npm run tend -- audit-verify [--checkpoint "firstSeq:firstHash:headSeq:head"]   checks the hash chain; keep the printed checkpoint and pass it back later
 //
 // Another address: TEND_URL=http://localhost:3100 npm run tend -- status
 import "./node-check.mjs";
@@ -146,9 +146,20 @@ if (cmd === "status") {
   for (const a of r.agents) console.log(`  ${a.name}: ${a.actions} action(s), ${a.changed} decided differently`);
   for (const x of r.examples.slice(0, 10)) console.log(`    ${names[x.agentId] ?? x.agentId}  ${x.tool}.${x.action}${x.resource ? ` ${x.resource}` : ""}: ${x.was} -> ${x.would} (${x.reason})`);
 } else if (cmd === "audit-verify") {
-  const r = (await call("GET", "/api/admin/audit")).data;
-  if (r.ok) console.log(`Audit chain intact: ${r.checked} event(s) checked${r.firstChained ? ` from #${r.firstChained}` : ""}. Head hash: ${r.head ?? "none yet"}\nKeep this hash outside TEND; a history rewritten later will not end in it.`);
-  else { console.log(`AUDIT CHAIN BROKEN at event #${r.brokenAt}: ${r.reason} (${r.checked} checked before it).`); process.exitCode = 1; }
+  // Optionally compare against a checkpoint kept from an earlier run: --checkpoint "firstSeq:firstHash:headSeq:head"
+  const cp = flags("checkpoint")[0];
+  let qs = "";
+  if (cp) {
+    const [firstSeq, firstHash, headSeq, head] = cp.split(":");
+    qs = "?" + new URLSearchParams(Object.entries({ firstSeq, firstHash, headSeq, head }).filter(([, v]) => v)).toString();
+  }
+  const r = (await call("GET", `/api/admin/audit${qs}`)).data;
+  if (r.ok) {
+    console.log(`Audit chain intact: ${r.checked} event(s) checked${r.firstChained ? ` from #${r.firstChained}` : ""}.`);
+    if (r.gaps?.length) console.log(`Note: ${r.gaps.length} sequence gap(s) (${r.gaps.slice(0, 5).join(", ")}${r.gaps.length > 5 ? ", …" : ""}). Occasional gaps are normal (rolled-back transactions); a checkpoint turns a gap before it into a hard failure.`);
+    console.log(`Checkpoint to keep outside TEND:  --checkpoint "${r.firstChained}:${r.firstHash}:${r.headSeq}:${r.head}"`);
+    console.log(`Re-run later with that flag: a cut prefix, an altered oldest event, or a rewrite up to it will then be caught.`);
+  } else { console.log(`AUDIT CHAIN BROKEN at event #${r.brokenAt}: ${r.reason} (${r.checked} checked before it).`); process.exitCode = 1; }
 } else if (cmd === "audit") {
   const only = flags("agent").length ? new Set(await agentIds(flags("agent"))) : null;
   const last = Number(flags("last")[0] ?? 30);

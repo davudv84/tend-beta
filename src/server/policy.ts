@@ -149,7 +149,12 @@ export type PolicyResult = { ok: true; rules: Rule[] } | { ok: false; error: str
 /** What is wrong with a parsed policy that is otherwise well formed, if anything. Checked when a policy is saved. */
 export function policyProblem(rules: Rule[]): string | undefined {
   const i = rules.findIndex((r) => r.effect === "allow" && NEVER_AUTOMATIC.has(r.tool));
-  return i < 0 ? undefined : `rule ${i + 1}: ${rules[i].tool} spends money, so it can only ask for approval or be denied`;
+  if (i >= 0) return `rule ${i + 1}: ${rules[i].tool} spends money, so it can only ask for approval or be denied`;
+  // A `when` on a gateway spend tool would silently never apply: the gateway asks with the tool, action, resource and detail it derived,
+  // never raw arguments, so TEND cannot read an amount as a condition. Refuse it rather than let an operator believe they capped a payment —
+  // the amount is in the detail a person reads and approves.
+  const j = rules.findIndex((r) => r.when && NEVER_AUTOMATIC.has(r.tool));
+  return j < 0 ? undefined : `rule ${j + 1}: ${rules[j].tool} spends money and TEND can't read its amount as a "when" condition, so a limit here would never take effect — require approval and a person confirms the amount shown.`;
 }
 
 /** Strict: one bad rule, an unknown key or a wrong type invalidates the whole policy (which then denies everything). */
