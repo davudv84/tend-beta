@@ -40,7 +40,7 @@ export function Hero({ accounts, demo, images }: { accounts: boolean; demo: bool
 
       {/* The app in a frame, the picture behind it, as sim.ai shows its own workspace. */}
       <div className="mt-12 px-3 sm:px-5 md:mt-16">
-        <div className="relative isolate mx-auto max-w-[1480px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#121212] px-3 pt-3 pb-3 sm:px-6 sm:pt-6 lg:px-[6%] lg:pt-[4.5%] lg:pb-[4.5%]">
+        <div className="relative isolate mx-auto max-w-[1480px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#121212] px-3 pt-7 pb-10 sm:px-6 sm:pt-10 sm:pb-14 lg:px-[6%] lg:pt-[4.5%] lg:pb-[4.5%]">
           <Landscape src={images.hero} alt={f.hero.landscape} preload sizes="(max-width: 1480px) 100vw, 1480px" position="center 62%" className="-z-10" />
           <div aria-hidden className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,rgb(18_18_18/0.25),rgb(18_18_18/0.05)_40%,rgb(18_18_18/0.35))]" />
           <HeroDemo />

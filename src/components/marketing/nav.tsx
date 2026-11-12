@@ -34,6 +34,19 @@ export function Nav({ accounts }: { accounts: boolean }) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [preview, setPreview] = useState<PreviewKey>("overview");
   const [drawer, setDrawer] = useState(false);
+  // On a phone the bar steps out of the way while reading down the page and comes back the moment the reader scrolls up.
+  const [tucked, setTucked] = useState(false);
+  useEffect(() => {
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (Math.abs(y - last) < 8) return;
+      setTucked(y > last && y > 160);
+      last = y;
+    };
+    addEventListener("scroll", onScroll, { passive: true });
+    return () => removeEventListener("scroll", onScroll);
+  }, []);
   const closing = useRef<number | null>(null);
   const bar = useRef<HTMLDivElement>(null);
   const signIn = accounts ? "/account/sign-in" : "/operator";
@@ -79,11 +92,11 @@ export function Nav({ accounts }: { accounts: boolean }) {
     <>
       <div className="border-b border-white/[0.06] bg-[#141414]">
         <Container className="flex h-9 items-center justify-center gap-3 text-[12.5px]">
-          <span className="truncate text-foreground/85">{f.top.text}</span>
-          <Link href="/security" className="shrink-0 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{f.top.link}</Link>
+          <span className="truncate text-foreground/85"><span className="sm:hidden">{f.top.short}</span><span className="hidden sm:inline">{f.top.text}</span></span>
+          <Link href="/security" className="shrink-0 text-muted-foreground underline underline-offset-4 decoration-white/25 hover:text-foreground sm:no-underline sm:hover:underline"><span className="sm:hidden">{f.top.shortLink}</span><span className="hidden sm:inline">{f.top.link}</span></Link>
         </Container>
       </div>
-      <header className="sticky top-0 z-40">
+      <header className={cn("sticky top-0 z-40 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none lg:translate-y-0", tucked && !drawer && "max-lg:-translate-y-full")}>
         <div ref={bar} onPointerLeave={(e) => e.pointerType === "mouse" && later()} onPointerEnter={() => closing.current && clearTimeout(closing.current)} className={cn("relative border-b bg-[#181818]/90 backdrop-blur-md transition-colors", menu ? "border-white/[0.08]" : "border-transparent")}>
           <Container className="flex h-16 items-center justify-between gap-6">
             <Logo />
@@ -147,42 +160,48 @@ function Preview({ k }: { k: PreviewKey }) {
   );
 }
 
-/** The phone's menu: everything from the header, grouped, with the two buttons and the language at the bottom. */
+/**
+ * The phone's menu, laid out as sim.ai's: the logo and close; sign in and how it works side by side in one pill, the main button under
+ * them; then plain lists, grouped, with the language at the foot. It slides in from the top and keeps clear of the home indicator.
+ */
 function Drawer({ open, setOpen, products, resources, signIn, create }: { open: boolean; setOpen: (v: boolean) => void; products: [string, string, string, string][]; resources: [string, string, string, string][]; signIn: string; create: string }) {
   const t = useT();
   const f = t.front;
   const close = () => setOpen(false);
   const group = (title: string, items: [string, string, string, string][]) => (
     <div>
-      <p className="px-2 text-[12px] text-muted-foreground">{title}</p>
-      <ul className="mt-2 grid">{items.map(([key, label, , href]) => <li key={key}><Link href={href} onClick={close} className="flex items-center justify-between rounded-lg px-2 py-2.5 text-[16px] hover:bg-white/5">{label}<ChevronRightIcon className="size-4 text-muted-foreground" strokeWidth={1.75} aria-hidden /></Link></li>)}</ul>
+      <p className="text-[12.5px] text-muted-foreground">{title}</p>
+      <ul className="mt-1.5 grid">{items.map(([key, label, , href]) => <li key={key}><Link href={href} onClick={close} className="mk-press -mx-2 flex rounded-lg px-2 py-2 text-[16px] text-foreground/90 active:bg-white/[0.06]">{label}</Link></li>)}</ul>
     </div>
   );
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger aria-label={f.nav.menu} className="-mr-2 grid size-11 place-items-center rounded-full text-foreground outline-none lg:hidden">
+      <Dialog.Trigger aria-label={f.nav.menu} className="mk-press -mr-2 grid size-11 place-items-center rounded-full text-foreground outline-none lg:hidden">
         <MenuIcon className="size-5" strokeWidth={1.75} aria-hidden />
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         {/* The drawer is rendered at the end of the document, so it carries the site's scope itself. */}
-        <Dialog.Content aria-describedby={undefined} className="mk fixed inset-0 z-50 flex flex-col overflow-y-auto bg-[#181818] px-5 pt-4 pb-6 outline-none">
+        <Dialog.Content aria-describedby={undefined} className="mk fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain bg-[#181818] px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] outline-none duration-300 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-3 motion-reduce:animate-none">
           <Dialog.Title className="sr-only">{f.nav.menu}</Dialog.Title>
           <div className="flex h-12 items-center justify-between">
             <Logo />
-            <Dialog.Close aria-label={f.nav.closeMenu} className="-mr-2 grid size-11 place-items-center rounded-full text-muted-foreground outline-none hover:text-foreground">
-              <XIcon className="size-5" strokeWidth={1.75} aria-hidden />
+            <Dialog.Close aria-label={f.nav.closeMenu} className="mk-press grid size-9 place-items-center rounded-full border border-white/[0.12] text-muted-foreground outline-none hover:text-foreground">
+              <XIcon className="size-4" strokeWidth={1.75} aria-hidden />
             </Dialog.Close>
           </div>
-          <nav aria-label={f.nav.label} className="mt-6 grid gap-8">
+          <div className="mt-5 grid gap-2.5">
+            <div className="grid h-11 grid-cols-2 rounded-full border border-white/[0.12] p-1 text-[14px]">
+              <Link href={signIn} onClick={close} className="mk-press grid place-items-center rounded-full text-foreground/90 active:bg-white/[0.08]">{f.signIn}</Link>
+              <Link href="/how-it-works" onClick={close} className="mk-press grid place-items-center rounded-full text-foreground/90 active:bg-white/[0.08]">{f.hero.howItWorks}</Link>
+            </div>
+            <Link href={create} onClick={close} className="mk-press relative flex h-12 items-center justify-center rounded-full bg-white text-[15px] font-medium text-[#141414]">{f.create}<ChevronRightIcon className="absolute right-4 size-4" strokeWidth={2} aria-hidden /></Link>
+          </div>
+          <nav aria-label={f.nav.label} className="mt-9 grid gap-7">
             {group(f.nav.product, products)}
             {group(f.nav.resources, resources)}
           </nav>
-          <div className="mt-auto grid gap-2.5 pt-10">
-            <Link href={create} onClick={close} className="flex h-12 items-center justify-center gap-1 rounded-full bg-white text-[15px] font-medium text-[#141414]">{f.create}<ChevronRightIcon className="size-4" strokeWidth={2} aria-hidden /></Link>
-            <Link href={signIn} onClick={close} className="flex h-12 items-center justify-center rounded-full border border-white/[0.14] text-[15px] font-medium">{f.signIn}</Link>
-            <div className="mt-4 flex justify-between border-t border-white/[0.08] pt-4"><LanguageSwitch /></div>
-          </div>
+          <div className="mt-auto pt-10"><div className="flex justify-between border-t border-white/[0.08] pt-4"><LanguageSwitch /></div></div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

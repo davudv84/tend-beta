@@ -587,7 +587,7 @@ export const en = {
     liveDemoOpening: "Opening the demo…",
     liveDemoFailed: "The demo could not be opened. Try again in a moment.",
     skip: "Skip to the content",
-    top: { text: "TEND is in beta, for testing with fictional data.", link: "Read the limitations" },
+    top: { text: "TEND is in beta, for testing with fictional data.", short: "TEND is in beta.", link: "Read the limitations", shortLink: "Limitations" },
     nav: {
       label: "Site", product: "Product", resources: "Resources", security: "Security", docs: "Docs", menu: "Menu", closeMenu: "Close menu",
       overview: "Overview", overviewNote: "How TEND’s screens work together to keep you in charge of your agents.",
@@ -886,6 +886,8 @@ export const en = {
       empty: "All clear. Your agents are waiting on nothing.",
       swipe: "Swipe right to allow once, left to not allow",
       bell: (n: number) => (n === 1 ? "1 request waiting" : `${n} requests waiting`),
+      island: { waiting: (n: number) => `${n} waiting`, allowed: "Allowed once", denied: "Not allowed", ran: "Ran once, exactly as shown", stopped: "Nothing happened" },
+      phone: "TEND on a phone",
     },
     // The pages linked from the homepage. Facts come from TEND's own docs (docs/*.md) and code; what only the owner can give is a marked gap.
     pages: {

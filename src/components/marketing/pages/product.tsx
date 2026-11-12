@@ -12,7 +12,8 @@ import { TERMINALS, type ProductSlug } from "../site-data";
 import type { HomeImages } from "../types";
 
 /** The page's own screen in small, over the headline: the real one, at its real layout. */
-const small = (screen: React.ReactNode) => <Screen inner="w-[480px] md:w-[760px] [zoom:0.6]">{screen}</Screen>;
+// On a phone it runs off the right edge, as sim.ai's does, so it reads as a window into the app rather than a shrunken picture of it.
+const small = (screen: React.ReactNode) => <Screen inner="w-[700px] md:w-[760px] [zoom:0.6]">{screen}</Screen>;
 
 /** What each product page shows: a small screen on top, the big one, two smaller ones, and where each caption's link leads. */
 const PAGES: Record<ProductSlug, { top: React.ReactNode; main: React.ReactNode; a: React.ReactNode; b: React.ReactNode; href: [string, string, string]; cli: string }> = {
@@ -36,7 +37,7 @@ export function ProductPage({ slug, accounts, demo, images }: { slug: ProductSlu
   return (
     <>
       <Container className="pt-14 md:pt-20">
-        <div className="mx-auto max-w-[460px] [mask-image:linear-gradient(to_bottom,black_70%,transparent)]">{page.top}</div>
+        <div className="-mr-5 max-h-[300px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)] sm:-mr-8 md:mx-auto md:max-h-none md:max-w-[460px] md:[mask-image:linear-gradient(to_bottom,black_70%,transparent)]">{page.top}</div>
         <DisplayTitle crumb={f.product.crumb(p.name)} lines={p.title} className="mt-10 pb-16 md:mt-12 md:pb-24" />
       </Container>
 

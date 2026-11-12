@@ -576,7 +576,7 @@ export const de: Dict = {
     liveDemoOpening: "Demo wird geöffnet…",
     liveDemoFailed: "Die Demo konnte nicht geöffnet werden. Versuchen Sie es gleich noch einmal.",
     skip: "Zum Inhalt springen",
-    top: { text: "TEND ist in der Beta, zum Testen mit erfundenen Daten.", link: "Die Grenzen lesen" },
+    top: { text: "TEND ist in der Beta, zum Testen mit erfundenen Daten.", short: "TEND ist in der Beta.", link: "Die Grenzen lesen", shortLink: "Grenzen" },
     nav: {
       label: "Website", product: "Produkt", resources: "Ressourcen", security: "Sicherheit", docs: "Dokumentation", menu: "Menü", closeMenu: "Menü schließen",
       overview: "Übersicht", overviewNote: "Wie die Bildschirme von TEND zusammenspielen, damit Sie über Ihre Agenten entscheiden.",
@@ -873,6 +873,8 @@ export const de: Dict = {
       empty: "Alles erledigt. Ihre Agenten warten auf nichts.",
       swipe: "Nach rechts wischen erlaubt einmal, nach links lehnt ab",
       bell: (n: number) => (n === 1 ? "1 Anfrage wartet" : `${n} Anfragen warten`),
+      island: { waiting: (n: number) => `${n} wartet`, allowed: "Einmal erlaubt", denied: "Nicht erlaubt", ran: "Lief einmal, genau wie angezeigt", stopped: "Nichts ist passiert" },
+      phone: "TEND auf dem Handy",
     },
     pages: {
       gap: (what: string) => `Wird ergänzt: ${what}`,

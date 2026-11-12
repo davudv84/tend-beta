@@ -31,9 +31,9 @@ export function Stats() {
         <p className="mk-heading max-w-[24ch] text-[clamp(1.4rem,2.4vw,1.75rem)] leading-[1.3] text-foreground">{s.statement}</p>
         <dl className="divide-y divide-white/[0.08] border-y border-white/[0.08] md:border-t-0">
           {rows.map(([n, label]) => (
-            <Reveal key={label} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] items-center gap-6 py-7 md:py-9">
-              <dt className="mk-display order-1 text-[clamp(3rem,6vw,4.75rem)] tabular-nums">{n}</dt>
-              <dd className="order-2 text-[14px] leading-snug text-muted-foreground">{label}</dd>
+            <Reveal key={label} className="grid gap-2 py-7 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] sm:items-center sm:gap-6 md:py-9">
+              <dt className="mk-display order-1 text-[clamp(3.25rem,6vw,4.75rem)] tabular-nums">{n}</dt>
+              <dd className="order-2 max-w-[34ch] text-[14px] leading-snug text-muted-foreground">{label}</dd>
             </Reveal>
           ))}
         </dl>
@@ -228,10 +228,12 @@ export function Governance() {
         <ul className="mt-12 grid gap-4 sm:grid-cols-3 md:mt-16">
           {cards.map(([key, Icon, href], i) => (
             <Reveal as="li" key={key} delay={i * 70}>
-              <Link href={href} className="group flex h-full min-h-[300px] flex-col items-center justify-end rounded-2xl border border-white/[0.08] bg-mk-surface px-6 pt-10 pb-8 text-center outline-none transition-colors hover:border-white/[0.18] md:min-h-[380px]">
-                <Icon aria-hidden className="mb-auto size-24 text-foreground/75 md:size-28" strokeWidth={0.75} />
-                <span className="mt-10 text-[17px] font-medium">{g.does[key]}</span>
-                <span className="mt-1.5 inline-flex items-center gap-1 text-[13px] text-muted-foreground group-hover:text-foreground">{g.details}<ArrowUpRightIcon className="size-3.5" strokeWidth={1.75} aria-hidden /></span>
+              <Link href={href} className="mk-press group flex h-full items-center gap-5 rounded-2xl border border-white/[0.08] bg-mk-surface px-5 py-5 outline-none hover:border-white/[0.18] sm:min-h-[300px] sm:flex-col sm:justify-end sm:gap-0 sm:px-6 sm:pt-10 sm:pb-8 sm:text-center md:min-h-[380px]">
+                <Icon aria-hidden className="size-14 shrink-0 text-foreground/75 sm:mb-auto sm:size-24 md:size-28" strokeWidth={0.75} />
+                <span className="flex min-w-0 flex-col sm:mt-10 sm:items-center">
+                  <span className="text-[17px] font-medium">{g.does[key]}</span>
+                  <span className="mt-1 inline-flex items-center gap-1 text-[13px] text-muted-foreground group-hover:text-foreground sm:mt-1.5">{g.details}<ArrowUpRightIcon className="size-3.5" strokeWidth={1.75} aria-hidden /></span>
+                </span>
               </Link>
             </Reveal>
           ))}

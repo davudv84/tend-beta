@@ -432,6 +432,32 @@
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
 }
+/* Touch: no grey flash on tap, no double-tap delay, and buttons that give a little when pressed, as native controls do. */
+.mk a,
+.mk button,
+.mk [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.mk .mk-press {
+  transition: transform 160ms var(--ease-out), background-color 150ms, border-color 150ms, color 150ms;
+}
+.mk .mk-press:active {
+  transform: scale(0.97);
+}
+/* On a touch screen a field under 16px makes iOS zoom the page when it is tapped; keep fields at 16px there. */
+@media (pointer: coarse) {
+  .mk input:not([type="checkbox"]):not([type="radio"]),
+  .mk textarea,
+  .mk select {
+    font-size: max(16px, 1em);
+  }
+}
+/* Text a phone shouldn't enlarge on its own when turned sideways. */
+.mk {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 /* The page behind the homepage is black too, so overscroll never shows white. */
 :root:has(.mk) {
   background: #181818;
