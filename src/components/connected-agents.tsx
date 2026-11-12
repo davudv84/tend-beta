@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { timeAgo, useNow } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import type { Provider } from "@/lib/types";

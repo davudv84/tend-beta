@@ -64,8 +64,8 @@ function NavLink({ item: it, waiting, mode }: { item: Item; waiting: number; mod
       <span className={label(mode)}>{name}</span>
       {it.key === "approvals" && waiting > 0 && (
         <span className={navBadgeClass(mode)}>
-          <span className="sr-only">{t.ui.waitingLabel(waiting)}: </span>
-          {waiting}
+          <span className="sr-only">, {t.ui.waitingLabel(waiting)}</span>
+          <span aria-hidden>{waiting}</span>
         </span>
       )}
     </Link>

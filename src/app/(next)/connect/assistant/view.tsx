@@ -9,7 +9,7 @@ import { ConnectHelp, HOST_NAME, InstallSteps, PresetPicker, ProtectionTest, isH
 import { IntegrationLogo } from "@/components/integration-logo";
 import { SignIn } from "@/components/sign-in";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { INTEGRATIONS } from "@/lib/integrations-catalog";
 import { useStore } from "@/lib/store";
 import type { Provider } from "@/lib/types";

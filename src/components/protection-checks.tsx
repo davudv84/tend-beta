@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dot, type Tone } from "@/components/kit";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { dateTime } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { outOfDate, type CheckGroup, type CheckResult, type CheckStatus, type VerificationRun } from "@/lib/verification";

@@ -23,7 +23,7 @@ import { clock } from "@/lib/format";
 import { AnswerCard } from "@/ui/answer-card";
 import { Badge, Card } from "@/ui/primitives";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { KIND_TONE, sentence } from "@/components/feed";
 import { logEvent } from "@/lib/derive";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

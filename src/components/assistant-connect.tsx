@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { coverageOf, PRESETS, type Covered, presetOf, presetRules, TEST_COMMANDS, type PresetId } from "@/lib/agent-presets";
 import { useNow } from "@/lib/format";
 import type { PolicyView, RuleLike } from "@/lib/permissions";

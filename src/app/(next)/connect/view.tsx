@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { TEST_SCRIPT, agentSnippet, connectCommand, maskedCommand } from "@/lib/connect-snippet";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { INTEGRATIONS, STATUS_ORDER, statusOf } from "@/lib/integrations-catalog";

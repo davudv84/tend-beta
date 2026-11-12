@@ -2,25 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIcon, BookOpenIcon, BotIcon, ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, LayoutGridIcon, MenuIcon, ShieldCheckIcon, ShieldIcon, XIcon } from "lucide-react";
-import { Dialog } from "radix-ui";
-import { LanguageSwitch } from "@/components/language-switch";
+import dynamic from "next/dynamic";
+import { ActivityIcon, BookOpenIcon, BotIcon, ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, LayoutGridIcon, MenuIcon, ShieldCheckIcon, ShieldIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
-import { StatsGrid } from "@/ui/stats-grid";
-import { AppPanel, Container, PrimaryLink, Screen } from "./kit";
+import { Container, PrimaryLink } from "./kit";
 import { Logo } from "./logo";
-import { ActivityPanel } from "./panels/activity";
-import { AgentsPanel } from "./panels/agents";
-import { ApprovalsPanel } from "./panels/approvals";
-import { ChecksPanel } from "./panels/checks";
-import { RulesPanel } from "./panels/rules";
 import { PRODUCTS, type ProductSlug } from "./site-data";
 
+const Preview = dynamic(() => import("./nav-preview"), { ssr: false });
+const Drawer = dynamic(() => import("./nav-drawer"), { ssr: false });
+
 const ICON: Record<ProductSlug | "overview", typeof ShieldIcon> = { overview: LayoutGridIcon, approvals: CircleCheckIcon, rules: ShieldIcon, activity: ActivityIcon, agents: BotIcon, checks: ShieldCheckIcon };
-const RESOURCES = [["docs", "/docs"], ["howItWorks", "/how-it-works"], ["report", "/verification-report"], ["security", "/security"], ["about", "/about"], ["contact", "/contact"]] as const;
+const RESOURCES = [["docs", "/docs"], ["howItWorks", "/how-it-works"], ["threatModel", "/threat-model"], ["compare", "/compare"], ["report", "/verification-report"], ["security", "/security"], ["changelog", "/changelog"], ["about", "/about"], ["contact", "/contact"]] as const;
 type Menu = "product" | "resources";
-type PreviewKey = ProductSlug | "overview" | (typeof RESOURCES)[number][0];
+export type PreviewKey = ProductSlug | "overview" | (typeof RESOURCES)[number][0];
 
 /**
  * The site's header, as on sim.ai: a thin line about the beta, then a bar that stays at the top with the logo, Product and Resources
@@ -34,6 +30,8 @@ export function Nav({ accounts }: { accounts: boolean }) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [preview, setPreview] = useState<PreviewKey>("overview");
   const [drawer, setDrawer] = useState(false);
+  const [drawerLoaded, setDrawerLoaded] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
   // On a phone the bar steps out of the way while reading down the page and comes back the moment the reader scrolls up.
   const [tucked, setTucked] = useState(false);
   useEffect(() => {
@@ -91,7 +89,7 @@ export function Nav({ accounts }: { accounts: boolean }) {
   return (
     <>
       <div className="border-b border-white/[0.06] bg-[#141414]">
-        <Container className="flex h-9 items-center justify-center gap-3 text-[12.5px]">
+        <Container className="flex h-9 items-center justify-center gap-3 text-[12.5px] pointer-coarse:h-11">
           <span className="truncate text-foreground/85"><span className="sm:hidden">{f.top.short}</span><span className="hidden sm:inline">{f.top.text}</span></span>
           <Link href="/security" className="shrink-0 text-muted-foreground underline underline-offset-4 decoration-white/25 hover:text-foreground sm:no-underline sm:hover:underline"><span className="sm:hidden">{f.top.shortLink}</span><span className="hidden sm:inline">{f.top.link}</span></Link>
         </Container>
@@ -110,7 +108,10 @@ export function Nav({ accounts }: { accounts: boolean }) {
               <Link href={signIn} className="inline-flex h-8 items-center rounded-full border border-white/[0.12] px-3.5 text-[13.5px] text-foreground/90 outline-none hover:bg-white/[0.06]">{f.signIn}</Link>
               <PrimaryLink href={create} className="h-8 px-3.5 text-[13.5px]">{f.create}</PrimaryLink>
             </div>
-            <Drawer open={drawer} setOpen={setDrawer} products={products} resources={resources} signIn={signIn} create={create} />
+            <button ref={menuButton} type="button" aria-label={f.nav.menu} aria-haspopup="dialog" aria-expanded={drawer} onClick={() => { setDrawerLoaded(true); setDrawer(true); }} className="mk-press -mr-2 grid size-11 place-items-center rounded-full text-foreground outline-none lg:hidden">
+              <MenuIcon className="size-5" strokeWidth={1.75} aria-hidden />
+            </button>
+            {drawerLoaded && <Drawer open={drawer} setOpen={setDrawer} products={products} resources={resources} signIn={signIn} create={create} returnTo={menuButton} />}
           </Container>
 
           {menu && (
@@ -140,70 +141,5 @@ export function Nav({ accounts }: { accounts: boolean }) {
         </div>
       </header>
     </>
-  );
-}
-
-/** The live screen shown beside the menu for the item under the pointer. */
-function Preview({ k }: { k: PreviewKey }) {
-  const t = useT();
-  const s = t.home.dash.stats;
-  // The app's own screens at their real layout, made smaller.
-  const real = k === "approvals" ? <ApprovalsPanel /> : k === "rules" ? <RulesPanel /> : k === "activity" ? <ActivityPanel /> : k === "agents" ? <AgentsPanel /> : k === "checks" ? <ChecksPanel /> : null;
-  if (k === "approvals" || k === "rules" || k === "activity" || k === "agents" || k === "checks") return <Screen inner="w-[760px] [zoom:0.6]">{real}</Screen>;
-  if (k === "overview") return <AppPanel title={t.ui.nav.home} icon={LayoutGridIcon} bodyClassName="p-3"><StatsGrid stats={[{ label: s.running, value: 3, note: s.of(4) }, { label: s.waiting, value: 2, note: s.now }, { label: s.auto, value: 14, note: s.day }, { label: s.blocked, value: 2, note: s.day }]} className="lg:grid-cols-2" /></AppPanel>;
-  const c = t.front.kit.connect;
-  return (
-    <AppPanel title={t.front.nav.res[k][0]} icon={BookOpenIcon} bodyClassName="grid gap-2 p-4">
-      <p className="text-[13px] text-muted-foreground">{t.front.nav.res[k][1]}</p>
-      <ol className="mt-1 grid gap-1.5">{c.steps.map((s2, i) => <li key={s2} className="flex items-center gap-2.5 text-[13px]"><span className="grid size-5 place-items-center rounded-full border border-border text-[11px] tabular-nums">{i + 1}</span>{s2}</li>)}</ol>
-    </AppPanel>
-  );
-}
-
-/**
- * The phone's menu, laid out as sim.ai's: the logo and close; sign in and how it works side by side in one pill, the main button under
- * them; then plain lists, grouped, with the language at the foot. It slides in from the top and keeps clear of the home indicator.
- */
-function Drawer({ open, setOpen, products, resources, signIn, create }: { open: boolean; setOpen: (v: boolean) => void; products: [string, string, string, string][]; resources: [string, string, string, string][]; signIn: string; create: string }) {
-  const t = useT();
-  const f = t.front;
-  const close = () => setOpen(false);
-  const group = (title: string, items: [string, string, string, string][]) => (
-    <div>
-      <p className="text-[12.5px] text-muted-foreground">{title}</p>
-      <ul className="mt-1.5 grid">{items.map(([key, label, , href]) => <li key={key}><Link href={href} onClick={close} className="mk-press -mx-2 flex rounded-lg px-2 py-2 text-[16px] text-foreground/90 active:bg-white/[0.06]">{label}</Link></li>)}</ul>
-    </div>
-  );
-  return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger aria-label={f.nav.menu} className="mk-press -mr-2 grid size-11 place-items-center rounded-full text-foreground outline-none lg:hidden">
-        <MenuIcon className="size-5" strokeWidth={1.75} aria-hidden />
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        {/* The drawer is rendered at the end of the document, so it carries the site's scope itself. */}
-        <Dialog.Content aria-describedby={undefined} className="mk fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain bg-[#181818] px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] outline-none duration-300 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-3 motion-reduce:animate-none">
-          <Dialog.Title className="sr-only">{f.nav.menu}</Dialog.Title>
-          <div className="flex h-12 items-center justify-between">
-            <Logo />
-            <Dialog.Close aria-label={f.nav.closeMenu} className="mk-press grid size-9 place-items-center rounded-full border border-white/[0.12] text-muted-foreground outline-none hover:text-foreground">
-              <XIcon className="size-4" strokeWidth={1.75} aria-hidden />
-            </Dialog.Close>
-          </div>
-          <div className="mt-5 grid gap-2.5">
-            <div className="grid h-11 grid-cols-2 rounded-full border border-white/[0.12] p-1 text-[14px]">
-              <Link href={signIn} onClick={close} className="mk-press grid place-items-center rounded-full text-foreground/90 active:bg-white/[0.08]">{f.signIn}</Link>
-              <Link href="/how-it-works" onClick={close} className="mk-press grid place-items-center rounded-full text-foreground/90 active:bg-white/[0.08]">{f.hero.howItWorks}</Link>
-            </div>
-            <Link href={create} onClick={close} className="mk-press relative flex h-12 items-center justify-center rounded-full bg-white text-[15px] font-medium text-[#141414]">{f.create}<ChevronRightIcon className="absolute right-4 size-4" strokeWidth={2} aria-hidden /></Link>
-          </div>
-          <nav aria-label={f.nav.label} className="mt-9 grid gap-7">
-            {group(f.nav.product, products)}
-            {group(f.nav.resources, resources)}
-          </nav>
-          <div className="mt-auto pt-10"><div className="flex justify-between border-t border-white/[0.08] pt-4"><LanguageSwitch /></div></div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
   );
 }

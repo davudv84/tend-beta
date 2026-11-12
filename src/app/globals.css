@@ -453,6 +453,11 @@
     font-size: max(16px, 1em);
   }
 }
+/* With viewport-fit=cover the page runs under a notch when a phone is turned sideways; keep the content clear of it. */
+.mk-safe {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
 /* Text a phone shouldn't enlarge on its own when turned sideways. */
 .mk {
   -webkit-text-size-adjust: 100%;

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { SignIn } from "@/components/sign-in";
 import { Button } from "@/components/ui/button";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { useT } from "@/i18n/client";
 import { shortDate } from "@/lib/format";
 import { call, useStore } from "@/lib/store";

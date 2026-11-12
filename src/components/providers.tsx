@@ -4,16 +4,18 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { Locale } from "@/i18n/config";
-import { I18nProvider } from "@/i18n/client";
 import { useStore } from "@/lib/store";
 
+/** The public website's pages (app/page.tsx and app/(site)): no snapshot, no polling. */
+const PUBLIC = ["/how-it-works", "/docs", "/threat-model", "/compare", "/changelog", "/security", "/verification-report", "/about", "/contact", "/imprint", "/privacy", "/terms"];
+const isPublicSite = (p: string) => p === "/" || p.startsWith("/product/") || PUBLIC.includes(p);
+
 /** Loads the server snapshot, then polls for new events while the tab is visible. */
-export function Providers({ locale, children }: { locale: Locale; children: React.ReactNode }) {
+export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   useEffect(() => {
-    // The public homepage shows no live data: it takes no snapshot and polls nothing.
-    if (pathname === "/") return;
+    // The public site shows no live data: it takes no snapshot and polls nothing.
+    if (isPublicSite(pathname)) return;
     const { init, poll } = useStore.getState();
     void init();
     let timer: ReturnType<typeof setTimeout>;
@@ -32,11 +34,9 @@ export function Providers({ locale, children }: { locale: Locale; children: Reac
   }, [pathname]);
 
   return (
-    <I18nProvider locale={locale}>
-      <TooltipProvider delayDuration={150}>
-        {children}
-        <Toaster theme="dark" position="bottom-right" />
-      </TooltipProvider>
-    </I18nProvider>
+    <TooltipProvider delayDuration={150}>
+      {children}
+      <Toaster theme="dark" position="bottom-right" />
+    </TooltipProvider>
   );
 }

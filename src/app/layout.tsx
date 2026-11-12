@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { Provide } from "@/i18n/provide";
 import { getLocale, getT } from "@/i18n/server";
 import "./globals.css";
 
@@ -20,9 +21,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const [t, locale] = await Promise.all([getT(), getLocale()]);
   const card = { title: t.meta.title, description: t.meta.description };
   return {
-    title: { default: t.meta.title, template: "%s · Tend" },
+    title: { default: t.meta.title, template: "%s · TEND" },
     description: t.meta.description,
-    openGraph: { ...card, type: "website", siteName: "Tend", locale: locale === "de" ? "de_DE" : "en_US", alternateLocale: locale === "de" ? "en_US" : "de_DE" },
+    openGraph: { ...card, type: "website", siteName: "TEND", locale: locale === "de" ? "de_DE" : "en_US", alternateLocale: locale === "de" ? "en_US" : "de_DE" },
     twitter: { ...card, card: "summary_large_image" },
   };
 }
@@ -36,7 +37,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       data-scroll-behavior="smooth"
     >
       <body className="min-h-full flex flex-col">
-        <Providers locale={locale}>{children}</Providers>
+        {/* One language in the page's bundle: the provider for the chosen one. */}
+        <Provide locale={locale}><Providers>{children}</Providers></Provide>
       </body>
     </html>
   );

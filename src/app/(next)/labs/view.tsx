@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ChevronRightIcon } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogTrigger, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { useStore } from "@/lib/store";
 import { Page, PageSkeleton } from "@/ui/page";
 

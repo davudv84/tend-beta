@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
+import { AnimatePresence, m, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
 import { ActivityIcon, BellIcon, CheckIcon, CircleCheckIcon, LayoutGridIcon, XIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,8 @@ const THRESHOLD = 110;
 
 /** A short tap of the phone's motor where there is one (Android); nothing anywhere else. */
 const buzz = (ms: number | number[]) => {
+  // Browsers refuse (and log) a vibration before the visitor has touched the page, so only after that.
+  if (!navigator.userActivation?.hasBeenActive) return;
   try { navigator.vibrate?.(ms); } catch { /* not supported */ }
 };
 
@@ -38,12 +40,22 @@ export function DemoMobile({ demo }: { demo: Demo }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [ref, seen] = useSeen<HTMLDivElement>("0px 0px -25% 0px");
   const n = demo.waiting.length;
+  const reduce = useReducedMotion();
+  // Once the phone is on screen the request "arrives" as a notification; a few seconds later (or on a tap) it tucks into the island.
+  const [phase, setPhase] = useState<"idle" | "banner" | "tucked">("idle");
+  useEffect(() => {
+    if (!seen) return;
+    const show = window.setTimeout(() => { setPhase("banner"); buzz(8); }, reduce ? 0 : 900);
+    const tuck = window.setTimeout(() => setPhase((p) => (p === "banner" ? "tucked" : p)), reduce ? 6000 : 6400);
+    return () => { clearTimeout(show); clearTimeout(tuck); };
+  }, [seen, reduce]);
   const go = (next: Tab) => {
     setTab(next);
-    scroller.current?.scrollTo({ top: 0, behavior: "smooth" });
+    scroller.current?.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
   };
+  const banner = phase === "banner" && n > 0 && !demo.toast;
   return (
-    <div ref={ref} className="mx-auto w-fit [zoom:0.68] min-[375px]:[zoom:0.78] min-[430px]:[zoom:0.84] md:[zoom:0.92]">
+    <div ref={ref} className="mx-auto w-fit [zoom:0.62] min-[375px]:[zoom:0.66] min-[430px]:[zoom:0.7] md:[zoom:0.8] xl:[zoom:0.84]">
       <figure aria-label={d.phone} className="relative m-0 rounded-[64px] bg-[linear-gradient(145deg,#3a3a3a,#141414_30%,#0b0b0b_70%,#2a2a2a)] p-[3px] shadow-[0_60px_120px_-40px_rgb(0_0_0/0.95),0_0_0_1px_rgb(255_255_255/0.06)]">
         {/* The buttons on the sides: action and volume on the left, power on the right. */}
         <span aria-hidden className="absolute top-[118px] -left-[3px] h-8 w-[3px] rounded-l-sm bg-[#2b2b2b]" />
@@ -58,7 +70,8 @@ export function DemoMobile({ demo }: { demo: Demo }) {
             style={{ ["--text-caption" as string]: "0.875rem", ["--text-small" as string]: "0.875rem" }}
           >
             <StatusBar />
-            <Island demo={demo} seen={seen} onOpen={() => go("approvals")} />
+            <Island demo={demo} arrived={phase === "tucked" || (phase === "banner" && !banner)} onOpen={() => go("approvals")} />
+            <Banner show={banner} reduce={!!reduce} onOpen={() => { setPhase("tucked"); go("approvals"); }} />
 
             <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
               <span className="flex items-center gap-3"><BrandMark className="size-6 text-primary" /><span className="text-[15px] font-semibold tracking-[0.16em]">TEND</span></span>
@@ -82,7 +95,7 @@ export function DemoMobile({ demo }: { demo: Demo }) {
                   <button key={key} type="button" aria-current={on ? "page" : undefined} onClick={() => go(key)} className={cn("relative flex h-14 flex-col items-center justify-center gap-1 text-[12px] outline-none transition-transform active:scale-95 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary", on ? "font-medium text-foreground" : "text-muted-foreground")}>
                     <Icon className={cn("size-[22px]", on && "text-primary")} strokeWidth={1.75} aria-hidden />
                     {t.ui.nav[key]}
-                    {key === "approvals" && n > 0 && <span className="absolute top-1.5 left-[calc(50%+6px)] grid h-[17px] min-w-[17px] place-items-center rounded-full bg-primary px-1 text-[10.5px] font-semibold text-primary-foreground tabular-nums"><span className="sr-only">{t.ui.waitingLabel(n)}: </span>{n}</span>}
+                    {key === "approvals" && n > 0 && <span className="absolute top-1.5 left-[calc(50%+6px)] grid h-[17px] min-w-[17px] place-items-center rounded-full bg-primary px-1 text-[10.5px] font-semibold text-primary-foreground tabular-nums"><span className="sr-only">, {t.ui.waitingLabel(n)}</span><span aria-hidden>{n}</span></span>}
                   </button>
                 );
               })}
@@ -115,15 +128,9 @@ function StatusBar() {
  * mark and how many wait, and a tap opens Approvals. After an answer it opens wide with what happened and closes when the note goes.
  * Nothing repeats.
  */
-function Island({ demo, seen, onOpen }: { demo: Demo; seen: boolean; onOpen: () => void }) {
+function Island({ demo, arrived, onOpen }: { demo: Demo; arrived: boolean; onOpen: () => void }) {
   const d = useT().front.demo;
   const reduce = useReducedMotion();
-  const [arrived, setArrived] = useState(false);
-  useEffect(() => {
-    if (!seen) return;
-    const id = window.setTimeout(() => { setArrived(true); buzz(8); }, reduce ? 0 : 900);
-    return () => clearTimeout(id);
-  }, [seen, reduce]);
   const n = demo.waiting.length;
   const toast = demo.toast;
   const mode: "idle" | "compact" | "open" = toast ? "open" : arrived && n > 0 ? "compact" : "idle";
@@ -131,7 +138,7 @@ function Island({ demo, seen, onOpen }: { demo: Demo; seen: boolean; onOpen: () 
   const allowed = toast?.decision === "allowed";
   return (
     <div className="pointer-events-none absolute inset-x-0 top-[11px] z-20 flex justify-center">
-      <motion.button
+      <m.button
         type="button"
         tabIndex={mode === "compact" ? 0 : -1}
         aria-hidden={mode !== "compact"}
@@ -144,26 +151,57 @@ function Island({ demo, seen, onOpen }: { demo: Demo; seen: boolean; onOpen: () 
       >
         <AnimatePresence initial={false} mode="popLayout">
           {mode === "compact" && (
-            <motion.span key="compact" initial={{ opacity: 0, filter: "blur(4px)" }} animate={{ opacity: 1, filter: "blur(0px)" }} exit={{ opacity: 0, filter: "blur(4px)" }} transition={{ duration: reduce ? 0 : 0.22, delay: reduce ? 0 : 0.08 }} className="absolute inset-0 flex items-center justify-between pr-3 pl-2.5">
+            <m.span key="compact" initial={{ opacity: 0, filter: "blur(4px)" }} animate={{ opacity: 1, filter: "blur(0px)" }} exit={{ opacity: 0, filter: "blur(4px)" }} transition={{ duration: reduce ? 0 : 0.22, delay: reduce ? 0 : 0.08 }} className="absolute inset-0 flex items-center justify-between pr-3 pl-2.5">
               <span className="grid size-[24px] place-items-center rounded-full bg-[#ede8de] text-[#131211]"><BrandMark className="size-3.5" /></span>
-              <span className="flex items-center gap-1.5 text-[12.5px] font-semibold text-[#e8b14f] tabular-nums"><span className="size-[6px] rounded-full bg-[#e8b14f]" />{d.island.waiting(n)}</span>
-            </motion.span>
+              <span className="flex items-center gap-1.5 text-[12.5px] font-semibold text-primary tabular-nums"><span className="size-[6px] rounded-full bg-primary" />{d.island.waiting(n)}</span>
+            </m.span>
           )}
           {mode === "open" && (
-            <motion.span key="open" initial={{ opacity: 0, filter: "blur(6px)", scale: 0.96 }} animate={{ opacity: 1, filter: "blur(0px)", scale: 1 }} exit={{ opacity: 0, filter: "blur(6px)" }} transition={{ duration: reduce ? 0 : 0.26, delay: reduce ? 0 : 0.1 }} className="absolute inset-0 flex items-center gap-3 px-4 text-left">
+            <m.span key="open" initial={{ opacity: 0, filter: "blur(6px)", scale: 0.96 }} animate={{ opacity: 1, filter: "blur(0px)", scale: 1 }} exit={{ opacity: 0, filter: "blur(6px)" }} transition={{ duration: reduce ? 0 : 0.26, delay: reduce ? 0 : 0.1 }} className="absolute inset-0 flex items-center gap-3 px-4 text-left">
               <span className="grid size-[44px] shrink-0 place-items-center rounded-[14px] bg-[#ede8de] text-[#131211]"><BrandMark className="size-6" /></span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-semibold">{allowed ? d.island.allowed : d.island.denied}</span>
                 <span className="block truncate text-[13px] text-white/60">{allowed ? d.island.ran : d.island.stopped}</span>
               </span>
-              <span className={cn("grid size-[34px] shrink-0 place-items-center rounded-full", allowed ? "bg-primary text-primary-foreground" : "bg-clay text-white")}>
+              <span className={cn("grid size-[34px] shrink-0 place-items-center rounded-full", allowed ? "bg-primary text-primary-foreground" : "bg-white/15 text-white")}>
                 {allowed ? <CheckIcon className="size-[18px]" strokeWidth={2.5} /> : <XIcon className="size-[18px]" strokeWidth={2.5} />}
               </span>
-            </motion.span>
+            </m.span>
           )}
         </AnimatePresence>
-      </motion.button>
+      </m.button>
     </div>
+  );
+}
+
+/**
+ * The approval notification, as iOS draws one: it drops in under the island once, says who wants what, and a tap opens the request.
+ */
+function Banner({ show, reduce, onOpen }: { show: boolean; reduce: boolean; onOpen: () => void }) {
+  const d = useT().front.demo;
+  const r = d.requests.invoice;
+  return (
+    <AnimatePresence initial={false}>
+      {show && (
+        <m.button
+          key="banner"
+          type="button"
+          onClick={onOpen}
+          initial={reduce ? { opacity: 0 } : { y: -130, scale: 0.94, opacity: 0.6 }}
+          animate={{ y: 0, scale: 1, opacity: 1 }}
+          exit={reduce ? { opacity: 0 } : { y: -130, scale: 0.94, opacity: 0, transition: { duration: 0.32, ease: [0.4, 0, 1, 1] } }}
+          transition={reduce ? { duration: 0 } : SPRING}
+          className="absolute inset-x-[10px] top-[10px] z-30 flex items-start gap-3 rounded-[26px] border border-white/10 bg-[#262626]/85 p-3.5 text-left text-white shadow-[0_18px_40px_-12px_rgb(0_0_0/0.8)] backdrop-blur-xl outline-none active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-primary"
+        >
+          <span aria-hidden className="grid size-[38px] shrink-0 place-items-center rounded-[10px] bg-[#ede8de] text-[#131211]"><BrandMark className="size-5" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center justify-between text-[13px] text-white/55"><span className="font-medium tracking-[0.12em] text-white/70">TEND</span>{d.now}</span>
+            <span className="mt-0.5 block text-[15px] leading-snug font-semibold">{r.sentence}</span>
+            <span className="mt-0.5 block text-[14px] leading-snug text-white/70">{r.exact}</span>
+          </span>
+        </m.button>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -227,7 +265,7 @@ function Focus({ demo }: { demo: Demo }) {
     <div className="mt-4">
       <AnimatePresence initial={false} mode="wait" custom={leaving}>
         {first ? (
-          <motion.div
+          <m.div
             key="card"
             custom={leaving}
             exit={reduce ? { opacity: 0, transition: { duration: 0 } } : "gone"}
@@ -235,11 +273,11 @@ function Focus({ demo }: { demo: Demo }) {
           >
             <Swipe waiting={first} reduce={!!reduce} onDecide={(decision) => { buzz(decision === "allowed" ? [10, 40, 18] : 22); setLeaving(decision === "allowed" ? 1 : -1); demo.decide(first.request.id, decision); }} />
             <p aria-hidden className="mt-3 text-center text-[13px] text-muted-foreground">{d.swipe}</p>
-          </motion.div>
+          </m.div>
         ) : (
-          <motion.div key="clear" initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduce ? 0 : 0.3 }}>
+          <m.div key="clear" initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduce ? 0 : 0.3 }}>
             <AllClear />
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>
@@ -259,9 +297,9 @@ function Swipe({ waiting, onDecide, reduce }: { waiting: Waiting; onDecide: (dec
   const past = useRef(false);
   return (
     <div className="relative">
-      <motion.div aria-hidden style={{ opacity: allow }} className="absolute inset-0 flex items-center gap-2 rounded-2xl bg-primary/25 pl-6 text-[15px] font-medium text-primary"><CheckIcon className="size-5" strokeWidth={2} />{h.allow}</motion.div>
-      <motion.div aria-hidden style={{ opacity: deny }} className="absolute inset-0 flex items-center justify-end gap-2 rounded-2xl bg-clay/25 pr-6 text-[15px] font-medium text-clay">{h.deny}<XIcon className="size-5" strokeWidth={2} /></motion.div>
-      <motion.div
+      <m.div aria-hidden style={{ opacity: allow }} className="absolute inset-0 flex items-center gap-2 rounded-2xl bg-primary/25 pl-6 text-[15px] font-medium text-primary"><CheckIcon className="size-5" strokeWidth={2} />{h.allow}</m.div>
+      <m.div aria-hidden style={{ opacity: deny }} className="absolute inset-0 flex items-center justify-end gap-2 rounded-2xl bg-white/10 pr-6 text-[15px] font-medium text-foreground/80">{h.deny}<XIcon className="size-5" strokeWidth={2} /></m.div>
+      <m.div
         drag="x"
         dragDirectionLock
         dragSnapToOrigin
@@ -280,7 +318,7 @@ function Swipe({ waiting, onDecide, reduce }: { waiting: Waiting; onDecide: (dec
         className="relative cursor-grab active:cursor-grabbing [&_[data-slot=request-actions]]:grid [&_[data-slot=request-actions]]:grid-cols-2 [&_[data-slot=request-actions]>button]:w-full"
       >
         <DemoCard waiting={waiting} onDecide={onDecide} className="rounded-2xl border border-border bg-surface p-5" />
-      </motion.div>
+      </m.div>
     </div>
   );
 }

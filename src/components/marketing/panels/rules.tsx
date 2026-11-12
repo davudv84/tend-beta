@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, m, useReducedMotion } from "framer-motion";
 import { AtSignIcon, CheckIcon, ListChecksIcon, LoaderCircleIcon, ShieldIcon, XIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
@@ -153,17 +153,17 @@ export function TryCall({ autoplay, onStage }: { autoplay?: boolean; onStage?: (
         <div aria-live="polite" className="min-h-[168px] rounded-xl border border-border bg-background p-4">
           <AnimatePresence mode="wait" initial={false}>
             {!tool ? (
-              <motion.p key="none" className="text-[14px] text-muted-foreground" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{f.tryCall.body}</motion.p>
+              <m.p key="none" className="text-[14px] text-muted-foreground" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{f.tryCall.body}</m.p>
             ) : checking ? (
-              <motion.p key="checking" className="flex items-center gap-2 text-[14px] text-muted-foreground" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <m.p key="checking" className="flex items-center gap-2 text-[14px] text-muted-foreground" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <LoaderCircleIcon className="size-4 animate-spin motion-reduce:animate-none" strokeWidth={2} aria-hidden />{f.tryCall.checking(RULED.length)}
-              </motion.p>
+              </m.p>
             ) : (
-              <motion.div key={`${tool}`} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="grid gap-3">
+              <m.div key={`${tool}`} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="grid gap-3">
                 <p className="flex items-center gap-2 text-[13px] text-muted-foreground"><AgentMark agent={CALLER[tool]} className="size-5" />{f.tryCall.asks(agentOf(CALLER[tool]).name)}</p>
                 <p className="rounded-lg bg-sunken px-3 py-2 text-[13px]">{k.calls[tool]}</p>
                 <Outcome tool={tool} verdict={verdict!} answer={answer} onAnswer={answerIt} />
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
         </div>

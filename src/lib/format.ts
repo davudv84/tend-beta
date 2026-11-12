@@ -1,12 +1,19 @@
 import { useSyncExternalStore } from "react";
 import type { Locale } from "../i18n/config.ts";
-import { DICTS } from "../i18n/index.ts";
+import type { Dict } from "../i18n/en.ts";
 
 // Times and dates in the interface language. The server renders no times (they need the store), so the
 // browser's <html lang>, set by the server and updated by the language switch, is the source of truth.
 let locale: Locale = typeof document !== "undefined" && document.documentElement.lang === "de" ? "de" : "en";
 export const setFormatLocale = (l: Locale) => void (locale = l);
-const t = () => DICTS[locale];
+// The dictionary of the current language, handed in by the language provider (i18n/client.tsx) before anything below it renders,
+// so a browser bundle carries only the language it shows. Times are never rendered on the server.
+let dict: Dict | null = null;
+export const setFormatDict = (d: Dict, l: Locale) => { dict = d; locale = l; };
+const t = (): Dict => {
+  if (!dict) throw new Error(`format: no dictionary for "${locale}" yet; render inside the language provider`);
+  return dict;
+};
 
 function elapsed(at: number, now: number): [number, "m" | "h" | "d"] | null {
   const s = Math.max(0, Math.round((now - at) / 1000));

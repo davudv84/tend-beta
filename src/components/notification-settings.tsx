@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { BellIcon, BellOffIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useLocale, useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { disablePush, enablePush, permissionState, pushSupport, thisBrowserSubscribed, useNotifications, type EnableResult } from "@/lib/notifications";
 import { call } from "@/lib/store";
 import { Badge, Card, CardHeader, buttonClass, type Tone } from "@/ui/primitives";

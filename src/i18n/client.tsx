@@ -2,28 +2,36 @@
 
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { setFormatLocale } from "@/lib/format";
+import { setFormatDict, setFormatLocale } from "@/lib/format";
 import { isLocale, LOCALE_COOKIE, LOCALE_MAX_AGE, type Locale } from "./config";
-import { DICTS, type Dict } from "./index";
+import type { Dict } from "./en";
+
+/** The other language's dictionary, fetched only when someone switches to it. */
+const load = (l: Locale): Promise<Dict> => (l === "de" ? import("./de").then((m) => m.de) : import("./en").then((m) => m.en));
 
 const I18n = createContext<{ locale: Locale; t: Dict; setLocale: (l: Locale) => void } | null>(null);
 
 /** Holds the interface language. The server picks the first one (cookie, else Accept-Language) so the page renders in it. */
-export function I18nProvider({ locale: initial, children }: { locale: Locale; children: React.ReactNode }) {
+/**
+ * `dict` is the dictionary of `locale`, passed in by the small provider for that language (provide-en.tsx, provide-de.tsx), so the page
+ * ships one language. Switching loads the other one and swaps it in place.
+ */
+export function I18nProvider({ locale: initial, dict: initialDict, children }: { locale: Locale; dict: Dict; children: React.ReactNode }) {
   const router = useRouter();
-  const [locale, setState] = useState(initial);
+  const [{ locale, t }, setState] = useState({ locale: initial, t: initialDict });
   // The server's choice wins when it changes (a refresh after the cookie changed).
   const [served, setServed] = useState(initial);
   if (initial !== served) {
     setServed(initial);
-    setState(initial);
-    setFormatLocale(initial);
+    setState({ locale: initial, t: initialDict });
   }
+  // The formatter needs the dictionary before anything below renders a time.
+  setFormatDict(t, locale);
 
   const apply = useCallback((l: Locale) => {
     document.documentElement.lang = l;
     setFormatLocale(l);
-    setState(l);
+    void load(l).then((d) => setState({ locale: l, t: d }));
   }, []);
 
   const setLocale = useCallback((l: Locale) => {
@@ -46,7 +54,7 @@ export function I18nProvider({ locale: initial, children }: { locale: Locale; ch
     return () => document.removeEventListener("visibilitychange", follow);
   }, [locale, apply, router]);
 
-  const value = useMemo(() => ({ locale, t: DICTS[locale], setLocale }), [locale, setLocale]);
+  const value = useMemo(() => ({ locale, t, setLocale }), [locale, t, setLocale]);
   return <I18n.Provider value={value}>{children}</I18n.Provider>;
 }
 

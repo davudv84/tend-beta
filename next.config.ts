@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
     }];
   },
   poweredByHeader: false,
+  // The stylesheet goes into the page itself instead of a separate request that holds up the first paint (the CSP allows inline styles).
+  experimental: { inlineCss: true },
+  // Any picture served through next/image goes out as AVIF where the browser takes it, WebP otherwise.
+  images: { formats: ["image/avif", "image/webp"] },
   // The homepage looks at request time which pictures exist under public/home (components/marketing/images.ts), so a hosted build carries them.
   outputFileTracingIncludes: { "/": ["./public/home/**"] },
   // The embedded database (local development and tests) ships its own WebAssembly; load it from node_modules.

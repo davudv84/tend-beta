@@ -14,7 +14,7 @@ import { SignIn } from "@/components/sign-in";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { DAY, summarize, timeline } from "@/lib/derive";
 import { shortDate, useNow } from "@/lib/format";
 import { byAction, outcomeOf } from "@/lib/activity";

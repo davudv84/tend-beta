@@ -6,7 +6,7 @@ import { LockIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { useStore } from "@/lib/store";
 
 /** Sign-in. With accounts on it points to e-mail sign-in; `token` (the admin's page) shows the admin-token form, which is exchanged for an HttpOnly cookie and not kept by the page. */

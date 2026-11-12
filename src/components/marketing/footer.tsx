@@ -21,10 +21,10 @@ export function Footer({ accounts }: { accounts: boolean; images?: HomeImages })
   const o = f.footer;
   const columns: [string, Item[]][] = [
     [o.columns.product, [[f.nav.overview, "/"], ...PRODUCTS.map((p) => [f.product[p].name, `/product/${p}`] as Item), [f.signIn, accounts ? "/account/sign-in" : "/operator"], ...(accounts ? [[f.create, "/account/sign-up"] as Item] : [])]],
-    [o.columns.resources, [[o.links.docs, "/docs"], [o.links.howItWorks, "/how-it-works"], [o.links.report, "/verification-report"], [o.links.limitations, "/security"]]],
-    [o.columns.company, [[o.links.about, "/about"], [o.links.contact, "/contact"], [o.links.imprint, "/imprint"]]],
+    [o.columns.resources, [[o.links.docs, "/docs"], [o.links.howItWorks, "/how-it-works"], [o.links.threatModel, "/threat-model"], [o.links.compare, "/compare"], [o.links.report, "/verification-report"], [o.links.limitations, "/security"], [o.links.changelog, "/changelog"]]],
+    [o.columns.company, [[o.links.about, "/about"], [o.links.contact, "/contact"], [o.links.github, SITE.github], [o.links.imprint, "/imprint"]]],
   ];
-  const link = "rounded-sm text-[14px] text-foreground/75 transition-colors hover:text-foreground";
+  const link = "rounded-sm text-[14px] text-foreground/75 transition-colors hover:text-foreground pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center";
   return (
     <footer className="border-t border-white/[0.08]">
       <div className="mx-auto max-w-[1200px] px-5 pt-14 pb-10 sm:px-8 md:pt-20">
@@ -40,7 +40,7 @@ export function Footer({ accounts }: { accounts: boolean; images?: HomeImages })
             {columns.map(([title, items]) => (
               <nav key={title} aria-label={title}>
                 <p className="text-[13px] text-muted-foreground">{title}</p>
-                <ul className="mt-4 grid gap-2.5">
+                <ul className="mt-4 grid gap-2.5 pointer-coarse:gap-0">
                   {items.map(([label, href]) => <li key={label + href}><Link href={href} className={link}>{label}</Link></li>)}
                 </ul>
               </nav>
@@ -57,7 +57,7 @@ export function Footer({ accounts }: { accounts: boolean; images?: HomeImages })
         <div className="mt-12 flex flex-col gap-4 border-t border-white/[0.08] pt-6 text-[12px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>{o.copyright}</p>
           <ul className="flex flex-wrap gap-x-6 gap-y-2">
-            {([[o.links.imprint, "/imprint"], [o.links.privacy, "/privacy"], [o.links.terms, "/terms"]] as const).map(([s, href]) => <li key={s}><Link href={href} className="rounded-sm underline-offset-4 hover:text-foreground hover:underline">{s}</Link></li>)}
+            {([[o.links.imprint, "/imprint"], [o.links.privacy, "/privacy"], [o.links.terms, "/terms"]] as const).map(([s, href]) => <li key={s}><Link href={href} className="rounded-sm underline-offset-4 hover:text-foreground hover:underline pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center">{s}</Link></li>)}
           </ul>
         </div>
       </div>

@@ -7,7 +7,7 @@ import { CheckIcon, EyeIcon, EyeOffIcon, MailIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { useT } from "@/i18n/client";
 import { call, useStore } from "@/lib/store";
 

@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRightIcon, ChevronDownIcon, KeyRoundIcon, ListChecksIcon, PlayIcon, ShieldCheckIcon } from "lucide-react";
+import { ChevronDownIcon, ListChecksIcon, PlayIcon, ShieldCheckIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { SCENARIOS } from "@/lib/integrations-catalog";
 import { cn } from "@/lib/utils";
 import { CHECKS, type CheckGroup, type CheckId, type CheckStatus } from "@/lib/verification";
-import { BrandMark } from "@/ui/brand-mark";
 import { Badge, buttonClass, type Tone } from "@/ui/primitives";
 import { AppPanel, ExampleTag, prefersReducedMotion } from "../kit";
 
@@ -82,25 +81,6 @@ export function ScenariosPanel() {
       </ol>
       <p aria-live="polite" className="min-h-5 text-[13px] font-medium text-primary">{done >= SCENARIOS.length ? s.done(SCENARIOS.length) : ""}</p>
       <button type="button" disabled={running || done >= SCENARIOS.length} onClick={() => setStarted(true)} className={cn(buttonClass(), "h-9 justify-self-start px-3 text-[13px]")}><PlayIcon className="size-3.5" strokeWidth={2} aria-hidden />{running ? s.running : s.run}</button>
-    </AppPanel>
-  );
-}
-
-/** Gateway mode drawn: the agent asks, TEND holds the key and calls the tool once. */
-export function GatewayMini() {
-  const t = useT();
-  const g = t.front.kit.gateway;
-  const box = "rounded-lg border border-border bg-surface px-3 py-2.5";
-  return (
-    <AppPanel title={t.front.everything.cards.gateway[0]} icon={KeyRoundIcon} bodyClassName="grid gap-2 p-4">
-      <div className={box}><p className="text-[12px] font-medium">{g.agent}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{g.noKey}</p></div>
-      <ArrowRightIcon aria-hidden className="mx-auto size-4 rotate-90 text-muted-foreground" strokeWidth={1.75} />
-      <div className={cn(box, "flex items-center gap-2.5 border-primary/40")}>
-        <span aria-hidden className="grid size-7 place-items-center rounded-md bg-[#ede8de] text-[#131211]"><BrandMark className="size-4" /></span>
-        <span><span className="block text-[12px] font-medium tracking-[0.12em]">TEND</span><span className="flex items-center gap-1 text-[11px] text-primary"><KeyRoundIcon className="size-3" strokeWidth={2} aria-hidden />{g.key}</span></span>
-      </div>
-      <ArrowRightIcon aria-hidden className="mx-auto size-4 rotate-90 text-muted-foreground" strokeWidth={1.75} />
-      <div className={box}><p className="text-[12px] font-medium">{g.tool}</p><p className="mt-0.5 font-mono text-[11px] text-muted-foreground">pay_invoice.pay · 1×</p></div>
     </AppPanel>
   );
 }

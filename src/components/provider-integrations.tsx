@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { connectionState, type ConnectionState, type IntegrationAgent, type IntegrationStatus, type ProviderKey } from "@/lib/integrations";
 import { timeAgo, useNow } from "@/lib/format";
 import { useStore } from "@/lib/store";

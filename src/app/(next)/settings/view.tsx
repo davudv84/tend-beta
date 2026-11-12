@@ -8,7 +8,7 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 import { NotificationSettings } from "@/components/notification-settings";
 import { SignIn } from "@/components/sign-in";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { dateTime } from "@/lib/format";
 import { realAssistants } from "@/lib/home";
 import { call, useStore, type SessionOverview } from "@/lib/store";

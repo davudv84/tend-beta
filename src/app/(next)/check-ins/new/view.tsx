@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { ADJUSTMENT_KINDS, ANSWERS, needsReview, parseCheckIn, PROTOCOL, QUESTIONS } from "@/lib/contract";
 import { useAgent, useStore } from "@/lib/store";
 import type { AdjustmentKind, Answer, QuestionId } from "@/lib/types";

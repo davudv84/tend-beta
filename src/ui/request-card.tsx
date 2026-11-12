@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { clock, timeAgo } from "@/lib/format";
 import { fromHook, needsConfirmation, showsContent, type HomeRequest } from "@/lib/home";
 import { useStore } from "@/lib/store";

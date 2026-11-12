@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { dateTime, duration, timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import type { Agent, Authorization, AuthorizationStatus } from "@/lib/types";

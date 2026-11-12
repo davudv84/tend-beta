@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, m, useReducedMotion } from "framer-motion";
 import { BellIcon, CheckIcon, CircleCheckIcon, XIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
@@ -96,13 +96,13 @@ export function ApprovalsPanel() {
       <div aria-live="polite" className="min-h-[440px] p-4 md:p-6">
         <AnimatePresence mode="wait" initial={false}>
           {focus ? (
-            <motion.div key={focus.key} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, y: -8, transition: { duration: 0.18 } }}>
+            <m.div key={focus.key} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, y: -8, transition: { duration: 0.18 } }}>
               <Card r={focus} onDecide={(a) => decideOne(focus, a)} />
-            </motion.div>
+            </m.div>
           ) : (
-            <motion.div key="clear" initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }} className="grid h-full min-h-[380px] place-items-center rounded-xl border border-dashed border-border text-center">
+            <m.div key="clear" initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }} className="grid h-full min-h-[380px] place-items-center rounded-xl border border-dashed border-border text-center">
               <div><span className="mx-auto grid size-10 place-items-center rounded-full bg-primary/15 text-primary"><CheckIcon className="size-5" strokeWidth={2} aria-hidden /></span><p className="mt-4 text-[15px]">{q.empty}</p></div>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       </div>
@@ -161,11 +161,11 @@ export function PhonePanel() {
             <span className="grid size-5 place-items-center rounded-md bg-[#ede8de] text-[#131211]"><BrandMark className="size-3" /></span>
             <span className="flex-1 font-medium tracking-[0.12em]">TEND</span><span>{k.phone.now}</span>
           </div>
-          <p className="mt-2 text-[13px] font-medium">{k.requests.invoice.sentence}</p>
-          <p className="mt-0.5 text-[12px] text-white/70">{k.requests.invoice.exact}</p>
+          <p className="mt-2 text-[13px] font-medium">{k.requests.email.sentence}</p>
+          <p className="mt-0.5 text-[12px] text-white/70">{k.requests.email.exact}</p>
           <div aria-live="polite" className="mt-3">
             {answer ? (
-              <p className="flex items-center gap-1.5 text-[12px] font-medium">{answer === "allowed" ? <CheckIcon className="size-3.5 text-primary" strokeWidth={2.5} aria-hidden /> : <XIcon className="size-3.5 text-clay" strokeWidth={2.5} aria-hidden />}{answer === "allowed" ? t.front.demo.toast.allowed : t.front.demo.toast.denied}</p>
+              <p className="flex items-center gap-1.5 text-[12px] font-medium">{answer === "allowed" ? <CheckIcon className="size-3.5 text-primary" strokeWidth={2.5} aria-hidden /> : <XIcon className="size-3.5 text-white/70" strokeWidth={2.5} aria-hidden />}{answer === "allowed" ? t.front.demo.toast.allowed : t.front.demo.toast.denied}</p>
             ) : open ? (
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setAnswer("allowed")} className="h-9 rounded-lg bg-primary text-[12px] font-medium text-primary-foreground">{h.allow}</button>

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { LockIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/client";
-import { errorText } from "@/i18n";
+import { errorText } from "@/i18n/error-text";
 import { applyChoices, choiceOf, type Choice, type Effect, type PolicyView, type RuleLike } from "@/lib/permissions";
 import { call, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
