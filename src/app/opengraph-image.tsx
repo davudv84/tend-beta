@@ -1,64 +1,57 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { ImageResponse } from "next/og";
 
-// The shared-link card (WhatsApp, Slack, LinkedIn, X), in the homepage's look: the painted valley, TEND on a phone with its approval
-// notification standing in the bright gap, and the line beside it. Generated from this file, so there is no image to keep in sync.
-export const alt = "TEND on a phone, showing an approval notification over a painted valley at dusk: Your AI agents ask. You decide.";
+// The shared-link card (WhatsApp, Slack, LinkedIn, X): what TEND does, in one line, and the path every tool call takes. Generated at build
+// time from this file, so it stays in TEND's own colours and type; there is no image file to keep in sync.
+export const alt = "TEND: your AI agent asks, TEND decides. Allow, block or approve every tool call from Claude Code before it runs.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const TEXT = "#ededed", MUTED = "#b5b5b5", GREEN = "#5fb892";
+const INK = "#0d1311", PANEL = "#141c19", LINE = "#24312c", TEXT = "#f2f5f3", MUTED = "#93a69e", ACCENT = "#8dbba5";
 
-function Mark({ size: s, color }: { size: number; color: string }) {
+function Mark({ size: s }: { size: number }) {
   return (
     <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-      <path d="M19 4.5H5.5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1H19" stroke={color} strokeWidth="2" strokeLinecap="square" />
-      <rect x="9" y="9" width="6" height="6" fill={color} />
-      <path d="M15 12h7" stroke={color} strokeWidth="2" />
+      <path d="M19 4.5H5.5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1H19" stroke={ACCENT} strokeWidth="2" strokeLinecap="square" />
+      <rect x="9" y="9" width="6" height="6" fill={ACCENT} />
+      <path d="M15 12h7" stroke={ACCENT} strokeWidth="2" />
     </svg>
   );
 }
 
-export default async function Image() {
-  const bg = await readFile(path.join(process.cwd(), "src/app/og-valley.jpg"));
-  const src = `data:image/jpeg;base64,${bg.toString("base64")}`;
+const Step = ({ name, note, accent }: { name: string; note: string; accent?: boolean }) => (
+  <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "18px 22px", borderRadius: 14, width: 220, background: accent ? "rgba(141,187,165,0.12)" : PANEL, border: `1px solid ${accent ? "rgba(141,187,165,0.45)" : LINE}` }}>
+    <div style={{ display: "flex", fontSize: 24, fontWeight: 700, color: accent ? ACCENT : TEXT, letterSpacing: accent ? 3 : 0 }}>{name}</div>
+    <div style={{ display: "flex", fontSize: 18, color: MUTED }}>{note}</div>
+  </div>
+);
+const Arrow = () => <div style={{ display: "flex", fontSize: 26, color: "#4a5d55", margin: "0 14px" }}>→</div>;
+
+export default function Image() {
   return new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", position: "relative", fontFamily: "sans-serif", background: "#181818" }}>
-        <img src={src} width={1200} height={630} alt="" style={{ position: "absolute", inset: 0 }} />
-        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 260, display: "flex", background: "linear-gradient(to bottom, rgba(24,24,24,0), #181818)" }} />
-        {/* The phone, in the gap. */}
-        <div style={{ position: "absolute", left: 300, top: 70, width: 254, height: 540, borderRadius: 46, background: "#0b0b0b", border: "2px solid #3a3a3a", display: "flex", flexDirection: "column", alignItems: "center", padding: 10 }}>
-          <div style={{ width: "100%", height: "100%", borderRadius: 38, background: "#161a18", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 12 }}>
-            <div style={{ width: 92, height: 26, borderRadius: 14, background: "#000", display: "flex" }} />
-            <div style={{ marginTop: 34, fontSize: 56, color: TEXT, fontWeight: 300, display: "flex" }}>9:41</div>
-            <div style={{ marginTop: 34, width: 214, borderRadius: 20, background: "rgba(60,60,60,0.85)", padding: 14, display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 24, height: 24, borderRadius: 6, background: "#ede8de", display: "flex", alignItems: "center", justifyContent: "center" }}><Mark size={16} color="#131211" /></div>
-                <div style={{ display: "flex", fontSize: 13, color: MUTED, letterSpacing: 2 }}>TEND</div>
-                <div style={{ display: "flex", fontSize: 12, color: MUTED, marginLeft: "auto" }}>now</div>
-              </div>
-              <div style={{ display: "flex", fontSize: 15, fontWeight: 700, color: TEXT, lineHeight: 1.25 }}>ops-agent wants to pay invoice 2026-118</div>
-              <div style={{ display: "flex", fontSize: 13, color: MUTED, lineHeight: 1.3 }}>4,800 EUR to Acme GmbH</div>
-              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                <div style={{ flex: 1, height: 32, borderRadius: 10, background: GREEN, color: "#0e1813", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>Allow once</div>
-                <div style={{ flex: 1, height: 32, borderRadius: 10, background: "rgba(255,255,255,0.14)", color: TEXT, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>Don’t allow</div>
-              </div>
-            </div>
+      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", background: INK, padding: "64px 72px", fontFamily: "sans-serif" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <Mark size={44} />
+            <div style={{ display: "flex", fontSize: 30, fontWeight: 700, color: TEXT, letterSpacing: 6 }}>TEND</div>
           </div>
+          <div style={{ display: "flex", fontSize: 20, color: ACCENT, border: `1px solid rgba(141,187,165,0.4)`, borderRadius: 999, padding: "8px 18px" }}>Private beta</div>
         </div>
-        {/* The line. */}
-        <div style={{ position: "absolute", left: 640, top: 0, bottom: 0, right: 64, display: "flex", flexDirection: "column", justifyContent: "center", gap: 22 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <Mark size={36} color={GREEN} />
-            <div style={{ display: "flex", fontSize: 26, fontWeight: 700, color: TEXT, letterSpacing: 6 }}>TEND</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          <div style={{ display: "flex", flexDirection: "column", fontSize: 72, fontWeight: 700, color: TEXT, lineHeight: 1.05, letterSpacing: -2 }}>
+            <div style={{ display: "flex" }}>Your AI agent asks.</div>
+            <div style={{ display: "flex", color: ACCENT }}>TEND decides.</div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", fontSize: 62, fontWeight: 700, color: TEXT, lineHeight: 1.04, letterSpacing: -2 }}>
-            <div style={{ display: "flex" }}>Your AI agents ask.</div>
-            <div style={{ display: "flex" }}>You decide.</div>
-          </div>
-          <div style={{ display: "flex", fontSize: 25, color: MUTED, lineHeight: 1.4 }}>Risky tool calls wait for your yes, then run exactly once.</div>
+          <div style={{ display: "flex", fontSize: 28, color: MUTED, maxWidth: 900, lineHeight: 1.4 }}>Allow, block or approve every tool call from Claude Code before it runs. Every decision on record.</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <Step name="Agent" note="asks to use a tool" />
+          <Arrow />
+          <Step name="TEND" note="checks the request" accent />
+          <Arrow />
+          <Step name="Policy" note="allow · ask · deny" />
+          <Arrow />
+          <Step name="Tool" note="runs only on a yes" />
         </div>
       </div>
     ),

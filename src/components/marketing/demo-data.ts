@@ -25,14 +25,12 @@ export const SHELL_ALLOW_RULE = BALANCED.find((r) => r.tool === "shell" && r.act
 type Pending = Omit<Authorization, "createdAt" | "expiresAt" | "alerts"> & { askedMinutesAgo: number; lapsesInMinutes: number };
 
 /** The two requests waiting on the hero's Overview screen. */
-// The gateway's own shapes (docs/gateway.md): resource "INV-" and digits, detail "EUR <amount> to <payee> (<payee id>)"; request ids are
-// "az_" and 24 hex characters (server/authz.ts).
 export const INVOICE_REQUEST: Pending = {
-  id: "az_5c1e09a7d3f24b8e6a0c71f2", agentId: OPS_AGENT.id, tool: "pay_invoice", action: "execute", resource: "INV-2026118",
-  detail: "EUR 4800.00 to Acme GmbH (PAYEE-7)", status: "pending", reason: "approval_required", askedMinutesAgo: 2, lapsesInMinutes: 8,
+  id: "az_demo_invoice", agentId: OPS_AGENT.id, tool: "pay_invoice", action: "pay", resource: "2026-118",
+  detail: "Pay invoice 2026-118: 4,800 EUR to Acme GmbH", status: "pending", reason: "approval_required", askedMinutesAgo: 2, lapsesInMinutes: 8,
 };
 export const PUSH_REQUEST: Pending = {
-  id: "az_9b03f6e2c4a17d58e0b2a913", agentId: REPO_HELPER.id, tool: "shell", action: "Bash",
+  id: "az_demo_push", agentId: REPO_HELPER.id, tool: "shell", action: "Bash",
   detail: "Run: git push --force origin main", status: "pending", reason: "approval_required", rule: GIT_PUSH_RULE, askedMinutesAgo: 4, lapsesInMinutes: 6,
 };
 
@@ -43,22 +41,20 @@ export interface DemoDecision {
   detail: string;
   tool: string;
   action: string;
-  outcome: "ran" | "blocked" | "rejected" | "allowed" | "needs_approval" | "approved" | "expired";
-  /** How it got there, when it took more than one step ("Needs approval → Rejected"), as the app's table folds one action into one row. */
-  path?: ("needs_approval" | "approved" | "rejected" | "expired" | "ran")[];
+  outcome: "ran" | "blocked" | "rejected" | "allowed" | "needs_approval" | "approved";
   why: { kind: "rule"; rule: RuleLike } | { kind: "person" } | { kind: "reason"; reason: string };
 }
 
 export const HISTORY: DemoDecision[] = [
   { time: "13:58", agent: REPO_HELPER, detail: "Run: npm test", tool: "shell", action: "Bash", outcome: "ran", why: { kind: "rule", rule: SHELL_ALLOW_RULE } },
   { time: "13:41", agent: REPO_HELPER, detail: "Read: ~/.ssh/id_ed25519", tool: "file.read", action: "Read", outcome: "blocked", why: { kind: "rule", rule: SSH_READ_RULE } },
-  { time: "13:12", agent: RESEARCH_AGENT, detail: "Open: https://api.example.com/refunds", tool: "web", action: "WebFetch", outcome: "rejected", why: { kind: "person" } },
+  { time: "13:12", agent: OPS_AGENT, detail: "Send email to billing@example.com", tool: "send_email", action: "send", outcome: "rejected", why: { kind: "person" } },
 ];
 
 /** What the Activity screen on the closing card lists: the two waiting requests and the four decisions before them. */
 export const ACTIVITY: DemoDecision[] = [
   { time: "14:02", agent: OPS_AGENT, detail: INVOICE_REQUEST.detail!, tool: INVOICE_REQUEST.tool, action: INVOICE_REQUEST.action, outcome: "needs_approval", why: { kind: "reason", reason: "approval_required" } },
-  { time: "14:00", agent: REPO_HELPER, detail: PUSH_REQUEST.detail!, tool: PUSH_REQUEST.tool, action: PUSH_REQUEST.action, outcome: "rejected", path: ["needs_approval", "rejected"], why: { kind: "person" } },
+  { time: "14:00", agent: REPO_HELPER, detail: PUSH_REQUEST.detail!, tool: PUSH_REQUEST.tool, action: PUSH_REQUEST.action, outcome: "needs_approval", why: { kind: "rule", rule: GIT_PUSH_RULE } },
   HISTORY[0],
   HISTORY[1],
   { time: "13:30", agent: REPO_HELPER, detail: "Read: src/app/page.tsx", tool: "file.read", action: "Read", outcome: "allowed", why: { kind: "reason", reason: "policy_allowed" } },
@@ -79,7 +75,7 @@ export interface DemoAgentLine {
 }
 export const AGENT_LINES: DemoAgentLine[] = [
   { agent: OPS_AGENT, integration: "claude", live: true, doing: "waiting", detail: INVOICE_REQUEST.detail!, minutesAgo: 2 },
-  { agent: REPO_HELPER, integration: "claudeCode", live: true, doing: "rejected", detail: PUSH_REQUEST.detail!, minutesAgo: 4 },
+  { agent: REPO_HELPER, integration: "claudeCode", live: true, doing: "waiting", detail: PUSH_REQUEST.detail!, minutesAgo: 4 },
   { agent: RESEARCH_AGENT, integration: "langchain", live: false, detail: "Open: https://docs.stripe.com/api/invoices", minutesAgo: 38 },
 ];
 

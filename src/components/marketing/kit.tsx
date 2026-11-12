@@ -27,7 +27,7 @@ export function Band({ children, className, id, label, line = true }: { children
 /** The white pill with a chevron, and the quiet one beside it. */
 export function PrimaryLink({ href, children, className, size = "md" }: { href: string; children: React.ReactNode; className?: string; size?: "md" | "lg" }) {
   return (
-    <Link href={href} className={cn("mk-press group inline-flex items-center justify-center gap-1.5 rounded-full bg-white font-medium text-[#141414] outline-none hover:bg-[#e6e6e6]", size === "lg" ? "h-11 px-5 text-[15px]" : "h-9 px-4 text-[14px] pointer-coarse:h-11", className)}>
+    <Link href={href} className={cn("mk-press group inline-flex items-center justify-center gap-1.5 rounded-full bg-white font-medium text-[#141414] outline-none hover:bg-[#e6e6e6]", size === "lg" ? "h-11 px-5 text-[15px]" : "h-9 px-4 text-[14px]", className)}>
       {children}
       <ChevronRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" strokeWidth={2} aria-hidden />
     </Link>
@@ -35,7 +35,7 @@ export function PrimaryLink({ href, children, className, size = "md" }: { href: 
 }
 export function QuietLink({ href, children, className, size = "md" }: { href: string; children: React.ReactNode; className?: string; size?: "md" | "lg" }) {
   return (
-    <Link href={href} className={cn("mk-press inline-flex items-center justify-center rounded-full border border-white/[0.12] font-medium text-foreground outline-none hover:bg-white/[0.06]", size === "lg" ? "h-11 px-5 text-[15px]" : "h-9 px-4 text-[14px] pointer-coarse:h-11", className)}>
+    <Link href={href} className={cn("mk-press inline-flex items-center justify-center rounded-full border border-white/[0.12] font-medium text-foreground outline-none hover:bg-white/[0.06]", size === "lg" ? "h-11 px-5 text-[15px]" : "h-9 px-4 text-[14px]", className)}>
       {children}
     </Link>
   );
@@ -43,7 +43,7 @@ export function QuietLink({ href, children, className, size = "md" }: { href: st
 /** The small outlined link under a screen: "Explore the CLI >". */
 export function ExploreLink({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) {
   return (
-    <Link href={href} className={cn("mk-press group inline-flex h-8 pointer-coarse:h-11 items-center gap-1 rounded-full border border-white/[0.12] pr-2.5 pl-3.5 text-[13px] text-foreground/90 outline-none hover:bg-white/[0.06] hover:text-foreground", className)}>
+    <Link href={href} className={cn("mk-press group inline-flex h-8 items-center gap-1 rounded-full border border-white/[0.12] pr-2.5 pl-3.5 text-[13px] text-foreground/90 outline-none hover:bg-white/[0.06] hover:text-foreground", className)}>
       {children}
       <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" strokeWidth={2} aria-hidden />
     </Link>
@@ -51,11 +51,10 @@ export function ExploreLink({ href, children, className }: { href: string; child
 }
 
 /** The words under a screen: a short title, two lines and the link. */
-export function Caption({ title, body, href, link, className, level = 3 }: { title: string; body: string; href?: string; link?: string; className?: string; level?: 2 | 3 }) {
-  const H = level === 2 ? "h2" : "h3";
+export function Caption({ title, body, href, link, className }: { title: string; body: string; href?: string; link?: string; className?: string }) {
   return (
     <div className={cn("max-w-[42ch]", className)}>
-      <H className="text-[15px] font-medium text-foreground">{title}</H>
+      <h3 className="text-[15px] font-medium text-foreground">{title}</h3>
       <p className="mt-1 text-[15px] leading-[1.45] text-muted-foreground">{body}</p>
       {href && link && <ExploreLink href={href} className="mt-4">{link}</ExploreLink>}
     </div>

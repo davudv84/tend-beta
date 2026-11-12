@@ -1,19 +1,56 @@
 "use client";
 
+import Link from "next/link";
+import { useCallback } from "react";
 import { CheckIcon, XIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import type { DecisionRow } from "@/ui/decision-table";
+import { RequestCardView } from "@/ui/request-card-view";
 import type { Stat } from "@/ui/stats-grid";
 import { cn } from "@/lib/utils";
-import { SampleCard } from "./sample-card";
-import { minutesLeft, type ActivityLine, type Demo, type Waiting } from "./use-demo";
+import { mmss, type ActivityLine, type Demo, type DemoId, type Waiting } from "./use-demo";
+
+/** The exact request of each demo request, in the reader's language: what is decided, and what Activity records. */
+export function useExactOf() {
+  const t = useT();
+  const r = t.front.demo.requests;
+  return useCallback((id: DemoId) => r[id].exact, [r]);
+}
 
 /**
- * The waiting request, drawn exactly as the app's card (sample-card.tsx), counting down in whole minutes like the app. Payments ask
- * "Allow this exact request once?" before they are allowed, as in the app.
+ * One waiting request, drawn by the app's own card (ui/request-card-view.tsx) with the demo's invented data. Allowing and not allowing
+ * act at once; the countdown is live.
  */
 export function DemoCard({ waiting, onDecide, className }: { waiting: Waiting; onDecide: (decision: "allowed" | "denied") => void; className?: string }) {
-  return <SampleCard request={waiting.request} agentName="ops-agent" askedAt="14:02" lapsesAt="14:10" minutesLeft={minutesLeft(waiting.left)} onAnswered={onDecide} className={className} />;
+  const t = useT();
+  const h = t.home.request;
+  const d = t.front.demo;
+  const { request: q, left } = waiting;
+  const words = d.requests[q.id];
+  const kind = q.kind === "spend" || q.kind === "run" ? h.kind[q.kind] : d.kinds[q.kind];
+  const asked = q.askedMinutesAgo ? t.time.ago(q.askedMinutesAgo, "m") : d.justNow;
+  return (
+    <RequestCardView
+      className={className}
+      kind={kind}
+      loud={q.kind === "spend" || q.kind === "run" || q.kind === "data"}
+      sentence={words.sentence}
+      meta={<>{h.asked(asked)} · <span className="tabular-nums">{d.lapses(mmss(left))}</span></>}
+      exact={{ label: h.exact, text: words.exact, mono: q.mono }}
+      item={q.item ? { label: h.rows.item, value: q.item } : undefined}
+      why={{ label: h.why, value: words.why }}
+      labels={{ allow: h.allow, deny: h.deny, details: h.details, saving: h.saving, promise: h.promise }}
+      onAllow={() => onDecide("allowed")}
+      onDeny={() => onDecide("denied")}
+      change={<Link href="/how-it-works#steps" className="text-muted-foreground underline underline-offset-2 hover:text-foreground">{h.change}</Link>}
+      details={[
+        { label: d.rows.agent, value: q.agent },
+        { label: d.rows.tool, value: `${q.tool} · ${q.action}`, mono: true },
+        { label: d.rows.asked, value: asked },
+        { label: d.rows.rule, value: words.rule },
+      ]}
+    />
+  );
 }
 
 /** The four numbers, from the demo's state. */
@@ -31,6 +68,7 @@ export function useStats(demo: Demo): Stat[] {
 export function useActivityRows(lines: ActivityLine[]): DecisionRow[] {
   const t = useT();
   const g = t.timelinePage;
+  const reasons = t.front.demo.reasons;
   return lines.map((l) => ({
     key: l.key,
     time: l.time,
@@ -38,27 +76,26 @@ export function useActivityRows(lines: ActivityLine[]): DecisionRow[] {
     detail: l.detail,
     action: l.action,
     outcome: l.outcome,
-    ...(l.path && { path: l.path }),
     reason:
       l.reason.kind === "history"
         ? (() => {
             const w = l.reason.decision.why;
             return w.kind === "rule" ? g.rule(w.rule) : w.kind === "person" ? g.by.person : (g.reasons[w.reason] ?? w.reason);
           })()
-        : l.reason.kind === "expired" ? g.reasons.expired ?? g.outcome.expired : g.by.person,
+        : reasons[l.reason.kind],
   }));
 }
 
 /** The short note after a decision, like the app's own toast. */
 export function DemoToast({ demo, className }: { demo: Demo; className?: string }) {
-  const h = useT().home.request;
+  const d = useT().front.demo;
   const toast = demo.toast;
   return (
     <div aria-hidden className={cn("pointer-events-none transition-all duration-300 motion-reduce:transition-none", toast ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0", className)}>
       {toast && (
         <p className="flex items-center gap-2.5 rounded-xl border border-border bg-elevated px-4 py-3 text-[14px] text-foreground shadow-[0_12px_32px_-12px_rgb(0_0_0/0.7)]">
-          {toast.decision === "allowed" ? <CheckIcon className="size-4 shrink-0 text-primary" strokeWidth={2} /> : <XIcon className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />}
-          {toast.decision === "allowed" ? h.allowed : h.denied}
+          {toast.decision === "allowed" ? <CheckIcon className="size-4 shrink-0 text-primary" strokeWidth={2} /> : <XIcon className="size-4 shrink-0 text-clay" strokeWidth={2} />}
+          {d.toast[toast.decision === "allowed" ? "allowed" : "denied"]}
         </p>
       )}
     </div>
@@ -73,3 +110,13 @@ export function Announcer({ demo }: { demo: Demo }) {
   return <p aria-live="polite" className="sr-only">{text}</p>;
 }
 
+/** Answered: nothing waits any more. */
+export function AllClear({ className }: { className?: string }) {
+  const d = useT().front.demo;
+  return (
+    <div className={cn("flex flex-col items-center justify-center gap-5 rounded-2xl border border-dashed border-border px-6 py-12 text-center", className)}>
+      <span className="grid size-10 place-items-center rounded-full bg-primary/15 text-primary"><CheckIcon className="size-5" strokeWidth={2} aria-hidden /></span>
+      <p className="max-w-[30ch] text-[15px] text-foreground">{d.empty}</p>
+    </div>
+  );
+}

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { BellIcon, LogOutIcon, PlusIcon } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { BellIcon, PlusIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/ui/brand-mark";
@@ -11,8 +12,7 @@ import { GROUPS, SETTINGS, navBadgeClass, navIconClass, navItemClass, type NavKe
 import { Page } from "@/ui/page";
 import { Card, buttonClass } from "@/ui/primitives";
 import { StatsGrid } from "@/ui/stats-grid";
-import { AgentLines } from "./agent-lines";
-import { DemoCard, DemoToast, useActivityRows, useStats } from "./parts";
+import { AllClear, DemoCard, DemoToast, useActivityRows, useStats } from "./parts";
 import type { Demo } from "./use-demo";
 
 type View = "home" | "activity";
@@ -30,7 +30,7 @@ export function DemoDesktop({ demo }: { demo: Demo }) {
     <div className="ui-next dark relative overflow-hidden rounded-2xl border border-white/[0.12] bg-background shadow-[0_50px_140px_-40px_rgb(0_0_0/0.9),0_0_0_1px_rgb(0_0_0/0.6)]" data-theme="dark">
       <div className="grid h-10 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.07] bg-[#1b1a18] px-4">
         <span aria-hidden className="flex gap-2"><span className="size-3 rounded-full bg-white/[0.13]" /><span className="size-3 rounded-full bg-white/[0.13]" /><span className="size-3 rounded-full bg-white/[0.13]" /></span>
-        <span aria-hidden className="flex h-6 min-w-56 items-center justify-center rounded-md bg-white/[0.05] px-3 text-[12px] text-[#a9a296]">TEND · {view === "home" ? t.ui.nav.home : t.ui.nav.activity}</span>
+        <span aria-hidden className="flex h-6 min-w-56 items-center justify-center rounded-md bg-white/[0.05] px-3 text-[12px] text-[#a9a296]">tend · {view === "home" ? t.ui.nav.home : t.ui.nav.activity}</span>
         <span className="justify-self-end text-[12px] text-[#a9a296]">{t.front.demo.label}</span>
       </div>
       <div className="grid h-[1010px] grid-cols-[232px_minmax(0,1fr)] xl:h-[900px]">
@@ -64,7 +64,7 @@ function Sidebar({ view, setView, waiting }: { view: View; setView: (v: View) =>
                       <span>{t.ui.nav[it.key]}</span>
                       {it.key === "approvals" && waiting > 0 && (
                         <span className={navBadgeClass("full")}>
-                          <span className="sr-only">, {t.ui.waitingLabel(waiting)}</span><span aria-hidden>{waiting}</span>
+                          <span className="sr-only">{t.ui.waitingLabel(waiting)}: </span>{waiting}
                         </span>
                       )}
                     </>
@@ -95,7 +95,6 @@ function Sidebar({ view, setView, waiting }: { view: View; setView: (v: View) =>
             <span aria-hidden className="grid size-7 shrink-0 place-items-center border border-border bg-background text-[11px] font-semibold">OP</span>
             <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">{t.ui.operator}</span><span className="block truncate text-[12px] text-muted-foreground">{t.ui.signedIn}</span></span>
           </span>
-          <span aria-hidden className="grid size-8 shrink-0 place-items-center text-muted-foreground"><LogOutIcon className="size-4" strokeWidth={1.75} /></span>
         </span>
       </div>
     </aside>
@@ -106,8 +105,8 @@ function Overview({ demo }: { demo: Demo }) {
   const t = useT();
   const h = t.home;
   const d = h.dash;
+  const reduce = useReducedMotion();
   const stats = useStats(demo);
-  const recent = useActivityRows(demo.activity).slice(0, 6);
   const n = demo.waiting.length;
   return (
     <Page full>
@@ -122,27 +121,26 @@ function Overview({ demo }: { demo: Demo }) {
       <p className={`mt-8 text-[17px] ${n ? "font-medium text-foreground" : "text-muted-foreground"}`}>{n ? d.needYou(n) : d.allQuiet}</p>
       <StatsGrid stats={stats} className="mt-6" />
 
-      {n > 0 ? (
-        <section className="mt-10">
-          <h3 className="text-[17px] font-medium">{d.needs}</h3>
-          <div className="mt-4 grid grid-cols-2 items-start gap-4">
-            <DemoCard waiting={demo.waiting[0]} onDecide={(decision) => demo.decide(demo.waiting[0].request.id, decision)} />
-          </div>
-        </section>
-      ) : null}
-      {/* The rest of the app's Overview (app/(next)/home/view.tsx): the agents, recent activity, and what TEND covers. */}
-      <Card className="mt-10">
-        <div className="flex items-center justify-between px-6 py-4"><h3 className="text-[17px] font-medium">{d.agents}</h3><span className="text-[14px] text-muted-foreground">{h.overview.viewAgents}</span></div>
-        <AgentLines className="border-t border-border" invoice={demo.activity[0]?.outcome} />
-        <footer className="flex items-center gap-2 border-t border-border px-5 py-3 text-[14px] text-muted-foreground"><PlusIcon className="size-4" strokeWidth={1.75} aria-hidden />{d.add}</footer>
-      </Card>
-      <Card className="mt-10">
-        <div className="flex items-center justify-between px-6 py-4"><h3 className="text-[17px] font-medium">{h.recent.title}</h3><span className="text-[14px] text-muted-foreground">{h.recent.all}</span></div>
-        <div className="border-t border-border"><DecisionRows rows={recent} agents compact /></div>
-      </Card>
-      <section className="mt-10 border-t border-border pt-6">
-        <h3 className="text-[15px] font-medium">{d.covers.title}</h3>
-        <p className="mt-2 max-w-[72ch] text-[14px] text-pretty text-muted-foreground">{d.covers.yes} {d.covers.no}</p>
+      <section className="mt-10">
+        <h3 className="text-[17px] font-medium">{d.needs}</h3>
+        <div className="mt-4 min-h-[460px]">
+          {/* The card leaves, and then "All clear" takes its place. */}
+          <AnimatePresence initial={false} mode="wait">
+            {demo.waiting[0] ? (
+              <motion.div
+                key="card"
+                className="grid grid-cols-2 items-start gap-4"
+                exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, scale: 0.96, y: -12, transition: { duration: 0.28 } }}
+              >
+                <DemoCard waiting={demo.waiting[0]} onDecide={(decision) => demo.decide(demo.waiting[0].request.id, decision)} />
+              </motion.div>
+            ) : (
+              <motion.div key="clear" initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduce ? 0 : 0.3 }}>
+                <AllClear className="min-h-[300px]" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </section>
     </Page>
   );
@@ -161,14 +159,7 @@ function Activity({ demo }: { demo: Demo }) {
         <span className="font-medium text-foreground">{g.live}</span>
         <span>· {g.liveNote}</span>
       </p>
-      {/* The app's filter row (app/(next)/timeline/view.tsx): the six groups, the agent picker and "More filters". */}
-      <Card className="mt-8 flex flex-wrap items-center gap-3 px-4 py-3">
-        <span className="inline-flex rounded-md border border-border p-0.5 text-[13px]">
-          {(["all", "approvals", "allowed", "blocked", "alerts", "changes"] as const).map((k, i) => <span key={k} className={cn("rounded-[5px] px-2.5 py-1", i === 0 ? "bg-elevated font-medium text-foreground" : "text-muted-foreground")}>{g.groups[k]}</span>)}
-        </span>
-        <span className="ml-auto text-[13px] text-muted-foreground underline underline-offset-4">{g.moreFilters}</span>
-      </Card>
-      <Card className="mt-4">
+      <Card className="mt-8">
         <h3 className="bg-sunken px-6 py-2 text-[13px] font-medium text-muted-foreground">{t.time.today}</h3>
         <div className="border-t border-border"><DecisionRows rows={rows} agents /></div>
       </Card>

@@ -2,20 +2,37 @@
 
 import { useCallback, useEffect, useReducer } from "react";
 import type { Outcome } from "@/lib/activity";
-import { ACTIVITY, INVOICE_REQUEST, type DemoDecision } from "../demo-data";
+import { ACTIVITY, type DemoDecision } from "../demo-data";
 
 // The hero's interactive demo: one invented request, the four numbers, the activity list and a short countdown, all in the browser.
 // Nothing is sent anywhere. The visitor answers it once, and that is the end of it. The desktop window and the phone card both read
 // this one state, so they can never disagree.
 
 export type DemoId = "invoice";
+export type DemoKind = "spend" | "run" | "send" | "data" | "settings";
 
-/** The one request that waits when the demo opens: the app's own shape (demo-data.ts), lapsing in eight minutes. */
-export const REQUEST = INVOICE_REQUEST;
-const SECONDS = REQUEST.lapsesInMinutes * 60;
+export interface DemoRequest {
+  id: DemoId;
+  agent: string;
+  kind: DemoKind;
+  /** The tool and action as recorded, shown in Details and under the request in Activity. */
+  tool: string;
+  action: string;
+  /** The item the request touches, when it has one (the invoice number). */
+  item?: string;
+  /** A command, query or address, shown as written in a typewriter face. */
+  mono: boolean;
+  /** When it was asked, in minutes before the demo opened. */
+  askedMinutesAgo: number;
+  /** How long it stays open, in seconds. */
+  seconds: number;
+}
+
+/** The one request that waits when the demo opens. */
+export const REQUEST: DemoRequest = { id: "invoice", agent: "ops-agent", kind: "spend", tool: "pay_invoice", action: "pay", item: "2026-118", mono: false, askedMinutesAgo: 2, seconds: 8 * 60 };
 
 export interface Waiting {
-  request: typeof REQUEST;
+  request: DemoRequest;
   /** Seconds left before it lapses. */
   left: number;
 }
@@ -30,8 +47,6 @@ export interface ActivityLine {
   detail?: string;
   action: string;
   outcome: Outcome;
-  /** The steps it took, when more than one: the app folds an action into one row ("Needs approval → Approved"). */
-  path?: Outcome[];
   /** A recorded reason in the app's words, or the decision made in the demo. */
   reason: { kind: "history"; decision: DemoDecision } | { kind: Decision };
 }
@@ -45,13 +60,13 @@ interface State {
   announce: Decision | null;
 }
 
-type Action = { type: "decide"; decision: Decision } | { type: "tick" } | { type: "clearToast"; id: number };
+type Action = { type: "decide"; decision: Decision; time: string; detail: string } | { type: "tick" } | { type: "clearToast"; id: number };
 
 const initial = (): State => ({
-  waiting: [{ request: REQUEST, left: SECONDS }],
+  waiting: [{ request: REQUEST, left: REQUEST.seconds }],
   auto: 14,
   blocked: 2,
-  activity: ACTIVITY.map((d, i) => ({ key: `history-${i}`, time: d.time, agent: d.agent.name, detail: d.detail, action: `${d.tool}.${d.action}`, outcome: d.outcome, path: d.path, reason: { kind: "history", decision: d } })),
+  activity: ACTIVITY.map((d, i) => ({ key: `history-${i}`, time: d.time, agent: d.agent.name, detail: d.detail, action: `${d.tool}.${d.action}`, outcome: d.outcome, reason: { kind: "history", decision: d } })),
   toast: null,
   announce: null,
 });
@@ -60,15 +75,14 @@ function reducer(s: State, a: Action): State {
   switch (a.type) {
     case "decide": {
       if (!s.waiting.length) return s;
-      // The waiting request's own row in Activity (the first) now ends the way it was decided, as the app folds one action into one
-      // row with its path. A person's yes doesn't count as "allowed without asking you"; a no counts as blocked; a lapse as neither.
-      const outcome: Outcome = a.decision === "allowed" ? "approved" : a.decision === "denied" ? "rejected" : "expired";
-      const [first, ...rest] = s.activity;
+      const r = s.waiting[0].request;
+      const line: ActivityLine = { key: "decided", time: a.time, agent: r.agent, detail: a.detail, action: `${r.tool}.${r.action}`, outcome: a.decision === "allowed" ? "approved" : a.decision === "denied" ? "rejected" : "expired", reason: { kind: a.decision } };
       return {
         ...s,
         waiting: [],
-        blocked: s.blocked + (a.decision === "denied" ? 1 : 0),
-        activity: [{ ...first, outcome, path: ["needs_approval", outcome], reason: { kind: a.decision } }, ...rest],
+        auto: s.auto + (a.decision === "allowed" ? 1 : 0),
+        blocked: s.blocked + (a.decision === "allowed" ? 0 : 1),
+        activity: [line, ...s.activity],
         toast: a.decision === "expired" ? null : { id: 1, decision: a.decision },
         announce: a.decision,
       };
@@ -80,14 +94,16 @@ function reducer(s: State, a: Action): State {
   }
 }
 
-/** Whole minutes left, as the app counts them ("Expires in 8 min"). */
-export const minutesLeft = (sec: number) => Math.max(1, Math.ceil(sec / 60));
+const clockNow = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+/** "7:59": minutes and seconds, for the countdown. */
+export const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 
 /**
  * The demo's state and the one thing a visitor can do with it: answer the request. The card goes, the numbers and Activity change,
  * and nothing new comes. The request counts down once a second and lapses at 0:00 if nobody answers.
  */
-export function useDemo() {
+export function useDemo(exactOf: (id: DemoId) => string) {
   const [s, dispatch] = useReducer(reducer, undefined, initial);
 
   const counting = s.waiting.length > 0;
@@ -99,8 +115,8 @@ export function useDemo() {
 
   const lapsed = s.waiting[0]?.left === 0;
   useEffect(() => {
-    if (lapsed) dispatch({ type: "decide", decision: "expired" });
-  }, [lapsed]);
+    if (lapsed) dispatch({ type: "decide", decision: "expired", time: clockNow(), detail: exactOf(REQUEST.id) });
+  }, [lapsed, exactOf]);
 
   const toastId = s.toast?.id;
   useEffect(() => {
@@ -109,7 +125,7 @@ export function useDemo() {
     return () => clearTimeout(id);
   }, [toastId]);
 
-  const decide = useCallback((_id: string, decision: "allowed" | "denied") => dispatch({ type: "decide", decision }), []);
+  const decide = useCallback((_id: DemoId, decision: "allowed" | "denied") => dispatch({ type: "decide", decision, time: clockNow(), detail: exactOf(REQUEST.id) }), [exactOf]);
 
   return { ...s, done: s.waiting.length === 0, decide };
 }

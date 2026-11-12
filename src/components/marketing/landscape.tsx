@@ -1,61 +1,80 @@
+"use client";
+
+import Image from "next/image";
+import { useId } from "react";
 import { preload as preloadResource } from "react-dom";
 import { cn } from "@/lib/utils";
-import ART from "./art-sizes.json";
+import PAINTING from "./painting.json";
+
+// The painting (public/home/painting, written by scripts/art/build-art.py): AVIF q70 and WebP q85 at every width the source gives.
+/**
+ * How wide the painting is drawn, for `sizes`. It covers its box, so a tall box draws it wider than the box: the hero panel is about
+ * 760px tall on a phone, 900 on a tablet and up to 1170 on a desktop, and the painting is 2.33 times as wide as it is tall. The closing
+ * band is 340, 440 or 560px tall across the full width. Measured in a browser at 375 to 2560px.
+ */
+export const HERO_SIZES = "(max-width: 767px) 1780px, (max-width: 1023px) 2120px, 2720px";
+export const CLOSING_SIZES = "(max-width: 639px) 792px, (max-width: 767px) 1025px, (max-width: 1304px) 1304px, 100vw";
+const paintingSet = (ext: "avif" | "webp") => PAINTING.widths.map((w) => `/home/painting/painting-${w}.${ext} ${w}w`).join(", ");
 
 /**
- * The painting behind the hero and the closing: a misty valley at dusk, darkened 40% at export. scripts/art/build-art.py writes every
- * width it can be drawn at (1x and 2x, AVIF q70 and WebP q85) and lists them in art-sizes.json, which this reads.
- *
- * - Hero: below 1024px a tall crop around the bright gap and the river fills the whole hero (the phone stands in the gap). From
- *   1024px the whole valley is drawn at its own proportions across the top, so it is drawn at the window's width and never scaled up
- *   past what the files hold; it fades into the page under the app window.
- * - Sky: the sky only, for the closing.
- *
- * Art direction needs <picture>, which next/image doesn't do; the files are already the sizes and formats it would make.
+ * Dusk over forested hills: the picture when it exists under public/home, otherwise hills drawn in the same mood, so the page
+ * looks finished before the pictures arrive. `preload` marks the one picture that is the largest thing above the fold.
  */
-type ArtSet = keyof typeof ART;
-const srcSet = (set: ArtSet, ext: "avif" | "webp") => ART[set].widths.map((w) => `/art/${set}-${w}.${ext} ${w}w`).join(", ");
-const largest = (set: ArtSet) => ART[set].widths[ART[set].widths.length - 1];
-const middle = (set: ArtSet) => ART[set].widths[Math.floor((ART[set].widths.length - 1) / 2)];
-
-/** On a phone the tall crop is drawn about 1.6 times the screen's width (it fills the hero's height); on a tablet, at its width. */
-const TALL_SIZES = "(max-width: 767px) 165vw, 100vw";
-const NARROW = "(max-width: 1023px)";
-
-export function HeroPainting({ alt }: { alt: string }) {
-  // Start the painting with the page itself, as AVIF, in the crop this screen will use.
-  preloadResource(`/art/valley-tall-${middle("valley-tall")}.avif`, { as: "image", imageSrcSet: srcSet("valley-tall", "avif"), imageSizes: TALL_SIZES, media: NARROW, type: "image/avif", fetchPriority: "high" });
-  preloadResource(`/art/valley-${middle("valley")}.avif`, { as: "image", imageSrcSet: srcSet("valley", "avif"), imageSizes: "100vw", media: "(min-width: 1024px)", type: "image/avif", fetchPriority: "high" });
+export function Landscape({ src, painting, alt = "", preload, className, position = "center", tone = "dusk", mask, sizes = "100vw" }: {
+  src?: string; painting?: boolean; alt?: string; preload?: boolean; className?: string; position?: string; tone?: "dusk" | "night"; mask?: string; sizes?: string;
+}) {
+  // The painting is served from its own exported files (two formats at set qualities), placed exactly as the photo was.
+  if (painting && preload) preloadResource(`/home/painting/painting-${PAINTING.widths[0]}.avif`, { as: "image", imageSrcSet: paintingSet("avif"), imageSizes: sizes, type: "image/avif", fetchPriority: "high" });
   return (
-    <div className="absolute inset-x-0 top-0 -z-20 h-full lg:h-auto">
-      <picture className="block h-full w-full lg:h-auto">
-        <source media={NARROW} type="image/avif" srcSet={srcSet("valley-tall", "avif")} sizes={TALL_SIZES} />
-        <source media={NARROW} type="image/webp" srcSet={srcSet("valley-tall", "webp")} sizes={TALL_SIZES} />
-        <source type="image/avif" srcSet={srcSet("valley", "avif")} sizes="100vw" />
-        <source type="image/webp" srcSet={srcSet("valley", "webp")} sizes="100vw" />
-        <img
-          src={`/art/valley-${middle("valley")}.webp`}
-          alt={alt}
-          width={largest("valley")}
-          height={Math.round(largest("valley") / ART.valley.aspect)}
-          fetchPriority="high"
-          loading="eager"
-          className="h-full w-full object-cover object-[50%_42%] lg:h-auto"
-        />
-      </picture>
-      {/* A soft edge under the header, and the bottom third fading to the page. */}
-      <div aria-hidden className="absolute inset-0 bg-[linear-gradient(to_bottom,#181818_0%,rgb(24_24_24/0)_14%,rgb(24_24_24/0)_62%,#181818_100%)]" />
+    <div aria-hidden={alt ? undefined : true} className={cn("absolute inset-0 overflow-hidden", className)} style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}>
+      {painting ? (
+        <picture>
+          <source type="image/avif" srcSet={paintingSet("avif")} sizes={sizes} />
+          <source type="image/webp" srcSet={paintingSet("webp")} sizes={sizes} />
+          <img src={`/home/painting/painting-${PAINTING.width}.webp`} alt={alt} width={PAINTING.width} height={PAINTING.height} loading={preload ? "eager" : "lazy"} fetchPriority={preload ? "high" : undefined} decoding={preload ? "sync" : "async"} className="absolute inset-0 h-full w-full object-cover" style={{ objectPosition: position }} />
+        </picture>
+      ) : src ? <Image src={src} alt={alt} fill sizes={sizes} preload={preload} fetchPriority={preload ? "high" : undefined} decoding={preload ? "sync" : undefined} className="object-cover" style={{ objectPosition: position }} /> : <Hills tone={tone} />}
     </div>
   );
 }
 
-/** The sky, behind the closing: drawn at the window's width. */
-export function SkyPainting({ alt, className }: { alt: string; className?: string }) {
+/** Four ridges under a dusk or night sky. Decorative only. */
+export function Hills({ tone = "dusk", className }: { tone?: "dusk" | "night"; className?: string }) {
+  const id = useId();
+  const sky = `${id}-sky`, glow = `${id}-glow`;
   return (
-    <picture className={cn("absolute inset-0 block overflow-hidden", className)}>
-      <source type="image/avif" srcSet={srcSet("sky", "avif")} sizes="100vw" />
-      <source type="image/webp" srcSet={srcSet("sky", "webp")} sizes="100vw" />
-      <img src={`/art/sky-${middle("sky")}.webp`} alt={alt} width={largest("sky")} height={Math.round(largest("sky") / ART.sky.aspect)} loading="lazy" decoding="async" className="h-full w-full object-cover object-[50%_40%]" />
-    </picture>
+    <svg aria-hidden viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice" className={cn("h-full w-full", className)}>
+      <defs>
+        <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#050605" />
+          <stop offset="0.5" stopColor={tone === "dusk" ? "#0b1b19" : "#07120e"} />
+          <stop offset="1" stopColor={tone === "dusk" ? "#3b2718" : "#0e2219"} />
+        </linearGradient>
+        <radialGradient id={glow} cx="0.38" cy="0.66" r="0.45">
+          <stop offset="0" stopColor="#d4753f" stopOpacity={tone === "dusk" ? 0.6 : 0} />
+          <stop offset="1" stopColor="#d4753f" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width="1600" height="900" fill={`url(#${sky})`} />
+      <rect width="1600" height="900" fill={`url(#${glow})`} />
+      <path d="M0 585 C 180 535, 360 575, 540 548 S 880 490, 1090 528 S 1440 572, 1600 528 V900 H0Z" fill="#14302a" />
+      <path d="M0 655 C 240 605, 430 660, 650 628 S 1010 578, 1260 622 S 1500 662, 1600 632 V900 H0Z" fill="#0e2119" />
+      <path d="M0 735 C 300 705, 520 752, 780 712 S 1160 672, 1410 724 S 1560 744, 1600 736 V900 H0Z" fill="#09160f" />
+      <path d="M0 815 C 260 793, 560 833, 840 803 S 1310 783, 1600 813 V900 H0Z" fill="#06100b" />
+    </svg>
+  );
+}
+
+/** Leafy silhouettes along the bottom edge, for the hero when there is no cut-out foreground picture yet. */
+export function Bushes({ className }: { className?: string }) {
+  const blobs = [
+    [40, 860, 170], [230, 890, 140], [420, 850, 190], [640, 900, 150], [820, 870, 175], [1010, 905, 130], [1180, 860, 185], [1390, 895, 150], [1560, 870, 170],
+    [120, 800, 110], [540, 790, 100], [930, 810, 115], [1300, 800, 105],
+  ];
+  return (
+    <svg aria-hidden viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice" className={cn("h-full w-full", className)}>
+      {blobs.map(([x, y, r], i) => <circle key={i} cx={x} cy={y} r={r} fill={i < 9 ? "#07110c" : "#0a1811"} />)}
+      <rect y="880" width="1600" height="20" fill="#050605" />
+    </svg>
   );
 }
