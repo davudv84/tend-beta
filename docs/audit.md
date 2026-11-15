@@ -75,8 +75,13 @@ What this protects against: application bugs, and injected or mistaken statement
 
 What it does **not** protect against: a database owner or superuser, who can drop the trigger or edit the files;
 anyone who can run statements that set the flag; and rows in other tables. `authorizations` and `reviews` change status
-by design, so their history lives in the events, not in those rows. There is no hash chain, so a deliberate rewrite by
-someone with database access would not be detected by Tend.
+by design, so their history lives in the events, not in those rows.
+
+The events table does carry a hash chain (each event's hash covers the previous hash and its own content, sequence number
+included), so a rewrite is *detected* even though the trigger cannot *prevent* it — provided you keep the checkpoint
+`audit-verify` prints outside Tend and re-check against it (`--checkpoint …`), which covers a deleted prefix and an
+altered oldest entry as well as an interior rewrite. Without a kept checkpoint, a database owner who rewrites and recomputes
+the whole chain leaves no trace Tend can see. Other tables (`authorizations`, `reviews`) have no such chain.
 
 ## When the outcome cannot be written
 
@@ -114,6 +119,6 @@ These hold only if you set Tend up for them:
 ## Not implemented
 
 - Named approvers and per-person accounts.
-- Tamper-evidence against a database owner (hash chain, external log).
+- Automatic off-site anchoring of the checkpoint (today you keep it yourself; `audit-verify` prints it and re-checks against it).
 - Export of the authentication log, and alerting on it.
 - Retention and export of the log.

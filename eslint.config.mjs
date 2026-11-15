@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Integration verification: installed framework packages and Python environments (npm run verify:setup).
     ".verify/**",
     "scripts/verify/frameworks/node_modules/**",
+    // Red-team harness: an adversarial repro script (redteam/attacks.ts) and its report, not part of the app.
+    "redteam/**",
     // Local data and tool state, never part of the app.
     ".data/**",
     "**/.claude-flow/**",

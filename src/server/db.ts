@@ -293,6 +293,23 @@ export const MIGRATIONS: string[] = [
    );`,
   // A read-only account (demo-account.ts): it can sign in and look at its own workspace, and every change is refused (http.ts requireOperator).
   `ALTER TABLE users ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0;`,
+  // Mail links that sign in (accounts.ts openLink). 'signin' is a one-time sign-in link for a confirmed account. A confirmation link may
+  // carry the password it will set (a scrypt hash): only for an address that was signed up more than once with different passwords.
+  `ALTER TABLE user_tokens DROP CONSTRAINT user_tokens_purpose_check;
+   ALTER TABLE user_tokens ADD CONSTRAINT user_tokens_purpose_check CHECK (purpose IN ('verify', 'reset', 'signin'));
+   ALTER TABLE user_tokens ADD COLUMN password_hash TEXT;`,
+  // Bind each event's own `seq` into the hash chain from here on, so an event's position is covered, not only its content (an interior
+  // event deleted and the chain recomputed would leave a sequence gap, and the chain no longer re-links purely by content). Events already
+  // hashed keep their v1 hash (no seq); the boundary below (the current highest seq) tells verifyAudit which formula to use per row, so
+  // nothing already written is rewritten. events_chain is BEFORE INSERT, where NEW.seq is already assigned by the identity default.
+  `INSERT INTO meta (key, value) VALUES ('events.chain.v2_after', (SELECT COALESCE(MAX(seq), 0)::text FROM events)) ON CONFLICT (key) DO NOTHING;
+   CREATE OR REPLACE FUNCTION events_chain() RETURNS trigger LANGUAGE plpgsql AS $fn$
+   DECLARE prev TEXT;
+   BEGIN
+     SELECT hash INTO prev FROM events ORDER BY seq DESC LIMIT 1;
+     NEW.hash := encode(sha256(convert_to(coalesce(prev, '') || '|' || NEW.seq::text || '|' || NEW.id || '|' || NEW.agent_id || '|' || NEW.type || '|' || NEW.at::text || '|' || NEW.actor || '|' || NEW.data, 'UTF8')), 'hex');
+     RETURN NEW;
+   END $fn$;`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
