@@ -21,7 +21,7 @@ export function Footer({ accounts }: { accounts: boolean; images?: HomeImages })
   const o = f.footer;
   const columns: [string, Item[]][] = [
     [o.columns.product, [[f.nav.overview, "/"], ...PRODUCTS.map((p) => [f.product[p].name, `/product/${p}`] as Item), [f.signIn, accounts ? "/account/sign-in" : "/operator"], ...(accounts ? [[f.create, "/account/sign-up"] as Item] : [])]],
-    [o.columns.resources, [[o.links.docs, "/docs"], [o.links.howItWorks, "/how-it-works"], [o.links.report, "/verification-report"], [o.links.limitations, "/security"]]],
+    [o.columns.resources, [[o.links.docs, "/docs"], [o.links.howItWorks, "/how-it-works"], [o.links.report, "/verification-report"], [o.links.limitations, "/security"], [o.links.compare, "/compare"]]],
     [o.columns.company, [[o.links.about, "/about"], [o.links.contact, "/contact"], [o.links.imprint, "/imprint"]]],
   ];
   const link = "rounded-sm text-[14px] text-foreground/75 transition-colors hover:text-foreground";

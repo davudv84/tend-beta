@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon, CircleCheckIcon, LinkIcon, LockIcon, MinusIcon, ScrollTextIcon, TicketCheckIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { SCENARIOS } from "@/lib/integrations-catalog";
@@ -10,12 +9,8 @@ import { cn } from "@/lib/utils";
 import { VERIFIED } from "./hero";
 import { Band, Container, PrimaryLink, QuietLink, Screen, Terminal, prefersReducedMotion } from "./kit";
 import { CLOSING_SIZES, Landscape } from "./landscape";
-import { ActivityPanel } from "./panels/activity";
-import { AgentsPanel, IntegrationsPanel } from "./panels/agents";
-import { ApprovalsPanel } from "./panels/approvals";
-import { ChecksPanel, GatewayMini } from "./panels/checks";
-import { RulesPanel, TryCall, type Stage } from "./panels/rules";
 import { Reveal } from "./reveal";
+import { ShotImage, Shot, type ShotName } from "./shot";
 import { TERMINALS } from "./site-data";
 import { DemoButton } from "@/ui/demo-button";
 
@@ -42,9 +37,9 @@ export function Stats() {
 }
 
 const PLATFORM = [["decide", CircleCheckIcon, "/product/approvals"], ["prove", ScrollTextIcon, "/product/activity"]] as const;
-/** An app screen in a card: at its real layout from 768px up, the phone's below, both a little smaller than life. */
-const BIG = "w-[380px] md:w-[860px] [zoom:0.85]";
-const SMALL = "w-[480px] md:w-[760px] [zoom:0.6]";
+const PLATFORM_SHOT: Record<(typeof PLATFORM)[number][0], ShotName> = { decide: "approvals", prove: "activity" };
+/** The story's three steps (scripts/screens), each a crop of the real screen it happened on. */
+const STEPS: ["ask" | "decide" | "ran", ShotName][] = [["ask", "step-ask"], ["decide", "step-decide"], ["ran", "step-ran"]];
 
 /**
  * "One checkpoint for every AI agent", laid out as sim.ai's platform section: two cards with the app's own screen in each, where the
@@ -56,9 +51,7 @@ export function Platform() {
   const t = useT();
   const p = t.front.platform;
   const tc = t.front.tryCall;
-  const reduce = useReducedMotion();
   const [active, setActive] = useState(0);
-  const [stage, setStage] = useState<Stage>("ask");
   const card = "relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-mk-surface";
   return (
     <Band id="product" label="platform-title">
@@ -78,23 +71,23 @@ export function Platform() {
                   <h3 className="mt-5 text-[22px] font-medium tracking-[-0.02em]"><Link href={href} className="outline-none hover:underline hover:underline-offset-4">{p[key].title}</Link></h3>
                   <p className="mt-2 max-w-[36ch] text-[15px] text-muted-foreground">{p[key].body}</p>
                 </div>
-                <Screen inner={BIG} className={cn("mt-auto ml-6 h-[320px] rounded-tl-xl transition-opacity duration-500 md:ml-8 md:h-auto md:flex-1", on ? "mk-rise" : "md:opacity-30")}>
-                  {key === "decide" ? <ApprovalsPanel /> : <ActivityPanel />}
-                </Screen>
+                <div aria-hidden className={cn("mt-auto ml-6 h-[320px] overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] bg-white transition-opacity duration-500 md:ml-8 md:h-auto md:flex-1", on ? "mk-rise" : "md:opacity-30")}>
+                  <div className="w-[640px] md:w-[980px]"><ShotImage name={PLATFORM_SHOT[key]} alt="" sizes="(min-width: 768px) 980px, 640px" /></div>
+                </div>
               </div>
             );
           })}
         </Reveal>
         <Reveal className={cn(card, "mt-4 px-5 py-10 sm:px-8 md:px-12 md:py-14")}>
-          <div className="text-center">
-            <h3 className="mk-heading text-[clamp(1.75rem,3.4vw,2.5rem)]">
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.span key={stage} className="block" initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, y: -10, transition: { duration: 0.16 } }}>{tc.steps[stage]}</motion.span>
-              </AnimatePresence>
-            </h3>
-            <p className="mx-auto mt-3 max-w-[50ch] text-[15px] text-muted-foreground">{tc.body}</p>
-          </div>
-          <div className="mx-auto mt-10 max-w-[920px]"><TryCall autoplay onStage={setStage} /></div>
+          <p className="mx-auto max-w-[56ch] text-center text-[15px] text-muted-foreground">{tc.body}</p>
+          <ol className="mx-auto mt-10 grid max-w-[1040px] gap-8 md:grid-cols-[1fr_1fr] md:gap-x-10">
+            {STEPS.map(([step, name], i) => (
+              <li key={step} className={cn("grid content-start gap-4", step === "ran" && "md:col-span-2")}>
+                <h3 className="mk-heading text-[clamp(1.4rem,2.6vw,1.9rem)]"><span className="mr-2 text-muted-foreground tabular-nums">{i + 1}.</span>{tc.steps[step]}</h3>
+                <Shot name={name} alt={(t.front.shots as Record<string, string>)[name]} sizes={step === "ran" ? "(min-width: 1100px) 1040px, 90vw" : "(min-width: 1100px) 500px, 90vw"} frame="card" className={step === "decide" ? "max-w-[420px]" : undefined} />
+              </li>
+            ))}
+          </ol>
         </Reveal>
       </Container>
     </Band>
@@ -107,8 +100,8 @@ const HREF: Record<CardKey, string> = {
   approvals: "/product/approvals", rules: "/product/rules", activity: "/product/activity", agents: "/product/agents", checks: "/product/checks",
   gateway: "/how-it-works#modes", cli: "/docs", integrations: "/verification-report",
 };
-/** The cards that show one of the app's screens, at its real layout and made smaller; the other three are drawn to fit the card. */
-const APP_SCREEN: Partial<Record<CardKey, React.ReactNode>> = { approvals: <ApprovalsPanel />, rules: <RulesPanel />, activity: <ActivityPanel />, agents: <AgentsPanel />, checks: <ChecksPanel /> };
+/** The screenshot each card shows (scripts/screens); the terminal card shows the CLI's own output. */
+const CARD_SHOT: Partial<Record<CardKey, ShotName>> = { approvals: "approvals", rules: "policies", activity: "activity", agents: "agents", checks: "checks", gateway: "spend-locked", integrations: "integrations" };
 /** How fast the strip drifts by itself, in pixels a second. */
 const DRIFT = 26;
 
@@ -176,9 +169,11 @@ export function Everything() {
     el.scrollBy({ left: dir * (card.getBoundingClientRect().width + 16), behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
   const screen = (k: CardKey) => {
-    if (APP_SCREEN[k]) return <Screen inner={SMALL} className="h-full rounded-tl-xl">{APP_SCREEN[k]}</Screen>;
-    const drawn = k === "gateway" ? <GatewayMini /> : k === "cli" ? <Terminal {...TERMINALS.home} minHeight={200} compact /> : <IntegrationsPanel small />;
-    return <Screen inner="w-[calc(100%-1rem)]" className="h-full">{drawn}</Screen>;
+    const name = CARD_SHOT[k];
+    if (!name) return <Screen inner="w-[calc(100%-1rem)]" className="h-full"><Terminal {...TERMINALS.home} minHeight={200} compact /></Screen>;
+    // A crop that is wide and short sits in the middle of the card; a window runs off the card's right and bottom edges.
+    if (k === "gateway") return <div aria-hidden className="mr-4 grid h-full place-items-center"><Shot name={name} alt="" sizes="400px" frame="card" /></div>;
+    return <div aria-hidden className="h-full overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] bg-white"><div className="w-[620px]"><ShotImage name={name} alt="" sizes="620px" /></div></div>;
   };
   // The strip starts where the page's content starts, and runs to the window's edge.
   const gutter = "px-5 sm:px-8 xl:px-[calc((100vw-1200px)/2+2rem)]";

@@ -72,47 +72,56 @@ export const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
 /** A line in a terminal: a command and what it printed. Commands are TEND's real ones (scripts/tend-cli.mjs); the output is an example. */
 export interface TermLine { cmd: string; out?: string[] }
+// The CLI's own output (scripts/tend-cli.mjs, tester-agent.mjs, verify-integrations.mjs), line for line, with the same sample workspace as
+// the screenshots: ids are "az_" and 24 hex characters, hashes 64, as TEND writes them.
+const PUSH = "az_ca260092b06e4f31b77974cc";
+const REFUND = "az_bc45c3c44af4488e9bebc629";
+const CLAUDE = "Claude Code · checkout-service";
+const HEAD = "9c41e7b2d05f8a3c6e19b47d2a8f0c53e6d1b9a47f2c08e5d3b6a91c4e7f20d8";
+const FIRST = "3f0a6c1e9b7d24f5a8c03e6b1d9f74a2c5e80b3d6f1a9c4e7b2d05f8a3c6e19b";
+const wants = (id: string, agent: string, call: string, exactly: string) => [`${id}  ${agent} wants ${call}`, `    exactly: ${exactly}`, `    decide:  npm run tend -- approve ${id}   |   npm run tend -- reject ${id}`];
+
 export const TERMINALS: Record<"approvals" | "rules" | "activity" | "agents" | "checks" | "home", { cwd: string; lines: TermLine[] }> = {
   home: {
     cwd: "~/tend",
     lines: [
-      { cmd: "npm run tend -- pending", out: ["az_7f2c  ops-agent wants pay_invoice.pay 2026-118", "    exactly: Pay invoice 2026-118: 4,800 EUR to Acme GmbH"] },
-      { cmd: "npm run tend -- approve az_7f2c", out: ["Allowed once: az_7f2c"] },
+      { cmd: "npm run tend -- pending", out: wants(PUSH, CLAUDE, "shell.Bash", "Run: git push origin feature/discount-codes") },
+      { cmd: `npm run tend -- approve ${PUSH}`, out: [`Allowed once: ${PUSH}`] },
     ],
   },
   approvals: {
     cwd: "~/tend",
     lines: [
-      { cmd: "npm run tend -- pending", out: ["az_7f2c  ops-agent wants pay_invoice.pay 2026-118", "    exactly: Pay invoice 2026-118: 4,800 EUR to Acme GmbH", "az_91d0  repo-helper wants shell.run", "    exactly: Run: git push --force origin main"] },
-      { cmd: "npm run tend -- approve az_7f2c", out: ["Allowed once: az_7f2c"] },
-      { cmd: "npm run tend -- reject az_91d0", out: ["Rejected: az_91d0"] },
+      { cmd: "npm run tend -- pending", out: [...wants(PUSH, CLAUDE, "shell.Bash", "Run: git push origin feature/discount-codes"), ...wants(REFUND, "Support agent", "issue_refund.refund order-48213", "Refund €42.00 to the card used for order #48213")] },
+      { cmd: `npm run tend -- approve ${PUSH}`, out: [`Allowed once: ${PUSH}`] },
+      { cmd: `npm run tend -- reject ${REFUND}`, out: [`Rejected: ${REFUND}`] },
     ],
   },
   rules: {
     cwd: "~/tend",
     lines: [
-      { cmd: 'npm run tend -- policy create "Baseline" --rule send_email:send:approve --rule delete_record:delete:deny --assign "ops-agent"', out: ['Created "Baseline" v1: send_email.send=approve, delete_record.delete=deny; agents: ops-agent'] },
-      { cmd: 'npm run tend -- simulate "Baseline" --rule send_email:send:deny', out: ["Simulated against 42 recorded action(s) from the last 30 day(s). Nothing was run or saved.", "  would allow 30, ask 0, block 12   (it was: allowed 30, asked 12, blocked 0)"] },
+      { cmd: 'npm run tend -- policy create "Baseline" --rule send_email:send:approve --rule delete_customer:delete:deny --assign "Support agent"', out: ['Created "Baseline" v1: send_email.send=approve, delete_customer.delete=deny; agents: Support agent'] },
+      { cmd: 'npm run tend -- simulate "Baseline" --rule send_email:send:deny', out: ["Simulated against 42 recorded action(s) from the last 30 day(s). Nothing was run or saved.", "  would allow 30, ask 0, block 12   (it was: allowed 30, asked 12, blocked 0)", "  12 approve -> deny", "  Support agent: 42 action(s), 12 decided differently"] },
     ],
   },
   activity: {
     cwd: "~/tend",
     lines: [
-      { cmd: 'npm run tend -- audit --agent "ops-agent" --last 3', out: ["2026-11-08 13:44:12  ops-agent: denied delete_record.delete C-311 (policy_denied)", "2026-11-08 14:02:31  ops-agent: requested pay_invoice.pay 2026-118 (approval_required)", "2026-11-08 14:03:05  ops-agent: a person approved a held request"] },
-      { cmd: "npm run tend -- audit-verify", out: ["Audit chain intact: 7 event(s) checked. Head hash: 9c41e7…", "Keep this hash outside TEND; a history rewritten later will not end in it."] },
+      { cmd: 'npm run tend -- audit --agent "Support agent" --last 3', out: ["2026-11-16 07:58:12  Support agent: denied delete_customer.delete customer-5521 (policy_denied)", "2026-11-16 08:06:40  Support agent: requested issue_refund.refund order-48213 (approval_required)", "2026-11-16 08:07:31  Support agent: a person approved a held request"] },
+      { cmd: "npm run tend -- audit-verify", out: ["Audit chain intact: 1284 event(s) checked from #1.", `Checkpoint to keep outside TEND:  --checkpoint "1:${FIRST}:1284:${HEAD}"`, "Re-run later with that flag: a cut prefix, an altered oldest event, or a rewrite up to it will then be caught."] },
     ],
   },
   agents: {
     cwd: "~/tend",
     lines: [
-      { cmd: 'npm run tester:agent -- "My agent" --rule read_ticket:read:allow', out: ['I registered "My agent" (ag_5d1e); key saved in .env.agent as TEND_AGENT_KEY.', "  read_ticket.read: allowed"] },
-      { cmd: "npm run tend -- status", out: ["Agents: ops-agent, repo-helper, support-bot, research-agent, My agent", "Waiting for you: 2 (npm run tend -- pending)"] },
+      { cmd: 'npm run tester:agent -- "My agent" --rule read_ticket:read:allow', out: ['I registered "My agent" (my-agent); key saved in .env.agent as TEND_AGENT_KEY.', "  read_ticket.read: allowed"] },
+      { cmd: "npm run tend -- status", out: ["TEND at http://localhost:3000", `Agents: ${CLAUDE}, Support agent, Research agent, Nightly data sync, My agent`, "Central policies: none", "Waiting for you: 3 (npm run tend -- pending)"] },
     ],
   },
   checks: {
     cwd: "~/tend",
     lines: [
-      { cmd: "npm run verify:integrations", out: ["claudeCode: Claude Code", "  allow        PASS", "  deny         PASS", "  approve      PASS", "  reject       PASS", "  revoke       PASS", "  unavailable  PASS", "  audit        PASS", "  => VERIFIED"] },
+      { cmd: "npm run verify:integrations", out: ["claude: claude-haiku-4-5 via the official Anthropic SDK (@anthropic-ai/sdk)", "  allow        PASS  6.1s  $0.0021", "  deny         PASS  5.4s  $0.0019", "  approve      PASS  7.8s  $0.0024", "  reject       PASS  6.6s  $0.0022", "  revoke       PASS  5.9s  $0.0020", "  unavailable  PASS  6.3s  $0.0023", "  audit        PASS", "  => VERIFIED  ($0.0129)"] },
     ],
   },
 };

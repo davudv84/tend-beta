@@ -7,18 +7,13 @@ import { Dialog } from "radix-ui";
 import { LanguageSwitch } from "@/components/language-switch";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
-import { StatsGrid } from "@/ui/stats-grid";
-import { AppPanel, Container, PrimaryLink, Screen } from "./kit";
+import { AppPanel, Container, PrimaryLink } from "./kit";
 import { Logo } from "./logo";
-import { ActivityPanel } from "./panels/activity";
-import { AgentsPanel } from "./panels/agents";
-import { ApprovalsPanel } from "./panels/approvals";
-import { ChecksPanel } from "./panels/checks";
-import { RulesPanel } from "./panels/rules";
+import { ShotImage, type ShotName } from "./shot";
 import { PRODUCTS, type ProductSlug } from "./site-data";
 
 const ICON: Record<ProductSlug | "overview", typeof ShieldIcon> = { overview: LayoutGridIcon, approvals: CircleCheckIcon, rules: ShieldIcon, activity: ActivityIcon, agents: BotIcon, checks: ShieldCheckIcon };
-const RESOURCES = [["docs", "/docs"], ["howItWorks", "/how-it-works"], ["report", "/verification-report"], ["security", "/security"], ["about", "/about"], ["contact", "/contact"]] as const;
+const RESOURCES = [["docs", "/docs"], ["howItWorks", "/how-it-works"], ["report", "/verification-report"], ["security", "/security"], ["compare", "/compare"], ["about", "/about"], ["contact", "/contact"]] as const;
 type Menu = "product" | "resources";
 type PreviewKey = ProductSlug | "overview" | (typeof RESOURCES)[number][0];
 
@@ -143,19 +138,16 @@ export function Nav({ accounts }: { accounts: boolean }) {
   );
 }
 
-/** The live screen shown beside the menu for the item under the pointer. */
+/** Beside the menu, a screenshot of the item under the pointer (scripts/screens); the resources show what they are about. */
+const PREVIEW_SHOT: Partial<Record<PreviewKey, ShotName>> = { overview: "overview", approvals: "approvals", rules: "policies", activity: "activity", agents: "agents", checks: "checks" };
 function Preview({ k }: { k: PreviewKey }) {
   const t = useT();
-  const s = t.home.dash.stats;
-  // The app's own screens at their real layout, made smaller.
-  const real = k === "approvals" ? <ApprovalsPanel /> : k === "rules" ? <RulesPanel /> : k === "activity" ? <ActivityPanel /> : k === "agents" ? <AgentsPanel /> : k === "checks" ? <ChecksPanel /> : null;
-  if (k === "approvals" || k === "rules" || k === "activity" || k === "agents" || k === "checks") return <Screen inner="w-[760px] [zoom:0.6]">{real}</Screen>;
-  if (k === "overview") return <AppPanel title={t.ui.nav.home} icon={LayoutGridIcon} bodyClassName="p-3"><StatsGrid stats={[{ label: s.running, value: 3, note: s.of(4) }, { label: s.waiting, value: 2, note: s.now }, { label: s.auto, value: 14, note: s.day }, { label: s.blocked, value: 2, note: s.day }]} className="lg:grid-cols-2" /></AppPanel>;
-  const c = t.front.kit.connect;
+  const name = PREVIEW_SHOT[k];
+  if (name) return <div aria-hidden className="overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] bg-white"><div className="w-[620px]"><ShotImage name={name} alt="" sizes="620px" /></div></div>;
+  const r = t.front.nav.res[k as keyof typeof t.front.nav.res];
   return (
-    <AppPanel title={t.front.nav.res[k][0]} icon={BookOpenIcon} bodyClassName="grid gap-2 p-4">
-      <p className="text-[13px] text-muted-foreground">{t.front.nav.res[k][1]}</p>
-      <ol className="mt-1 grid gap-1.5">{c.steps.map((s2, i) => <li key={s2} className="flex items-center gap-2.5 text-[13px]"><span className="grid size-5 place-items-center rounded-full border border-border text-[11px] tabular-nums">{i + 1}</span>{s2}</li>)}</ol>
+    <AppPanel title={r[0]} icon={BookOpenIcon} bodyClassName="grid gap-2 p-4">
+      <p className="text-[13px] text-muted-foreground">{r[1]}</p>
     </AppPanel>
   );
 }

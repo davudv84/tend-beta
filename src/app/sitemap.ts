@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { COMPETITORS } from "@/components/marketing/compare-data";
 import { PRODUCTS } from "@/components/marketing/site-data";
 import { config } from "@/server/config";
 
@@ -6,6 +7,6 @@ import { config } from "@/server/config";
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = config.appUrl;
   if (!base) return [];
-  const pages = ["/", "/how-it-works", "/docs", "/security", "/verification-report", "/about", "/contact", "/imprint", "/privacy", "/terms", ...PRODUCTS.map((p) => `/product/${p}`)];
+  const pages = ["/", "/how-it-works", "/docs", "/security", "/verification-report", "/about", "/contact", "/imprint", "/privacy", "/terms", ...PRODUCTS.map((p) => `/product/${p}`), "/compare", ...COMPETITORS.map((c) => `/compare/${c.slug}`)];
   return pages.map((p) => ({ url: `${base}${p === "/" ? "" : p}` }));
 }

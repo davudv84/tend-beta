@@ -4,7 +4,7 @@ import { useT } from "@/i18n/client";
 import { BRAND_ICONS } from "@/lib/brand-icons";
 import { INTEGRATIONS, SCENARIOS, statusOf, type IntegrationId } from "@/lib/integrations-catalog";
 import { DemoButton } from "@/ui/demo-button";
-import { HeroDemo } from "./demo/hero-demo";
+import { DesktopStory, PhoneStory } from "./demo/story";
 import { Container, PrimaryLink, QuietLink } from "./kit";
 import { HERO_SIZES, Landscape } from "./landscape";
 
@@ -16,7 +16,7 @@ const WORKS_WITH = [...PREFERRED.map((id) => VERIFIED.find((i) => i.id === id)),
 
 /**
  * The top of the homepage, laid out as sim.ai's: the headline on the left, the sentence and the two buttons on the right, then the
- * app itself, clickable, in a wide frame with the dusk picture behind it, and the strip of what it works with.
+ * app itself, played once from real screenshots, in a wide frame with the dusk picture behind it, and the strip of what it works with.
  */
 export function Hero({ accounts, demo }: { accounts: boolean; demo: boolean }) {
   const t = useT();
@@ -42,7 +42,8 @@ export function Hero({ accounts, demo }: { accounts: boolean; demo: boolean }) {
         <div className="relative isolate mx-auto max-w-[1480px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#121212] px-3 pt-7 pb-10 sm:px-6 sm:pt-10 sm:pb-14 lg:px-[6%] lg:pt-[4.5%] lg:pb-[4.5%]">
           <Landscape painting alt={f.hero.landscape} preload sizes={HERO_SIZES} position="center 62%" className="-z-10" />
           <div aria-hidden className="absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,rgb(18_18_18/0.25),rgb(18_18_18/0.05)_40%,rgb(18_18_18/0.35))]" />
-          <HeroDemo />
+          <div className="hidden lg:block"><DesktopStory /></div>
+          <div className="lg:hidden"><PhoneStory /></div>
         </div>
       </div>
 

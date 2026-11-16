@@ -2,27 +2,20 @@
 
 import { useT } from "@/i18n/client";
 import { Closing } from "../home-sections";
-import { Band, Caption, Container, DisplayTitle, ExploreLink, PrimaryLink, QuietLink, Screen, Terminal } from "../kit";
-import { ActivityPanel, ChainPanel, DayPanel } from "../panels/activity";
-import { AgentsPanel, ConnectPanel, IntegrationsPanel } from "../panels/agents";
-import { ApprovalsPanel, ExactPanel, PhonePanel } from "../panels/approvals";
-import { ChecksPanel, ScenariosPanel } from "../panels/checks";
-import { CentralPolicyPanel, ConditionPanel, RulesPanel } from "../panels/rules";
+import { Band, Caption, Container, DisplayTitle, ExploreLink, PrimaryLink, QuietLink, Terminal } from "../kit";
+import { Shot, type ShotName } from "../shot";
 import { TERMINALS, type ProductSlug } from "../site-data";
 import type { HomeImages } from "../types";
 
-/** The page's own screen in small, over the headline: the real one, at its real layout. */
-// On a phone it runs off the right edge, as sim.ai's does, so it reads as a window into the app rather than a shrunken picture of it.
-const small = (screen: React.ReactNode) => <Screen inner="w-[700px] md:w-[760px] [zoom:0.6]">{screen}</Screen>;
-
-/** What each product page shows: a small screen on top, the big one, two smaller ones, and where each caption's link leads. */
-const PAGES: Record<ProductSlug, { top: React.ReactNode; main: React.ReactNode; a: React.ReactNode; b: React.ReactNode; href: [string, string, string]; cli: string }> = {
-  approvals: { top: small(<ApprovalsPanel />), main: <ApprovalsPanel />, a: <ExactPanel />, b: <PhonePanel />, href: ["/how-it-works#steps", "/security", "/docs"], cli: "/docs" },
-  rules: { top: small(<RulesPanel />), main: <RulesPanel />, a: <ConditionPanel />, b: <CentralPolicyPanel />, href: ["/how-it-works#steps", "/docs", "/how-it-works"], cli: "/docs" },
-  activity: { top: small(<ActivityPanel />), main: <ActivityPanel />, a: <ChainPanel />, b: <DayPanel />, href: ["/how-it-works#steps", "/security#doesnt", "/product/approvals"], cli: "/docs" },
-  agents: { top: small(<AgentsPanel />), main: <AgentsPanel />, a: <ConnectPanel />, b: <IntegrationsPanel />, href: ["/docs", "/docs", "/verification-report"], cli: "/docs" },
-  checks: { top: small(<ChecksPanel />), main: <ChecksPanel />, a: <ScenariosPanel />, b: <IntegrationsPanel />, href: ["/verification-report", "/verification-report", "/docs"], cli: "/verification-report" },
+/** Which real screenshot each part of a product page shows (scripts/screens): the page's screen, then the two smaller ones. */
+const PAGES: Record<ProductSlug, { main: ShotName; a: ShotName; b: ShotName; href: [string, string, string]; cli: string }> = {
+  approvals: { main: "approvals", a: "approvals-card", b: "phone-approvals", href: ["/how-it-works#steps", "/security", "/docs"], cli: "/docs" },
+  rules: { main: "policies", a: "policies-edit", b: "policies-json", href: ["/how-it-works#steps", "/docs", "/docs"], cli: "/docs" },
+  activity: { main: "activity", a: "activity-blocked", b: "overview-stats", href: ["/how-it-works#steps", "/security#doesnt", "/product/approvals"], cli: "/docs" },
+  agents: { main: "agents", a: "connect", b: "integrations", href: ["/docs", "/docs", "/verification-report"], cli: "/docs" },
+  checks: { main: "checks", a: "integration-dialog", b: "integrations", href: ["/verification-report", "/verification-report", "/docs"], cli: "/verification-report" },
 };
+const PHONE = new Set<ShotName>(["phone-approvals"]);
 
 /**
  * One product page, in the template of sim.ai's: a small live screen, "TEND / Approvals" and a large headline; a statement with the
@@ -34,10 +27,13 @@ export function ProductPage({ slug, accounts, demo }: { slug: ProductSlug; accou
   const f = t.front;
   const p = f.product[slug];
   const page = PAGES[slug];
+  const alt = f.shots as Record<string, string>;
   return (
     <>
       <Container className="pt-14 md:pt-20">
-        <div className="-mr-5 max-h-[300px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)] sm:-mr-8 md:mx-auto md:max-h-none md:max-w-[460px] md:[mask-image:linear-gradient(to_bottom,black_70%,transparent)]">{page.top}</div>
+        <div aria-hidden className="-mr-5 max-h-[300px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)] sm:-mr-8 md:mx-auto md:max-h-[280px] md:max-w-[460px] md:[mask-image:linear-gradient(to_bottom,black_70%,transparent)]">
+          <Shot name={page.main} alt="" sizes="(min-width: 768px) 460px, 620px" className="w-[620px] md:w-auto" />
+        </div>
         <DisplayTitle crumb={f.product.crumb(p.name)} lines={p.title} className="mt-10 pb-16 md:mt-12 md:pb-24" />
       </Container>
 
@@ -55,15 +51,19 @@ export function ProductPage({ slug, accounts, demo }: { slug: ProductSlug; accou
       </Band>
 
       <Container className="pb-14 md:pb-20">
-        {page.main}
+        <Shot name={page.main} alt={alt[page.main]} sizes="(min-width: 1200px) 1136px, 92vw" />
         <Caption title={p.main[0]} body={p.main[1]} link={p.main[2]} href={page.href[0]} className="mt-8" />
       </Container>
 
       <Container className="pb-16 md:pb-24">
         <div className="grid overflow-hidden rounded-2xl border border-white/[0.08] md:grid-cols-2">
-          {([[page.a, p.a, page.href[1]], [page.b, p.b, page.href[2]]] as const).map(([screen, words, href], i) => (
+          {([[page.a, p.a, page.href[1]], [page.b, p.b, page.href[2]]] as const).map(([name, words, href], i) => (
             <div key={i} className="flex flex-col gap-8 border-white/[0.08] p-5 sm:p-8 max-md:not-first:border-t md:not-first:border-l">
-              <div className="flex-1">{screen}</div>
+              <div className="flex flex-1 items-start justify-center">
+                {PHONE.has(name)
+                  ? <Shot name={name} alt={alt[name]} sizes="260px" frame="phone" className="w-[260px]" />
+                  : <Shot name={name} alt={alt[name]} sizes="(min-width: 1200px) 536px, (min-width: 768px) 44vw, 90vw" className="w-full" />}
+              </div>
               <Caption title={words[0]} body={words[1]} link={words[2]} href={href} />
             </div>
           ))}
