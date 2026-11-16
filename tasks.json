@@ -1,3 +1,55 @@
 {
-  "tasks": []
+  "tasks": [
+    {
+      "title": "Mapper: write qa/TEST_MAP.md — features, routes, data flows, trust boundaries, existing vs missing tests",
+      "status": "doing",
+      "assignee": "worker-mapper",
+      "detail": "Runs first and alone. Others start once TEST_MAP.md exists. Branch site, local/PGlite only.",
+      "id": "TBT-1",
+      "createdAt": "2026-11-16T08:14:38.623Z",
+      "startedAt": "2026-11-16T08:14:38.623Z",
+      "updatedAt": "2026-11-16T08:14:38.623Z"
+    },
+    {
+      "title": "Red Team: automated attack suite in qa/attacks/ (gateway bypass, approve-without-perm, double-decide, expiry, fail-closed, audit tamper, input abuse, prompt injection)",
+      "status": "todo",
+      "assignee": "worker-redteam",
+      "detail": "Blocked on TEST_MAP.md. Escalate any CRITICAL immediately.",
+      "id": "TBT-2",
+      "createdAt": "2026-11-16T08:14:38.623Z",
+      "updatedAt": "2026-11-16T08:14:38.623Z"
+    },
+    {
+      "title": "E2E Tester: Playwright tests in qa/e2e/ for real user flows (signup→connect→rule→block→approve/deny→audit; Notifications; EN+DE)",
+      "status": "todo",
+      "assignee": "worker-e2e",
+      "detail": "Blocked on TEST_MAP.md. Needs npm run dev + browser; flag if local port binding blocked.",
+      "id": "TBT-3",
+      "createdAt": "2026-11-16T08:14:38.623Z",
+      "updatedAt": "2026-11-16T08:14:38.623Z"
+    },
+    {
+      "title": "Agent Integrator: build demo agent using TEND as documented; measure setup time (<5min), added latency, doc gaps",
+      "status": "todo",
+      "assignee": "worker-integrator",
+      "detail": "Blocked on TEST_MAP.md. Acts like a real customer.",
+      "id": "TBT-4",
+      "createdAt": "2026-11-16T08:14:38.623Z",
+      "updatedAt": "2026-11-16T08:14:38.623Z"
+    },
+    {
+      "title": "Reviewer: dedupe findings, re-run every repro, write qa/REPORT.md sorted by severity + top-5 fixes",
+      "status": "todo",
+      "assignee": "worker-reviewer",
+      "detail": "Last. Runs after Red Team + E2E + Integrator report. Status to human when done.",
+      "id": "TBT-5",
+      "createdAt": "2026-11-16T08:14:38.623Z",
+      "updatedAt": "2026-11-16T08:14:38.623Z"
+    }
+  ],
+  "ticket": {
+    "prefix": "TBT",
+    "next": 6,
+    "aliases": {}
+  }
 }

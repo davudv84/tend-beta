@@ -1,0 +1,42 @@
+{
+  "note": "Written by the app. Read only; to change anything, see README.md.",
+  "webhookServer": {
+    "running": false,
+    "url": ""
+  },
+  "webhookResponder": "",
+  "webhooks": [],
+  "missions": [
+    {
+      "id": "ops-standup",
+      "label": "Hourly ops standup",
+      "to": "god",
+      "body": "Hourly ops standup. Review every agent: who is doing what, and confirm each is still running (not stalled or idle-stale). Check the task board — are in-flight tasks on track, and is anything blocked or unowned? Flag stale agents and at-risk tasks, and keep the board accurate. (As part of this standup each working agent is asked to summarise its current task and the next step, then compact and resume from the same point — so terminal contexts stay bounded without losing work. The compaction is queued and runs when an agent is idle, so it never interrupts work mid-step.)",
+      "enabled": false,
+      "intervalMs": 3600000,
+      "kind": "dispatch",
+      "createdBy": "",
+      "lastFiredAt": "2026-10-20T16:01:58.434Z"
+    },
+    {
+      "id": "heartbeat",
+      "label": "Floor heartbeat",
+      "to": "god",
+      "body": "Floor heartbeat: the team has gone quiet. Review the digest in your inbox, re-engage anyone stalled or blocked, and keep the board accurate — or rest if the work is genuinely done.",
+      "enabled": false,
+      "intervalMs": 120000,
+      "kind": "heartbeat",
+      "createdBy": "",
+      "lastFiredAt": "2026-10-08T19:08:58.387Z"
+    }
+  ],
+  "slack": {
+    "enabled": false,
+    "mode": "",
+    "channelId": "",
+    "responder": "",
+    "botTokenSet": false,
+    "appTokenSet": false,
+    "signingSecretSet": false
+  }
+}
