@@ -1,0 +1,2 @@
+#!/bin/sh
+ELECTRON_RUN_AS_NODE=1 exec "/Applications/Munder Difflin.app/Contents/MacOS/Munder Difflin" "$@"

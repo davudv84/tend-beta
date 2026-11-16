@@ -1,0 +1,3 @@
+#!/bin/sh
+if [ -x "/usr/local/bin/node" ]; then exec "/usr/local/bin/node" "$@"; fi
+ELECTRON_RUN_AS_NODE=1 exec "/Applications/Munder Difflin.app/Contents/MacOS/Munder Difflin" "$@"
