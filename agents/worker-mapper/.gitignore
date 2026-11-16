@@ -1,0 +1,6 @@
+settings.json
+cursor.json
+inbox/
+outbox/
+.codex/
+.broker

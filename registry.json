@@ -15,6 +15,20 @@
       "lastSeen": 1794816607757,
       "sessionHistory": [],
       "sessionId": "b8427284-ae66-4702-89af-fdb30c161dfc"
+    },
+    "worker-mapper": {
+      "id": "worker-mapper",
+      "name": "Mapper",
+      "provider": "claude",
+      "role": "temp",
+      "cwd": "/Users/davudvejzovic/Documents/tend-beta",
+      "capabilities": [],
+      "status": "idle",
+      "cwdValid": true,
+      "archived": false,
+      "lastSeen": 1794816910459,
+      "sessionHistory": [],
+      "sessionId": "bbc8a617-5898-4398-8271-391e168ec6c6"
     }
   }
 }
