@@ -3,7 +3,7 @@ import { currentSession, type Session } from "./session.ts";
 import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { spend } from "./limits.ts";
-import { takePushDue } from "./push-due.ts";
+import { takePushDue, takeResolvedDue } from "./push-due.ts";
 
 export { spend };
 
@@ -36,9 +36,18 @@ export async function afterResponse(task: () => Promise<unknown>) {
   }
 }
 
-/** Browser notifications queued by this request (push-due.ts) go out after the response. A refusal (403) can queue one too: a block is stored. */
+/**
+ * Notifications queued by this request (push-due.ts) go out after the response, through every channel (notify/). A refusal (403) can queue
+ * one too: a block is stored. Approvals this request settled (decided, expired, withdrawn) get their messages updated the same way.
+ */
 async function deliverQueued() {
-  if (takePushDue() && config.vapid) await afterResponse(async () => (await import("./push.ts")).flushPush(await (await import("./db.ts")).getDb()));
+  const queued = takePushDue(), resolved = takeResolvedDue();
+  if ((!queued && !resolved.length) || !(config.vapid || config.telegram)) return;
+  await afterResponse(async () => {
+    const db = await (await import("./db.ts")).getDb(), notify = await import("./notify/index.ts");
+    if (queued) await notify.flushNotifications(db);
+    for (const id of resolved) await notify.notifyResolved(db, id);
+  });
 }
 
 /** Wraps a route handler: known errors become JSON, unknown ones are logged and hidden. */

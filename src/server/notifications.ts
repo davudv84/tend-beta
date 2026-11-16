@@ -6,19 +6,21 @@
 //  - Every read and change is bounded by the caller's workspace; an id from another workspace is simply not there.
 //  - One row per workspace and dedup key. A repeated event (the same action blocked again and again) raises the count and moves the row
 //    to the top; it never adds a row and never sends a second browser notification.
-//  - A notification carries ids and kinds, never an event's content: the app shows the agent and tool, a browser notification shows
-//    neither (see push.ts).
-//  - An approval notification is a pointer to the Approvals page. Deciding still needs a session and goes through the normal review route.
+//  - A notification carries ids and kinds, never an event's content: the app and the channels (notify/) read the agent and tool when they
+//    show it, and a browser notification never shows the detail or arguments (notify/channels/web-push.ts).
+//  - An approval notification is a pointer to the approval. Deciding always goes through resolveApproval (approvals.ts): a session, or a
+//    Telegram chat linked to an account, and the same rules whichever it is.
 import { createHash, randomUUID } from "node:crypto";
 import type { WireEvent } from "../lib/projection.ts";
 import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { HttpError } from "./http.ts";
-import { markPushDue } from "./push-due.ts";
+import { markPushDue, markResolvedDue } from "./push-due.ts";
 
 export type Kind = "approval" | "blocked" | "alert" | "failed" | "expired" | "test";
-/** Kinds a browser notification is sent for (if the person turned it on). The rest are listed in the app only. */
+/** Kinds that are sent outside the app (to a browser, if the person turned it on; approvals and tests to Telegram too). The rest are listed in the app only. */
 const PUSHED = new Set<Kind>(["approval", "blocked", "alert", "failed", "test"]);
+const TELEGRAM = new Set<Kind>(["approval", "test"]);
 /** Blocks of the same tool and action by the same agent within this window are one notification. */
 export const BLOCKED_WINDOW = 10 * 60_000;
 export const MAX_SUBSCRIPTIONS = 10;
@@ -51,12 +53,14 @@ function classify(e: WireEvent): { kind: Kind; subject?: string; key: string } |
   }
 }
 
-async function anySubscriber(q: Q, workspace: string) {
-  return !!config.vapid && !!(await q.get("SELECT 1 FROM push_subscriptions s JOIN users u ON u.id = s.user_id WHERE u.workspace_id = ? LIMIT 1", workspace));
+/** Whether anyone in the workspace connected a channel this kind goes to: a subscribed browser, or a Telegram chat. Otherwise nothing is queued. */
+async function anySubscriber(q: Q, workspace: string, kind: Kind) {
+  if (config.vapid && await q.get("SELECT 1 FROM push_subscriptions s JOIN users u ON u.id = s.user_id WHERE u.workspace_id = ? LIMIT 1", workspace)) return true;
+  return TELEGRAM.has(kind) && !!config.telegram && !!(await q.get("SELECT 1 FROM telegram_links l JOIN users u ON u.id = l.user_id WHERE u.workspace_id = ? LIMIT 1", workspace));
 }
 
 async function upsert(q: Q, workspace: string, kind: Kind, key: string, at: number, agentId: string | null, subject: string | null) {
-  const push = PUSHED.has(kind) && (await anySubscriber(q, workspace)) ? "queued" : "none";
+  const push = PUSHED.has(kind) && (await anySubscriber(q, workspace, kind)) ? "queued" : "none";
   // A repeat moves the row up and makes it unread again, but keeps its push state: one browser notification per row, ever.
   const r = await q.get<{ inserted: boolean }>(
     `INSERT INTO notifications (id, workspace_id, kind, agent_id, subject, dedup_key, created_at, updated_at, push) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -73,6 +77,8 @@ export async function notifyFor(q: Q, e: WireEvent) {
   if (!c) return;
   if ("resolve" in c) {
     await q.run("UPDATE notifications SET resolved_at = ?, read_at = COALESCE(read_at, ?) WHERE dedup_key = ? AND resolved_at IS NULL", ms(e.at), ms(e.at), `approval:${c.resolve}`);
+    // Something was sent for it (a Telegram message, a browser notification): it is updated once this request has been answered (http.ts).
+    if (await q.get("SELECT 1 FROM delivery_messages m JOIN notifications n ON n.id = m.notification_id WHERE n.dedup_key = ? LIMIT 1", `approval:${c.resolve}`)) markResolvedDue(c.resolve);
     return;
   }
   const agent = await q.get<{ workspace_id: string }>("SELECT workspace_id FROM agents WHERE id = ? AND origin = 'connected'", e.agentId);
@@ -94,7 +100,9 @@ interface Row {
 
 /** Where a notification leads. Always a path on this site; the page it opens asks for a session like any other. */
 export function hrefOf(kind: Kind, subject: string | null, agentId: string | null) {
-  if ((kind === "approval" || kind === "expired") && subject) return `/oversight?request=${encodeURIComponent(subject)}`;
+  // An approval has a page of its own (the same path approvals.ts gives it): the one a notification opens to confirm or look.
+  if (kind === "approval" && subject) return `/approvals/${encodeURIComponent(subject)}`;
+  if (kind === "expired" && subject) return `/oversight?request=${encodeURIComponent(subject)}`;
   if ((kind === "alert" || kind === "failed") && agentId) return `/agents/${encodeURIComponent(agentId)}`;
   if (kind === "test") return "/settings?tab=notifications";
   return "/timeline";

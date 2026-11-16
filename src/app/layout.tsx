@@ -25,6 +25,10 @@ export async function generateMetadata(): Promise<Metadata> {
     description: t.meta.description,
     openGraph: { ...card, type: "website", siteName: "TEND", locale: locale === "de" ? "de_DE" : "en_US", alternateLocale: locale === "de" ? "en_US" : "de_DE" },
     twitter: { ...card, card: "summary_large_image" },
+    // With app/manifest.json these let TEND be added to an iPhone's Home Screen or a Mac's Dock, which is what lets Safari deliver its
+    // notifications there (Web Push on iOS needs the Home Screen app).
+    icons: { apple: "/icons/apple-touch-icon.png" },
+    appleWebApp: { capable: true, title: "TEND", statusBarStyle: "default" },
   };
 }
 

@@ -45,7 +45,7 @@ test("an approval request notifies its own workspace only, and answering it mark
   const r = await ping(db, agent);
   let w1 = await listNotifications(db, "w1");
   assert.equal(w1.unread, 1);
-  assert.deepEqual({ kind: w1.items[0].kind, tool: w1.items[0].tool, href: w1.items[0].href, resolved: w1.items[0].resolved }, { kind: "approval", tool: "test_ping", href: `/oversight?request=${r.view.id}`, resolved: false });
+  assert.deepEqual({ kind: w1.items[0].kind, tool: w1.items[0].tool, href: w1.items[0].href, resolved: w1.items[0].resolved }, { kind: "approval", tool: "test_ping", href: `/approvals/${r.view.id}`, resolved: false });
   assert.equal(w1.items[0].agentName, "Probe");
   assert.deepEqual(await listNotifications(db, "w2"), { unread: 0, items: [] }, "another workspace sees nothing");
   // A repeat of the same request (same idempotency key) is the same authorization: no second notification.

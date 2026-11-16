@@ -3,13 +3,15 @@
 //
 //   npm run tester:agent -- "My support bot" --rule send_refund:execute:approve --rule read_ticket:read:allow
 //
-// A rule is tool:action:effect[:resourcePrefix]; effect is allow, approve (a person decides) or deny. Anything without a rule is denied.
+// A rule is tool:action:effect[:resourcePrefix][:low]; effect is allow, approve (a person decides) or deny. Anything without a rule is denied.
+// ":low" on an approve rule marks its approvals low risk: they can be answered with one tap from a notification (docs/approval-notifications.md).
 // Saves the agent's key to .env.agent as TEND_AGENT_KEY (mode 600) the moment it exists, together with TEND_URL. Never prints a key or token.
 // Run it again to change the rules: the working key is kept. Operator tool: it needs TEND_ADMIN_TOKEN from .env.local.
 import "./node-check.mjs";
 import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as nodeUtil from "node:util";
+import { parseRule } from "./cli-lib.mjs";
 const parseEnv = (text) => nodeUtil.parseEnv(text); // a namespace import: a named one would crash at load time on an old Node, before the version check can explain it
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -28,9 +30,7 @@ const die = (m) => {
 const args = process.argv.slice(2);
 const name = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--rule");
 const rules = args.flatMap((a, i) => (args[i - 1] === "--rule" ? [a] : [])).map((r) => {
-  const [tool, action, effect, resourcePrefix] = r.split(":");
-  if (!tool || !action || !["allow", "approve", "deny"].includes(effect)) die(`Bad rule "${r}". Use tool:action:effect, effect being allow, approve or deny.`);
-  return { tool, action, effect, ...(resourcePrefix && { resourcePrefix }) };
+  try { return parseRule(r); } catch (e) { die(e.message); }
 });
 if (!name || !rules.length) die('Usage: npm run tester:agent -- "Agent name" --rule tool:action:effect [--rule ...]');
 

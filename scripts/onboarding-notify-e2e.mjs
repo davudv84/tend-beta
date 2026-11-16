@@ -99,7 +99,7 @@ async function main() {
     g = await call("GET", "/api/v1/onboarding", { cookie: ana });
     check(g.body.checks.policy === "approve", "the rule is read back from the saved policy");
 
-    console.log("\n-- browser notifications reach the subscribed browser, once, with nothing from the event in them");
+    console.log("\n-- browser notifications reach the subscribed browser, once, with no detail or argument in them");
     const p256dh = browser.getPublicKey().toString("base64url");
     const sub = await call("POST", "/api/v1/notifications/subscriptions", { cookie: ana, body: { endpoint, keys: { p256dh, auth: auth.toString("base64url") }, locale: "en" } });
     check(sub.status === 201, `Ana's browser subscribes (${sub.status})`);
@@ -109,8 +109,9 @@ async function main() {
     check(asked.status === 201 && asked.body.status === "pending", "the test action waits for approval");
     check(await waitFor(1), "a browser notification arrived after the response");
     const msg = received[0]?.payload ?? {};
-    check(msg.title === "TEND: approval needed" && msg.url === `/oversight?request=${asked.body.id}`, `fixed text and a deep link (${JSON.stringify(msg)})`);
-    check(!/Probe|test_ping|hello/.test(JSON.stringify(msg)), "no agent name, tool or argument in what the browser receives");
+    check(msg.title === "⚠️ TEND: Approval needed" && msg.url === `/approvals/${asked.body.id}` && msg.tag === asked.body.id, `the approval's title, tag and a deep link (${JSON.stringify(msg)})`);
+    check(/test_ping/.test(msg.body ?? "") && !/hello/.test(JSON.stringify(msg)), "the agent and its tool and action, never an argument, in what the browser receives");
+    check(msg.risk === "high" && Array.isArray(msg.actions) && msg.actions.length === 0, "a high-risk approval carries no one-tap buttons");
     check(/^vapid t=.+, k=/.test(received[0]?.auth ?? ""), "signed with the server's VAPID key");
     await call("POST", "/api/v1/gateway/requests", { key, body: { tool: "test_ping", params: { message: "hello from e2e" } }, headers: { "idempotency-key": "e2e-1" } });
     await sleep(800);
@@ -133,6 +134,10 @@ async function main() {
     const token = (await call("POST", `/api/v1/authorizations/${asked.body.id}/token`, { key, body: {} })).body.token;
     const ran = await call("POST", "/api/v1/gateway/execute", { key, body: { authorizationId: asked.body.id, token, tool: "test_ping", params: { message: "hello from e2e" } } });
     check(ran.status === 200 && ran.body.executed === true, "the gateway ran it");
+    // Once it is decided, the waiting browser notification is replaced (same tag) by what became of it and who decided, through which channel.
+    check(await waitFor(2), "a second browser message followed the decision");
+    const done = received[1]?.payload ?? {};
+    check(done.type === "resolved" && done.tag === asked.body.id && /Approved by ana@.+ via the dashboard/.test(done.body ?? "") && !/hello/.test(JSON.stringify(done)), `it replaces the request and says who approved and how (${JSON.stringify(done)})`);
     const after = await call("GET", "/api/v1/notifications", { cookie: ana });
     check(after.body.unread === 0 && after.body.items[0].resolved, "answered: the notification is read and resolved");
     g = await call("GET", "/api/v1/onboarding", { cookie: ana });
@@ -142,20 +147,20 @@ async function main() {
 
     console.log("\n-- repeated blocks are one notification and one browser message; preferences and unsubscribing are honoured");
     for (let i = 0; i < 3; i++) await call("POST", "/api/v1/gateway/requests", { key, body: { tool: "write_note", params: { name: "n", text: "t" } } });
-    await waitFor(2);
+    await waitFor(3);
     await sleep(500);
     const blocked = (await call("GET", "/api/v1/notifications", { cookie: ana })).body.items.filter((i) => i.kind === "blocked");
     check(blocked.length === 1 && blocked[0].count === 3, `three blocks, one notification counting 3 (${blocked.map((b) => b.count)})`);
-    check(received.length === 2 && received[1].payload.title === "TEND: action blocked", `one browser message for them (${received.length - 1})`);
+    check(received.length === 3 && received[2].payload.title === "TEND: action blocked", `one browser message for them (${received.length - 2})`);
     await call("POST", "/api/v1/notifications/preferences", { cookie: ana, body: { approval: false } });
     await call("POST", "/api/v1/gateway/requests", { key, body: { tool: "test_ping", params: { message: "muted" } }, headers: { "idempotency-key": "e2e-2" } });
     await sleep(1200);
-    check(received.length === 2, "approvals turned off for the browser: none sent, still listed in the app");
+    check(received.length === 3, "approvals turned off for the browser: none sent, still listed in the app");
     const test1 = await call("POST", "/api/v1/notifications/test", { cookie: ana });
     check(test1.body.push?.sent === 1 && received.at(-1)?.payload.title === "TEND: test notification", "Send test notification reaches the browser");
     await call("DELETE", "/api/v1/notifications/subscriptions", { cookie: ana, body: { endpoint } });
     const test2 = await call("POST", "/api/v1/notifications/test", { cookie: ana });
-    check(test2.body.push?.sent === 0 && received.length === 3, "after turning it off, nothing reaches that browser");
+    check(test2.body.push?.sent === 0 && received.length === 4, "after turning it off, nothing reaches that browser");
 
     console.log("\n-- skipping and restarting");
     check((await call("GET", "/home", { cookie: ben })).status === 307, "Ben starts in the guide");

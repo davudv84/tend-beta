@@ -24,7 +24,7 @@ export const en = {
     pages: {
       admin: "Beta access", account: "Account", 
       sanctuary: "AI World", agents: "Assistants", agent: "Assistant", reflections: "Agent notes", checkIns: "Status reports", checkIn: "Status report",
-      newCheckIn: "New status report", connect: "Connect an agent", integrations: "Integrations", home: "Home", timeline: "Activity", research: "Research", oversight: "Approvals", developers: "Developers", operator: "Operator sign-in", labs: "Labs", policies: "Policies", verification: "Verification", settings: "Settings", welcome: "Get started",
+      newCheckIn: "New status report", connect: "Connect an agent", integrations: "Integrations", home: "Home", timeline: "Activity", research: "Research", oversight: "Approvals", developers: "Developers", operator: "Operator sign-in", labs: "Labs", policies: "Policies", verification: "Verification", settings: "Settings", welcome: "Get started", approval: "Approval",
     },
   },
 
@@ -1066,6 +1066,7 @@ export const en = {
           "Vercel runs this website and processes the technical data every request carries (such as IP address and time) to deliver it.",
           "Resend sends the emails TEND sends you: confirming your address, resetting your password and approval requests.",
           "If you turn on browser notifications, your browser’s push address is stored so TEND can notify you. You can turn them off at any time.",
+          "If you connect Telegram, the numbers of your Telegram account and chat are stored so TEND’s bot can message you, and approval requests sent there pass through Telegram. You can disconnect it at any time.",
         ],
         database: "Database",
         basisTitle: "Why we may process it",
@@ -1955,7 +1956,7 @@ export const en = {
     thisBrowser: "this browser", noSessions: "No active session.", startedAt: (a: string) => `signed in ${a}`, lastActive: (a: string) => `last active ${a}`, never: "not used since", fromAddress: (a: string) => `from ${a}`, addressUnknown: "address not known",
     signOutAll: "Sign out everywhere", signOutAllHint: "Use this if anyone else may have your browser or your cookie. You will sign in again with the admin token.", sessionsFailed: "The sessions could not be loaded.", signOutAllFailed: "Signing out everywhere failed.",
     recentTitle: "Recent sign-in activity", recentSub: "Recorded by the server, newest first. It never contains the token that was typed or a session secret.", noRecent: "Nothing recorded yet.",
-    authEvents: { "signin.succeeded": "Signed in", "signin.failed": "Failed sign-in", "signin.blocked": "Too many failed attempts: that address was refused for a minute", "session.signed_out": "Signed out", "session.revoked_all": "Signed out everywhere", "session.rejected": "A revoked or expired session was used again", "log.suppressed": "More failures than can be listed one by one", "agentkey.rejected": "A request used an unknown or revoked agent key" } as Record<string, string>,
+    authEvents: { "signin.succeeded": "Signed in", "signin.failed": "Failed sign-in", "signin.blocked": "Too many failed attempts: that address was refused for a minute", "session.signed_out": "Signed out", "session.revoked_all": "Signed out everywhere", "session.rejected": "A revoked or expired session was used again", "log.suppressed": "More failures than can be listed one by one", "agentkey.rejected": "A request used an unknown or revoked agent key", "telegram.linked": "Telegram connected", "telegram.unlinked": "Telegram disconnected" } as Record<string, string>,
     authReasons: { invalid_token: "wrong token", malformed: "no token sent", operator_disabled: "operator access not configured", too_many_failures: "too many failures", revoked: "was signed out", expired: "had expired", admin_token_changed: "admin token was changed", wrong_secret: "wrong session secret", missing_key: "no key sent", invalid_key: "unknown or revoked key" } as Record<string, string>,
     accountSub: "Appearance, language and sign-out. There is one operator role: TEND has no user accounts or organizations yet.",
   },
@@ -2096,14 +2097,59 @@ export const en = {
       expired: { title: "Approval expired", body: (agent: string, action: string) => `Nobody answered ${agent}’s request for ${action} in time. Nothing ran.` },
       test: { title: "Test notification", body: ((): string => "Notifications are working.") as (agent: string, action: string) => string },
     },
-    // What a browser notification says. Fixed text only: never an agent, a tool or anything from the event.
+    // What a browser notification says for everything but an approval. Fixed text only: never an agent, a tool or anything from the event.
     push: {
-      approval: { title: "TEND: approval needed", body: "An agent is waiting for your decision." },
+      approval: { title: "⚠️ TEND: Approval needed", body: "An agent is waiting for your decision." },
       blocked: { title: "TEND: action blocked", body: "Your policy refused an agent action." },
       alert: { title: "TEND: security alert", body: "TEND refused a suspicious request. Open TEND for details." },
       failed: { title: "TEND: action failed", body: "An approved action did not confirm success." },
       expired: { title: "TEND: approval expired", body: "A request expired before anyone answered." },
       test: { title: "TEND: test notification", body: "Browser notifications are working." },
+    },
+    // A browser notification about an approval: the agent and the tool and action it asks for. Never the detail text or the arguments.
+    pushApproval: {
+      title: "⚠️ TEND: Approval needed",
+      body: (agent: string, tool: string, action: string) => `${agent} wants to run ${tool} · ${action}`,
+      approve: "Approve",
+      deny: "Deny",
+      someone: "someone",
+      // What the notification says once one of its buttons was pressed (the service worker shows these).
+      done: {
+        approved: "Approved. The agent may go ahead.", denied: "Denied. Nothing will run.", expired: "This request had expired. Nothing ran.",
+        already: "This was already decided. Open TEND to see how.", confirm: "High risk: open TEND to confirm it.", signIn: "Sign in to TEND to decide this.", failed: "Not recorded. Open TEND to decide.",
+      },
+      resolvedTitle: { approved: "✅ TEND: approved", denied: "❌ TEND: denied", expired: "⌛ TEND: expired", cancelled: "TEND: request withdrawn" },
+      resolved: {
+        approved: (who: string, via: string) => `Approved by ${who} via ${via}`, denied: (who: string, via: string) => `Denied by ${who} via ${via}`,
+        expired: "Nobody answered in time. Nothing ran.", cancelled: "The agent withdrew this request.",
+      },
+      via: { dashboard: "the dashboard", "web-push": "web push", telegram: "Telegram" },
+    },
+    // What TEND's Telegram bot says. A private chat with the person, so an approval shows its detail here.
+    telegram: {
+      heading: "TEND: Approval needed",
+      wants: (agent: string, what: string) => `${agent} wants to run ${what}`,
+      item: "Item",
+      lowRisk: "Low risk: you can answer right here.",
+      highRisk: "High risk: open TEND and confirm it there.",
+      expiresIn: (minutes: number) => `Expires in ${minutes} min. Unanswered means denied.`,
+      approve: "✅ Approve",
+      deny: "❌ Deny",
+      open: "Open in TEND",
+      openConfirm: "Open TEND to confirm",
+      outcome: {
+        approved: (who: string, via: string) => `✅ Approved by ${who} via ${via}`, denied: (who: string, via: string) => `❌ Denied by ${who} via ${via}`,
+        expired: "⌛ Expired: nobody answered in time, so it was denied. Nothing ran.", cancelled: "↩️ The agent withdrew this request. Nothing ran.",
+      },
+      toast: { approved: "Approved", denied: "Denied", already: "This was already decided", expired: "Expired. Nothing ran.", confirm: "High risk: open TEND and confirm it there.", gone: "This request no longer exists.", failed: "That did not work. Open TEND to decide." },
+      connected: "✅ TEND connected. Approval requests from your agents will arrive in this chat. Send /disconnect to stop.",
+      linkInvalid: "This link has expired or was already used. In TEND, open Settings → Notifications and press Connect Telegram again.",
+      privateOnly: "Connect TEND in a private chat with this bot, not in a group.",
+      start: "To connect this chat, open TEND → Settings → Notifications and press Connect Telegram.",
+      help: "This chat is connected to TEND. Approval requests from your agents arrive here. Send /disconnect to stop.",
+      disconnected: "Disconnected. TEND will not send approval requests here any more.",
+      notConnected: "This Telegram account is not connected to TEND.",
+      test: "TEND test notification. Telegram is connected and working.",
     },
     prefs: {
       sub: "Every notification is listed in TEND. Browser notifications also reach you when TEND isn’t open.",
@@ -2137,7 +2183,29 @@ export const en = {
       dismissed: "Your browser didn’t give permission. Nothing changed.",
       disabled: "Browser notifications are off for this browser.",
       disableFailed: "Browser notifications could not be turned off.",
-      privacy: "A browser notification never contains agent names, tools or arguments: only what kind of thing happened, and a link into TEND, where you sign in as usual.",
+      privacy: "A browser notification about an approval shows the agent’s name and the tool and action it asks for, never the details or arguments. Every other notification says only what kind of thing happened. Opening one takes you into TEND, where you sign in as usual.",
+      platformHint: "On Mac: also allow notifications for your browser in System Settings → Notifications. On iPhone: add TEND to your Home Screen first.",
+      telegram: {
+        title: "Telegram",
+        sub: "Approval requests arrive in a private chat with TEND’s bot. Low-risk ones can be answered right there; high-risk ones open TEND.",
+        status: { connected: "Connected", off: "Not connected", notConfigured: "Not set up on this server", account: "Need an account", checking: "Checking…" },
+        note: {
+          connected: "Approval requests for this workspace are sent to your Telegram chat, with the exact action.",
+          off: "Connect Telegram to get approval requests in a chat. TEND opens the bot for you; press Start there.",
+          notConfigured: "This server has no Telegram bot configured, so nothing is sent to Telegram.",
+          account: "Telegram is connected to an account. Sign in with your e-mail address to use it.",
+          checking: "Asking the server.",
+        },
+        connect: "Connect Telegram",
+        connecting: "Preparing your link…",
+        open: "Open Telegram",
+        waiting: "Press Start in Telegram to finish. The link works once, for 15 minutes.",
+        disconnect: "Disconnect",
+        connected: "Telegram is connected.",
+        disconnected: "Telegram is disconnected.",
+        failed: "Telegram could not be connected.",
+        disconnectFailed: "Telegram could not be disconnected.",
+      },
     },
   },
 
@@ -2392,6 +2460,19 @@ export const en = {
     measure: { title: "What we measure", body: "Answers to five fixed questions, the agent’s stated confidence in each, and what humans do in response. Everything is traceable to an individual status report." },
     claim: { title: "What we don’t claim", body: "That agents feel anything, that self-reports are accurate, or that any number here represents wellbeing. We avoid aggregate scores because they would imply all three." },
     data: { title: "Data in this instance", body: (sim: number, conn: number) => `${plural(sim, "simulated agent", "simulated agents")} with a generated 30-day history, ${plural(conn, "connected agent", "connected agents")}, and every decision made here. Stored on this TEND server; nothing is sent to an AI model provider.` },
+  },
+
+  approvalPage: {
+    title: "Approval",
+    description: "One request from an agent, with the exact action it asks for.",
+    all: "All approvals",
+    loading: "Loading this approval…",
+    notFound: "There is no approval at this address. It may belong to another workspace, or the link is incomplete.",
+    asked: (agent: string, what: string) => `${agent} asked to run ${what}`,
+    outcome: {
+      approved: (who: string, via: string) => `Approved by ${who} via ${via}.`, denied: (who: string, via: string) => `Denied by ${who} via ${via}.`,
+      expired: "Nobody answered in time, so it was not approved. Nothing ran.", cancelled: "The agent withdrew this request. Nothing ran.",
+    },
   },
 
   oversightPage: {

@@ -5,7 +5,7 @@ export type Effect = "allow" | "approve" | "deny";
 export type Choice = "allow" | "ask" | "never";
 export type Risk = "read" | "write" | "spend" | "test";
 
-export interface RuleLike { tool: string; action: string; resourcePrefix?: string; effect: Effect; permission?: string; when?: Record<string, unknown> }
+export interface RuleLike { tool: string; action: string; resourcePrefix?: string; effect: Effect; permission?: string; when?: Record<string, unknown>; risk?: "low" | "high" }
 
 /** GET /api/v1/agents/{id}/policy: the saved policy, and the decision the server would make for each tool. */
 export interface PolicyView {
@@ -30,5 +30,10 @@ export const effectOf = (c: Choice): Effect => (c === "allow" ? "allow" : c === 
 export function applyChoices(saved: RuleLike[], changes: { tool: string; action: string; choice: Choice }[]): RuleLike[] {
   const plain = (r: RuleLike) => r.resourcePrefix === undefined && r.permission === undefined && r.when === undefined;
   const kept = saved.filter((r) => !(plain(r) && changes.some((c) => c.tool === r.tool && c.action === r.action)));
-  return [...kept, ...changes.map((c) => ({ tool: c.tool, action: c.action, effect: effectOf(c.choice) }))];
+  // A rule's risk (one-tap approval from a notification) survives a change made here as long as the tool still asks.
+  const riskBefore = (c: { tool: string; action: string }) => saved.find((r) => plain(r) && r.tool === c.tool && r.action === c.action)?.risk;
+  return [...kept, ...changes.map((c) => {
+    const risk = c.choice === "ask" ? riskBefore(c) : undefined;
+    return { tool: c.tool, action: c.action, effect: effectOf(c.choice), ...(risk && { risk }) };
+  })];
 }

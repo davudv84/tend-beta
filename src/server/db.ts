@@ -310,6 +310,31 @@ export const MIGRATIONS: string[] = [
      NEW.hash := encode(sha256(convert_to(coalesce(prev, '') || '|' || NEW.seq::text || '|' || NEW.id || '|' || NEW.agent_id || '|' || NEW.type || '|' || NEW.at::text || '|' || NEW.actor || '|' || NEW.data, 'UTF8')), 'hex');
      RETURN NEW;
    END $fn$;`,
+  // Approvals that reach people (approvals.ts, notify/). Each authorization records its risk, from the rule that decided it (policy.ts): only a
+  // 'low' one may be approved with one tap from a notification; everything else, and every row from before this migration, is 'high'.
+  // A Telegram chat is linked to one account with a single-use token ('telegram', stored as SHA-256 like the others). delivery_messages remembers
+  // what was sent where for one notification (a Telegram message id, a browser notification), so it can be updated once the approval is decided.
+  `ALTER TABLE authorizations ADD COLUMN risk TEXT NOT NULL DEFAULT 'high' CHECK (risk IN ('low', 'high'));
+   ALTER TABLE user_tokens DROP CONSTRAINT user_tokens_purpose_check;
+   ALTER TABLE user_tokens ADD CONSTRAINT user_tokens_purpose_check CHECK (purpose IN ('verify', 'reset', 'signin', 'telegram'));
+   CREATE TABLE telegram_links (
+     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     telegram_user_id BIGINT NOT NULL UNIQUE,
+     chat_id BIGINT NOT NULL,
+     locale TEXT NOT NULL DEFAULT 'en',
+     linked_at BIGINT NOT NULL
+   );
+   CREATE TABLE delivery_messages (
+     notification_id TEXT NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+     channel TEXT NOT NULL CHECK (channel IN ('web-push', 'telegram')),
+     target TEXT NOT NULL,
+     message_id TEXT NOT NULL,
+     created_at BIGINT NOT NULL,
+     PRIMARY KEY (notification_id, channel, target)
+   );
+   ALTER TABLE auth_events DROP CONSTRAINT auth_events_type_check;
+   ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected',
+     'account.registered', 'account.verified', 'account.approved', 'account.disabled', 'account.reset_requested', 'account.password_reset', 'telegram.linked', 'telegram.unlinked'));`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */

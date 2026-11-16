@@ -110,7 +110,7 @@ Time from `git clone` to your first controlled action. Anything that failed or c
 
 - **TEND stops only code that asks it.** An agent that skips the wrapper, or holds the real credentials itself, can bypass it. Use fake or low-risk actions in this test.
 - Use fictional data. TEND records tool names, resources, the exact text you approve and your decisions, on your machine only (`.data/`).
-- One sign-in token, no accounts or teams, no notifications; the dashboard must be open to approve. This is a prototype for controlled testing, not for production, and it has had no independent security review.
+- Run locally with one sign-in token there are no accounts or teams and no notifications; the dashboard must be open to approve. With accounts, approvals can reach you as browser notifications and in Telegram: [docs/approval-notifications.md](docs/approval-notifications.md). This is a prototype for controlled testing, not for production, and it has had no independent security review.
 - The full list, honestly: [docs/security-limitations.md](docs/security-limitations.md). More detail: `docs/gateway.md`, `docs/enforcement.md`, `docs/audit.md`, and the test report `docs/real-claude-test.md`.
 - Feedback form: [docs/feedback-template.md](docs/feedback-template.md).
 - A browser-only demo for testers without GitHub (one private instance each, a simulated sample agent): [docs/hosted-demo.md](docs/hosted-demo.md).

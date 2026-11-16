@@ -46,7 +46,8 @@ Read this before you put anything real behind TEND. This beta is for controlled 
 - **At most once, not exactly once.** If an agent crashes after spending an approval, the action ran zero times and only a missing report shows it.
 - **No rules over sequences of calls** (e.g. "after reading private data, no outbound email"), no content scanning, no prompt-injection detection.
 - **Protection checks** on the Verification page say "not verified" for agents under a central policy.
-- **No independent security review, no availability guarantees, no notifications.** The dashboard must be open to see what waits for you.
+- **No independent security review, no availability guarantees.** Without an account and a connected channel (browser notifications or Telegram, see [approval-notifications.md](approval-notifications.md)) the dashboard must be open to see what waits for you; the admin-token operator has no notifications.
+- **Notifications pass through others.** A browser notification about an approval shows the agent's name and the tool and action (never the detail or arguments) and travels through the browser vendor's push service, encrypted for that browser. A Telegram message shows the detail too and passes through Telegram, which can read it. A low-risk approval can be answered from either with one tap by whoever holds the unlocked device.
 - **Measured locally only.** Latency and throughput figures (docs/benchmark.md) come from one machine with an embedded database; a hosted TEND
   adds a network round trip per request (two per protected call, three after an approval).
 

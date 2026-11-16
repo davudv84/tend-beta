@@ -12,9 +12,9 @@ const ROOT = path.join(import.meta.dirname, "..", "app", "api");
 /**
  * operator: a signed session and same-site origin. admin: the admin-token session only. agent: an API key. viewer: visitor-or-operator reads,
  * rate limited. account: no session yet (sign-up, sign-in, links from mails), so same-site only, with limits and uniform answers in accounts.ts.
- * public: no data of value.
+ * public: no data of value. webhook: called by Telegram, which proves itself with this server's secret on every request (telegram.ts).
  */
-const GUARD = { operator: "await requireOperator(", admin: "await requireAdmin(", agent: "authAgent(", viewer: "await viewerOf(", account: "requireSameSite(req)", public: "" } as const;
+const GUARD = { operator: "await requireOperator(", admin: "await requireAdmin(", agent: "authAgent(", viewer: "await viewerOf(", account: "requireSameSite(req)", public: "", webhook: "await receiveWebhook(req" } as const;
 const EXPECTED: Record<string, keyof typeof GUARD> = {
   "health:GET": "public",
   "operator/session:GET": "viewer",
@@ -52,6 +52,13 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "v1/central-policies/[id]:POST": "operator",
   "v1/central-policies/[id]/assignments:POST": "operator",
   "v1/reviews/[id]:POST": "operator",
+  "v1/approvals:GET": "operator",
+  "v1/approvals/[id]:GET": "operator",
+  "v1/approvals/[id]:POST": "operator",
+  "telegram/link:GET": "operator",
+  "telegram/link:POST": "operator",
+  "telegram/link:DELETE": "operator",
+  "telegram/webhook:POST": "webhook",
   "v1/sample-agent:POST": "operator",
   "v1/policy-simulations:POST": "operator",
   "v1/onboarding:GET": "operator",
@@ -120,13 +127,23 @@ test("operator routes stay inside the caller's workspace: an id in the path is c
     if (EXPECTED[h.key] !== "operator") continue;
     const path = h.key.split(":")[0];
     if (/\/\[id\]/.test(path)) {
-      const check = path.startsWith("v1/agents/") ? "agentInWorkspace(" : path.startsWith("v1/reviews/") ? "reviewInWorkspace(" : path.startsWith("v1/central-policies/") ? "centralInWorkspace(" : "?";
+      const check = path.startsWith("v1/agents/") ? "agentInWorkspace(" : path.startsWith("v1/reviews/") ? "reviewInWorkspace(" : path.startsWith("v1/central-policies/") ? "centralInWorkspace("
+        // An approval is read and decided only through approvals.ts, which takes the caller's workspace and answers 404 for any other.
+        : path.startsWith("v1/approvals/") ? "s.workspace" : "?";
       const at = h.body.indexOf(check);
       assert.ok(at > 0, `${h.key} must call ${check}`);
       // Nothing that reads or changes the object may come before the check.
       assert.ok(!/\b(control|setPolicy|policyView|rotateKey|revokeKey|requestCheckIn|runVerification|latestVerification|decide|updateCentralPolicy|assignCentralPolicy)\(/.test(h.body.slice(0, at)), `${h.key}: the workspace check must come first`);
     }
+    for (const line of h.body.split("\n").filter((l) => /\b(getApproval|resolveApproval|listPendingApprovals)\(/.test(l))) assert.match(line, /s\.workspace/, `${h.key}: approvals must be given the caller's workspace`);
     for (const fn of ["registerAgent(", "listCentralPolicies(", "createCentralPolicy(", "startSample(", "continueSample(", "integrationStatus(", "simulatePolicy("])
       for (const line of h.body.split("\n").filter((l) => l.includes(fn))) assert.match(line, /workspace\)/, `${h.key}: ${fn} must be given the caller's workspace`);
   }
+});
+
+test("the Telegram webhook checks its secret before anything else, and no other route reads Telegram's updates", () => {
+  const src = readFileSync(path.join(import.meta.dirname, "telegram.ts"), "utf8");
+  const fn = src.slice(src.indexOf("export async function receiveWebhook("));
+  assert.ok(fn.indexOf("telegramSecretOk(") > 0 && fn.indexOf("telegramSecretOk(") < fn.indexOf("readJson(") && fn.indexOf("readJson(") < fn.indexOf("handleUpdate("), "secret, then body, then handling");
+  for (const h of handlers()) if (h.key !== "telegram/webhook:POST") assert.equal(/handleUpdate\(|receiveWebhook\(/.test(h.body), false, `${h.key} must not handle Telegram updates`);
 });

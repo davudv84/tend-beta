@@ -18,10 +18,12 @@ import type { Agent } from "../lib/types";
 import { hashKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError } from "./http.ts";
-import { evaluateEffective, fingerprint, ID, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
+import { config } from "./config.ts";
+import { evaluateEffective, fingerprint, ID, parseAuthRequest, effectiveRisk, ruleBehind, type AuthRequest } from "./policy.ts";
 import { agentBudget, agentRow, centralOf, insertEvent, keyRevoked, toAgent } from "./repo.ts";
 
-export const TTL = { request: 10 * 60_000, approval: 5 * 60_000, token: 60_000 };
+/** `request`: how long a request waits for a person (TEND_APPROVAL_TTL_MINUTES, default 10 minutes). Unanswered by then, it expires: not approved. */
+export const TTL = { get request() { return config.approvalTtlMs; }, approval: 5 * 60_000, token: 60_000 };
 export const MAX_PENDING = 20;
 export const MISMATCH_LIMIT = 3;
 const TOKEN = /^tend_az_[A-Za-z0-9_-]{43}$/;
@@ -126,11 +128,13 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
     const status: Status = d.effect === "allow" ? (spend ? "consumed" : "approved") : d.effect === "approve" ? "pending" : "denied";
     const id = `az_${randomUUID().replaceAll("-", "").slice(0, 24)}`;
     await q.run(
-      `INSERT INTO authorizations (id, agent_id, tool, action, resource, detail, fingerprint, status, reason, created_at, expires_at, decided_at, approved_until, idempotency_key, args, consumed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO authorizations (id, agent_id, tool, action, resource, detail, fingerprint, status, reason, created_at, expires_at, decided_at, approved_until, idempotency_key, args, consumed_at, risk)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, agent.id, r.tool, r.action, r.resource, r.detail, fp, status, d.reason, now,
       status === "pending" ? now + TTL.request : status === "approved" ? now + TTL.approval : now,
-      status === "pending" ? null : now, status === "approved" ? now + TTL.approval : null, idemKey, r.args ? JSON.stringify(r.args) : null, status === "consumed" ? now : null);
+      status === "pending" ? null : now, status === "approved" ? now + TTL.approval : null, idemKey, r.args ? JSON.stringify(r.args) : null, status === "consumed" ? now : null,
+      // From the rule that decided it, on the server: only an approval a rule marked low may be answered with one tap from a notification.
+      effectiveRisk(d, a.policy, central?.policy, r));
     // A human reviews it in the existing queue; the review id is the authorization id.
     if (status === "pending") await q.run("INSERT INTO reviews (id, agent_id, status) VALUES (?, ?, 'pending')", id, agent.id);
     const stored = (await q.get<Row>("SELECT * FROM authorizations WHERE id = ?", id))!;

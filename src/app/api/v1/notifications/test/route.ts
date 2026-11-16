@@ -1,7 +1,7 @@
 import { getDb } from "@/server/db";
 import { json, limit, requireOperator, route } from "@/server/http";
 import { createTestNotification } from "@/server/notifications";
-import { flushPush } from "@/server/push";
+import { flushNotifications } from "@/server/notify";
 
 /** Adds a test notification to this workspace and, where browser notifications are set up, sends it now and says what happened. */
 export const POST = route(async (req) => {
@@ -9,5 +9,5 @@ export const POST = route(async (req) => {
   const s = await requireOperator(req, db);
   await limit(db, `notify-test:${s.id}`, 5);
   await db.tx((q) => createTestNotification(q, s.workspace));
-  return json({ created: true, push: await flushPush(db) });
+  return json({ created: true, push: await flushNotifications(db) });
 });

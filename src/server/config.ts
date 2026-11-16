@@ -16,19 +16,20 @@ export function adminTokenProblem(t: string, production = process.env.NODE_ENV =
 }
 let warned = "";
 let vapidChecked: { key: string; ok: boolean } | undefined;
+let telegramWarned = "";
 
 /** True when the VAPID settings are usable: the public key is the private key's, and the subject is a contact. Says why once otherwise. */
 function vapidOk(publicKey: string, privateKey: string, subject: string) {
   const pub = Buffer.from(publicKey, "base64url"), priv = Buffer.from(privateKey, "base64url");
-  let problem = !/^(mailto:|https:\/\/)/.test(subject) ? "TEND_VAPID_SUBJECT must start with mailto: or https://"
-    : pub.length !== 65 || pub[0] !== 4 ? "TEND_VAPID_PUBLIC_KEY is not an uncompressed P-256 public key" : priv.length !== 32 ? "TEND_VAPID_PRIVATE_KEY is not a P-256 private key" : "";
+  let problem = !/^(mailto:|https:\/\/)/.test(subject) ? "VAPID_SUBJECT must start with mailto: or https://"
+    : pub.length !== 65 || pub[0] !== 4 ? "the VAPID public key is not an uncompressed P-256 public key" : priv.length !== 32 ? "VAPID_PRIVATE_KEY is not a P-256 private key" : "";
   if (!problem) {
     try {
       const ecdh = createECDH("prime256v1");
       ecdh.setPrivateKey(priv);
-      if (!ecdh.getPublicKey().equals(pub)) problem = "TEND_VAPID_PUBLIC_KEY does not belong to TEND_VAPID_PRIVATE_KEY";
+      if (!ecdh.getPublicKey().equals(pub)) problem = "the VAPID public key does not belong to VAPID_PRIVATE_KEY";
     } catch {
-      problem = "TEND_VAPID_PRIVATE_KEY is not a P-256 private key";
+      problem = "VAPID_PRIVATE_KEY is not a P-256 private key";
     }
   }
   if (problem) console.error(`[tend] browser notifications are off: ${problem}.`);
@@ -50,11 +51,37 @@ export const config = {
    * push services. Missing or inconsistent: undefined, and TEND says browser notifications are not set up. The private key is never logged.
    */
   get vapid(): { publicKey: string; privateKey: string; subject: string } | undefined {
-    const publicKey = process.env.TEND_VAPID_PUBLIC_KEY?.trim() ?? "", privateKey = process.env.TEND_VAPID_PRIVATE_KEY?.trim() ?? "", subject = process.env.TEND_VAPID_SUBJECT?.trim() ?? "";
+    // NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT are the names to set; the older TEND_VAPID_* ones still work. Only the
+    // public key is ever sent to a browser, and it is sent by the server (pushStatus), never read by client code.
+    const env = (...names: string[]) => names.map((n) => process.env[n]?.trim()).find((v) => v) ?? "";
+    const publicKey = env("NEXT_PUBLIC_VAPID_PUBLIC_KEY", "TEND_VAPID_PUBLIC_KEY"), privateKey = env("VAPID_PRIVATE_KEY", "TEND_VAPID_PRIVATE_KEY"), subject = env("VAPID_SUBJECT", "TEND_VAPID_SUBJECT");
     if (!publicKey || !privateKey || !subject) return undefined;
     const key = `${publicKey}|${privateKey}|${subject}`;
     if (vapidChecked?.key !== key) vapidChecked = { key, ok: vapidOk(publicKey, privateKey, subject) };
     return vapidChecked.ok ? { publicKey, privateKey, subject } : undefined;
+  },
+  /**
+   * The Telegram bot (telegram.ts): its token from @BotFather, the secret Telegram repeats in a header on every webhook call, and the bot's
+   * username for the "connect" link. All three or nothing: without them no Telegram message is sent and the webhook answers 403. The token
+   * and the secret are never logged or sent to a browser.
+   */
+  get telegram(): { token: string; secret: string; username: string } | undefined {
+    const token = process.env.TELEGRAM_BOT_TOKEN?.trim() ?? "", secret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim() ?? "", username = (process.env.TELEGRAM_BOT_USERNAME?.trim() ?? "").replace(/^@/, "");
+    if (!token || !secret || !username) return undefined;
+    // Telegram's own formats: "<bot id>:<secret part>", a secret of 1–256 letters, digits, _ and -, a username of 5–32 word characters.
+    const problem = !/^\d{3,20}:[A-Za-z0-9_-]{20,100}$/.test(token) ? "TELEGRAM_BOT_TOKEN does not look like a bot token"
+      : !/^[A-Za-z0-9_-]{16,256}$/.test(secret) ? "TELEGRAM_WEBHOOK_SECRET must be 16–256 letters, digits, _ or -"
+      : !/^[A-Za-z0-9_]{5,32}$/.test(username) ? "TELEGRAM_BOT_USERNAME is not a bot username" : "";
+    if (problem) {
+      if (telegramWarned !== problem) { telegramWarned = problem; console.error(`[tend] Telegram is off: ${problem}.`); }
+      return undefined;
+    }
+    return { token, secret, username };
+  },
+  /** How long a request waits for a person before it expires (TEND_APPROVAL_TTL_MINUTES, 1–1440; default 10). Expired means not approved. */
+  get approvalTtlMs() {
+    const v = Number(process.env.TEND_APPROVAL_TTL_MINUTES ?? "");
+    return (Number.isInteger(v) && v >= 1 && v <= 1440 ? v : 10) * 60_000;
   },
   /**
    * Whether a new account must confirm its e-mail address before it can sign in. TEND_EMAIL_VERIFICATION=0 turns that off: sign-up sends no

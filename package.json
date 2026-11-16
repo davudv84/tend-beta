@@ -53,7 +53,8 @@
     "beta:local:rehearse": "node scripts/beta-local-rehearsal.mjs",
     "tester:init": "node scripts/tester-init.mjs",
     "tester:agent": "node scripts/tester-agent.mjs",
-    "tester:export": "node scripts/tester-export.mjs"
+    "tester:export": "node scripts/tester-export.mjs",
+    "telegram:webhook": "node --env-file-if-exists=.env.local scripts/telegram-webhook.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",

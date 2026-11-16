@@ -578,30 +578,39 @@ export async function decide(db: DB, reviewId: string, status: "approved" | "rej
   await sweepExpired(db, now);
   return db.tx(async (q) => {
     await q.lockEvents();
-    // Locked, so two reviewers deciding at once can't both grant.
-    const r = await q.get<{ id: string; agent_id: string; status: string; permission: string | null }>("SELECT * FROM reviews WHERE id = ? FOR UPDATE", reviewId);
-    if (!r) throw new HttpError(404, "review_not_found", "No review with that id.");
-    if (r.status !== "pending") throw new HttpError(409, "already_decided", `This review was already ${r.status}.`);
-    // A review that is an authorization request also decides that authorization, if it hasn't expired.
-    const authz = !!(await q.get("SELECT 1 FROM authorizations WHERE id = ?", reviewId));
-    if (authz) {
-      if (status === "acknowledged") throw new HttpError(422, "invalid_status", "Authorization requests can only be approved or rejected.");
-      if (!(await q.run("UPDATE authorizations SET status = ?, decided_at = ?, approved_until = ? WHERE id = ? AND status = 'pending' AND expires_at > ?",
-        status, ms(now), status === "approved" ? ms(now + TTL.approval) : null, reviewId, ms(now))))
-        throw new HttpError(409, "expired", "This request is no longer waiting for a decision.");
-    }
-    await q.run("UPDATE reviews SET status = ?, decided_at = ? WHERE id = ?", status, ms(now), reviewId);
-    const events = [await insertEvent(q, { agentId: r.agent_id, type: "review.decided", actor: "human", at: now, data: {
-      reviewId, status, ...(note && { note: note.slice(0, 500) }), ...(by && { by }),
-      ...(authz && { authorizationId: reviewId, ...(status === "approved" && { expiresAt: ms(now + TTL.approval) }) }),
-    } })];
-    if (status === "approved" && r.permission) {
-      const a = await mustAgent(q, r.agent_id);
-      if (!a.permissions.includes(r.permission)) await q.run("UPDATE agents SET permissions = ? WHERE id = ?", JSON.stringify([...a.permissions, r.permission]), a.id);
-      events.push(await insertEvent(q, { agentId: a.id, type: "permission.granted", actor: "human", at: now, data: { permission: r.permission, reviewId, version: await bump(q, a.id) } }));
-    }
-    return events;
+    return decideIn(q, reviewId, status, note, by, now);
   });
+}
+
+/**
+ * The decision itself, inside a transaction that holds the event lock (decide above, and resolveApproval in approvals.ts, which every
+ * approval channel goes through). `audit` is recorded with the decision: the channel it came through and the account that made it.
+ */
+export async function decideIn(q: Q, reviewId: string, status: "approved" | "rejected" | "acknowledged", note: string | undefined, by: string | undefined, now: number, audit: { via?: string; userId?: string } = {}) {
+  // Locked, so two reviewers deciding at once can't both grant.
+  const r = await q.get<{ id: string; agent_id: string; status: string; permission: string | null }>("SELECT * FROM reviews WHERE id = ? FOR UPDATE", reviewId);
+  if (!r) throw new HttpError(404, "review_not_found", "No review with that id.");
+  if (r.status !== "pending") throw new HttpError(409, "already_decided", `This review was already ${r.status}.`);
+  // A review that is an authorization request also decides that authorization, if it hasn't expired.
+  const authz = !!(await q.get("SELECT 1 FROM authorizations WHERE id = ?", reviewId));
+  if (authz) {
+    if (status === "acknowledged") throw new HttpError(422, "invalid_status", "Authorization requests can only be approved or rejected.");
+    // The one atomic step: of any number of simultaneous decisions, only the first finds the row still pending.
+    if (!(await q.run("UPDATE authorizations SET status = ?, decided_at = ?, approved_until = ? WHERE id = ? AND status = 'pending' AND expires_at > ?",
+      status, ms(now), status === "approved" ? ms(now + TTL.approval) : null, reviewId, ms(now))))
+      throw new HttpError(409, "expired", "This request is no longer waiting for a decision.");
+  }
+  await q.run("UPDATE reviews SET status = ?, decided_at = ? WHERE id = ?", status, ms(now), reviewId);
+  const events = [await insertEvent(q, { agentId: r.agent_id, type: "review.decided", actor: "human", at: now, data: {
+    reviewId, status, ...(note && { note: note.slice(0, 500) }), ...(by && { by }), ...(audit.via && { via: audit.via }), ...(audit.userId && { userId: audit.userId }),
+    ...(authz && { authorizationId: reviewId, ...(status === "approved" && { expiresAt: ms(now + TTL.approval) }) }),
+  } })];
+  if (status === "approved" && r.permission) {
+    const a = await mustAgent(q, r.agent_id);
+    if (!a.permissions.includes(r.permission)) await q.run("UPDATE agents SET permissions = ? WHERE id = ?", JSON.stringify([...a.permissions, r.permission]), a.id);
+    events.push(await insertEvent(q, { agentId: a.id, type: "permission.granted", actor: "human", at: now, data: { permission: r.permission, reviewId, version: await bump(q, a.id) } }));
+  }
+  return events;
 }
 
 export async function requestCheckIn(db: DB, agentId: string, by?: string) {

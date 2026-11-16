@@ -65,8 +65,9 @@ interface AccountRow { workspace_id: string; email: string; email_verified_at: n
 export interface Session { id: string; userId: string | null; workspace: string; email?: string; admin: boolean; readOnly?: boolean }
 
 export type AuthEventType = "signin.succeeded" | "signin.failed" | "signin.blocked" | "session.signed_out" | "session.revoked_all" | "session.rejected" | "log.suppressed" | "agentkey.rejected"
-  | "account.registered" | "account.verified" | "account.approved" | "account.disabled" | "account.reset_requested" | "account.password_reset";
-const NEVER_DROPPED = new Set<AuthEventType>(["signin.succeeded", "session.signed_out", "session.revoked_all", "log.suppressed", "account.verified", "account.approved", "account.disabled", "account.password_reset"]);
+  | "account.registered" | "account.verified" | "account.approved" | "account.disabled" | "account.reset_requested" | "account.password_reset"
+  | "telegram.linked" | "telegram.unlinked";
+const NEVER_DROPPED = new Set<AuthEventType>(["signin.succeeded", "session.signed_out", "session.revoked_all", "log.suppressed", "account.verified", "account.approved", "account.disabled", "account.password_reset", "telegram.linked", "telegram.unlinked"]);
 
 /**
  * Appends to the authentication log. Successes and sign-outs are always written. Failures, blocks and rejected sessions are the

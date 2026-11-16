@@ -1,11 +1,17 @@
 // Shared by the operator command line (tend-cli.mjs) and the cross-provider demo: one way to read a rule from the command line and one way
 // to put an audit event into a sentence.
 
-/** "tool:action:effect[:resourcePrefix]" -> a policy rule. Throws a sentence on anything else. */
+/**
+ * "tool:action:effect[:resourcePrefix][:low|high]" -> a policy rule. Throws a sentence on anything else. A last part of "low" marks an
+ * approve rule as low risk: its approvals can be answered with one tap from a notification (docs/approval-notifications.md). Without it
+ * an approval is high risk and is confirmed on its page in TEND.
+ */
 export function parseRule(text) {
-  const [tool, action, effect, resourcePrefix] = String(text).split(":");
-  if (!tool || !action || !["allow", "approve", "deny"].includes(effect)) throw new Error(`Bad rule "${text}". Use tool:action:effect, where effect is allow, approve or deny.`);
-  return { tool, action, effect, ...(resourcePrefix && { resourcePrefix }) };
+  const parts = String(text).split(":");
+  const risk = parts.length > 3 && ["low", "high"].includes(parts.at(-1)) ? parts.pop() : undefined;
+  const [tool, action, effect, resourcePrefix] = parts;
+  if (!tool || !action || !["allow", "approve", "deny"].includes(effect) || parts.length > 4) throw new Error(`Bad rule "${text}". Use tool:action:effect, where effect is allow, approve or deny (add :low for a low-risk approval).`);
+  return { tool, action, effect, ...(resourcePrefix && { resourcePrefix }), ...(risk && { risk }) };
 }
 
 const brief = (rules) => (Array.isArray(rules) ? rules.map((r) => `${r.tool.replace("_test_file", "")}=${r.effect}`).join(" ") : "");
@@ -17,7 +23,7 @@ export function describeEvent(e, names = {}) {
   if (e.type === "policy.central_assigned") return `${who}: assigned central policy "${d.name}" v${d.policyVersion} [${brief(d.policy)}]`;
   if (e.type === "policy.central_updated") return `${who}: central policy "${d.name}" changed to v${d.policyVersion} [${brief(d.policy)}]`;
   if (e.type === "policy.central_unassigned") return `${who}: central policy "${d.name}" removed`;
-  if (e.type === "review.decided") return `${who}: a person ${d.status} a held request`;
+  if (e.type === "review.decided") return `${who}: a person ${d.status} a held request${d.via ? ` (via ${d.via})` : ""}`;
   if (e.type === "key.revoked") return `${who}: key revoked`;
   if (e.type === "key.rotated") return `${who}: key replaced`;
   if (e.type === "agent.registered") return `${who}: registered`;

@@ -44,9 +44,18 @@ export interface Condition {
   /** A file path inside one of these folders. Any ".." segment, a NUL byte or a backslash fails; "/data" does not cover "/database". */
   pathUnder?: string[];
 }
-export interface Rule { tool: string; action: string; resourcePrefix?: string; effect: Effect; permission?: string; when?: Record<string, Condition> }
+/**
+ * How much an approval this rule asks for may be trusted to a quick answer. "low": it may be approved with one tap from a notification
+ * (Web Push, Telegram). "high" (the default, and always for tools that spend money): it can only be approved on TEND's approval page while
+ * signed in; a notification can only open that page, or deny. Only meaningful on approve rules; harmless elsewhere.
+ */
+export type RiskLevel = "low" | "high";
+export interface Rule { tool: string; action: string; resourcePrefix?: string; effect: Effect; permission?: string; when?: Record<string, Condition>; risk?: RiskLevel }
 const EFFECTS: Effect[] = ["allow", "approve", "deny"];
-const RULE_KEYS = new Set(["tool", "action", "resourcePrefix", "effect", "permission", "when"]);
+const RULE_KEYS = new Set(["tool", "action", "resourcePrefix", "effect", "permission", "when", "risk"]);
+
+/** The risk an approval gets from the rule that decided it. No rule, no "low", or a tool that spends money: high. */
+export const riskOf = (rule: Pick<Rule, "risk"> | undefined, tool: string): RiskLevel => (rule?.risk === "low" && !NEVER_AUTOMATIC.has(tool) ? "low" : "high");
 const OPS: Record<keyof Condition, "scalar" | "list" | "string" | "number" | "boolean" | "domains" | "paths"> = {
   equals: "scalar", in: "list", notIn: "list", startsWith: "string", endsWith: "string", contains: "string", lt: "number", lte: "number", gt: "number", gte: "number", exists: "boolean", emailDomainIn: "domains", pathUnder: "paths",
 };
@@ -153,6 +162,8 @@ export function policyProblem(rules: Rule[]): string | undefined {
   // A `when` on a gateway spend tool would silently never apply: the gateway asks with the tool, action, resource and detail it derived,
   // never raw arguments, so TEND cannot read an amount as a condition. Refuse it rather than let an operator believe they capped a payment —
   // the amount is in the detail a person reads and approves.
+  const k = rules.findIndex((r) => r.risk === "low" && NEVER_AUTOMATIC.has(r.tool));
+  if (k >= 0) return `rule ${k + 1}: ${rules[k].tool} spends money, so it is always high risk and is approved on TEND's approval page only`;
   const j = rules.findIndex((r) => r.when && NEVER_AUTOMATIC.has(r.tool));
   return j < 0 ? undefined : `rule ${j + 1}: ${rules[j].tool} spends money and TEND can't read its amount as a "when" condition, so a limit here would never take effect — require approval and a person confirms the amount shown.`;
 }
@@ -184,7 +195,8 @@ export function parsePolicy(raw: unknown): PolicyResult {
       const p = whenProblem(o.when);
       if (p) return { ok: false, error: `${at}: ${p}` };
     }
-    rules.push({ tool: o.tool, action: o.action, effect: o.effect as Effect, ...(o.resourcePrefix !== undefined && { resourcePrefix: o.resourcePrefix }), ...(o.permission !== undefined && { permission: o.permission }), ...(o.when !== undefined && { when: o.when as Record<string, Condition> }) });
+    if (o.risk !== undefined && o.risk !== "low" && o.risk !== "high") return { ok: false, error: `${at}: risk must be low or high` };
+    rules.push({ tool: o.tool, action: o.action, effect: o.effect as Effect, ...(o.resourcePrefix !== undefined && { resourcePrefix: o.resourcePrefix }), ...(o.permission !== undefined && { permission: o.permission }), ...(o.when !== undefined && { when: o.when as Record<string, Condition> }), ...(o.risk !== undefined && { risk: o.risk as RiskLevel }) });
   }
   return { ok: true, rules };
 }
@@ -296,6 +308,18 @@ export function ruleBehind(d: EffectiveDecision, rawPolicy: unknown, central: un
 }
 
 export type EffectiveDecision = Decision & { source: "agent" | "central" };
+
+/**
+ * The risk of an approval, by the same precedence as the decision itself: the rule that decided it must say "low", and where a central
+ * policy and the agent's own rules both have a rule for the request, both must. So an agent's own rules can make an approval high risk but
+ * can never turn one the central policy holds at high into a one-tap approval, and the reverse.
+ */
+export function effectiveRisk(d: EffectiveDecision, rawPolicy: unknown, central: unknown, req: AuthRequest): RiskLevel {
+  if (d.effect !== "approve") return "high";
+  const ruleIn = (raw: unknown) => { const p = parsePolicy(raw); return p.ok ? decidingRule(p.rules, req) : undefined; };
+  const sides = [ruleIn(rawPolicy), ...(central === undefined ? [] : [ruleIn(central)])].filter((r): r is Rule => !!r);
+  return sides.length > 0 && sides.every((r) => riskOf(r, req.tool) === "low") ? "low" : "high";
+}
 
 /**
  * The decision with a central policy assigned. Precedence, in one sentence: anything the central policy governs is decided by the central

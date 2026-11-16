@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { BellIcon, BellOffIcon } from "lucide-react";
+import { BellIcon, BellOffIcon, SendIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useLocale, useT } from "@/i18n/client";
 import { errorText } from "@/i18n/error-text";
@@ -116,9 +116,11 @@ export function NotificationSettings() {
             )}
             <button type="button" disabled={testing} onClick={() => void sendTest()} className={buttonClass("secondary")}>{testing ? p.testing : p.test}</button>
           </div>
+          <p className="max-w-[60ch] text-[13px] text-pretty text-muted-foreground">{p.platformHint}</p>
         </div>
         <p className="border-t border-border px-6 py-4 text-[13px] text-pretty text-muted-foreground">{p.privacy}</p>
       </Card>
+      <TelegramSettings />
       {account && (
         <Card>
           <CardHeader title={p.kindsTitle} sub={p.kindsNote} />
@@ -133,5 +135,81 @@ export function NotificationSettings() {
         </Card>
       )}
     </div>
+  );
+}
+
+interface TelegramLink { configured: boolean; account: boolean; bot: string | null; connected: boolean }
+type TelegramStatus = "checking" | "connected" | "off" | "notConfigured" | "account";
+const TELEGRAM_TONE: Record<TelegramStatus, Tone> = { checking: "neutral", connected: "good", off: "neutral", notConfigured: "attention", account: "neutral" };
+
+/**
+ * Settings → Notifications: connecting a Telegram chat. "Connect" asks the server for a one-time link and opens it; the chat is connected
+ * once the person presses Start in Telegram, which this card notices by asking the server while it waits.
+ */
+function TelegramSettings() {
+  const t = useT();
+  const g = t.notify.prefs.telegram;
+  const [link, setLink] = useState<TelegramLink | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<{ url: string; until: number } | null>(null);
+
+  const refresh = useCallback(async () => {
+    const r = await call<TelegramLink>("/api/telegram/link", undefined, "GET");
+    if (r.ok) setLink(r.data);
+    return r.ok ? r.data : null;
+  }, []);
+  useEffect(() => {
+    let live = true;
+    void call<TelegramLink>("/api/telegram/link", undefined, "GET").then((r) => { if (live && r.ok) setLink(r.data); });
+    return () => { live = false; };
+  }, []);
+  // While a link is out, ask every few seconds whether Telegram has been connected, until it is or the link has run out.
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setInterval(async () => {
+      const now = await refresh();
+      if (now?.connected) { setPending(null); toast.success(g.connected); } else if (Date.now() > pending.until) setPending(null);
+    }, 3_000);
+    return () => clearInterval(timer);
+  }, [pending, refresh, g.connected]);
+
+  const status: TelegramStatus = !link ? "checking" : !link.account ? "account" : !link.configured ? "notConfigured" : link.connected ? "connected" : "off";
+  const connect = async () => {
+    setBusy(true);
+    const r = await call<{ url: string; expiresAt: number }>("/api/telegram/link");
+    setBusy(false);
+    if (!r.ok) return toast.error(g.failed, { description: errorText(t, r) });
+    setPending({ url: r.data.url, until: r.data.expiresAt });
+    // Opened here where the browser allows it; the "Open Telegram" link below is the same address for where it does not.
+    window.open(r.data.url, "_blank", "noopener,noreferrer");
+  };
+  const disconnect = async () => {
+    setBusy(true);
+    const r = await call("/api/telegram/link", undefined, "DELETE");
+    setBusy(false);
+    if (!r.ok) return toast.error(g.disconnectFailed, { description: errorText(t, r) });
+    toast.success(g.disconnected);
+    await refresh();
+  };
+
+  return (
+    <Card>
+      <CardHeader title={g.title} sub={g.sub} />
+      <div className="grid gap-5 border-t border-border px-6 py-5">
+        <div className="grid gap-1.5">
+          <Badge tone={TELEGRAM_TONE[status]} className="justify-self-start">{g.status[status]}</Badge>
+          <p className="max-w-[60ch] text-[14px] text-pretty text-muted-foreground">{g.note[status]}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {status === "connected" ? (
+            <button type="button" disabled={busy} onClick={() => void disconnect()} className={buttonClass("secondary")}>{g.disconnect}</button>
+          ) : (
+            <button type="button" disabled={busy || status !== "off"} onClick={() => void connect()} className={buttonClass()}><SendIcon className="size-4" aria-hidden />{busy ? g.connecting : g.connect}</button>
+          )}
+          {pending && status === "off" && <a href={pending.url} target="_blank" rel="noopener noreferrer" className={buttonClass("secondary")}>{g.open}</a>}
+        </div>
+        {pending && status === "off" && <p role="status" className="max-w-[60ch] text-[13px] text-pretty text-muted-foreground">{g.waiting}</p>}
+      </div>
+    </Card>
   );
 }

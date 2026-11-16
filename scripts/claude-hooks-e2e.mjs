@@ -100,7 +100,7 @@ async function main() {
       check((await call("POST", `/api/v1/reviews/${waiting.id}`, { cookie: other, body: { status: "approved" } })).status === 404, "and cannot approve its request");
       check((await call("GET", "/api/v1/notifications", { cookie: other })).body.items.length === 0, "and gets none of its notifications");
       const mine = (await call("GET", "/api/v1/notifications", { cookie })).body.items;
-      check(mine.some((n) => n.kind === "approval" && !n.read && n.href === `/oversight?request=${waiting.id}`), "the owner has an in-app approval notification linking to the request");
+      check(mine.some((n) => n.kind === "approval" && !n.read && n.href === `/approvals/${waiting.id}`), "the owner has an in-app approval notification linking to the request");
       check((await call("POST", `/api/v1/reviews/${waiting.id}`, { cookie, body: { status: "approved" } })).status === 200, "approved through the normal review route");
     }
     const c = await pending;
