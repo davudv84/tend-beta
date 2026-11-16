@@ -25,8 +25,8 @@
       "capabilities": [],
       "status": "idle",
       "cwdValid": true,
-      "archived": false,
-      "lastSeen": 1794816910459,
+      "archived": true,
+      "lastSeen": 1794818265058,
       "sessionHistory": [],
       "sessionId": "bbc8a617-5898-4398-8271-391e168ec6c6"
     }
