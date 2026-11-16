@@ -5,6 +5,10 @@ Makes the site's product screens from real screenshots of the TEND app (see scri
 
 Each screen is cropped as SCREENS says and written as AVIF (q72, 4:4:4, so small text stays sharp) and WebP (q86) at every width in
 WIDTHS up to its own, into public/screens. The sizes go to src/components/marketing/screens.json, which <Shot> reads.
+
+Every screen comes twice: the app's light theme from <folder>/story/…, and its dark theme from the same file under <folder>/story-dark/…
+(the same capture with THEME=dark), written as <name>-dark-<width>. The site shows the one that matches the visitor's light or dark
+setting. Both captures must be the same size, so one crop box fits both.
 """
 import json, sys
 from pathlib import Path
@@ -42,15 +46,20 @@ def main(src: str) -> None:
     for name, (file, box) in SCREENS.items():
         if only and name not in only:
             continue
-        im = Image.open(Path(src) / file).convert("RGB")
-        if box:
-            im = im.crop(box)
-        w, h = im.size
-        widths = [x for x in WIDTHS if x < w] + [w]
-        for x in widths:
-            out = im if x == w else im.resize((x, round(h * x / w)), Image.LANCZOS)
-            out.save(OUT / f"{name}-{x}.avif", quality=72, subsampling="4:4:4", speed=4)
-            out.save(OUT / f"{name}-{x}.webp", quality=86, method=6)
+        folder, base = file.split("/")
+        light = Image.open(Path(src) / folder / base).convert("RGB")
+        dark = Image.open(Path(src) / f"{folder}-dark" / base).convert("RGB")
+        if light.size != dark.size:
+            sys.exit(f"{name}: the light capture is {light.size}, the dark one {dark.size}; take them again at the same size")
+        for suffix, im in (("", light), ("-dark", dark)):
+            if box:
+                im = im.crop(box)
+            w, h = im.size
+            widths = [x for x in WIDTHS if x < w] + [w]
+            for x in widths:
+                out = im if x == w else im.resize((x, round(h * x / w)), Image.LANCZOS)
+                out.save(OUT / f"{name}{suffix}-{x}.avif", quality=72, subsampling="4:4:4", speed=4)
+                out.save(OUT / f"{name}{suffix}-{x}.webp", quality=86, method=6)
         meta[name] = {"widths": widths, "w": w, "h": h}
         print(name, w, h, widths)
     meta_file.write_text(json.dumps({k: meta[k] for k in SCREENS if k in meta}) + "\n")

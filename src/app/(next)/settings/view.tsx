@@ -177,7 +177,7 @@ export default function View() {
             {!operator ? <p className="border-t border-border px-6 py-5 text-[14px] text-muted-foreground">{t.tools.readOnly}</p> : (
               <>
                 {fresh && (
-                  <div role="status" className="border-t border-border bg-[#eef6f2] px-6 py-4">
+                  <div role="status" className="border-t border-border bg-[#eef6f2] px-6 py-4 dark:bg-[rgb(141_187_165/0.14)]">
                     {fresh.revoked ? <p className="text-[14px] text-[#176b50]">{g.revoked(connected.find((a) => a.id === fresh.id)?.name ?? "")}</p> : (
                       <>
                         <p className="text-[14px] font-medium text-[#176b50]">{g.newKey(connected.find((a) => a.id === fresh.id)?.name ?? "")}</p>

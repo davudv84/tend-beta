@@ -62,7 +62,7 @@ export default function View() {
               {connected.map((a) => (
                 <li key={a.id}>
                   <button type="button" onClick={() => { setPicked(a.id); setEditing(false); }} aria-current={a.id === id ? "true" : undefined}
-                    className={cn("block w-full px-6 py-4 text-left transition-colors hover:bg-[#fafafa]", a.id === id && "bg-[#fafafa]")}>
+                    className={cn("block w-full px-6 py-4 text-left transition-colors hover:bg-[#fafafa] dark:hover:bg-sunken", a.id === id && "bg-[#fafafa] dark:bg-sunken")}>
                     <span className={cn("block text-[15px] font-medium", a.id === id && "text-primary")}>{a.name}</span>
                     <span className="block text-[14px] text-muted-foreground">{a.role}</span>
                   </button>
@@ -83,16 +83,16 @@ export default function View() {
                 <div className="border-t border-border px-6 pb-6"><Coverage view={view} integration={hook} /></div>
               ) : (
                 <>
-                  {!view.valid && <p role="alert" className="border-t border-border bg-[#fff4e5] px-6 py-3 text-[14px] text-[#92400e]">{t.tools.invalid}</p>}
+                  {!view.valid && <p role="alert" className="border-t border-border bg-[#fff4e5] px-6 py-3 text-[14px] text-[#92400e] dark:bg-[rgb(217_165_91/0.14)] dark:text-[#e4ba7a]">{t.tools.invalid}</p>}
                   {GROUPS.map(([effect, tone]) => {
                     const rows = view.tools.filter((x) => x.effect === effect);
                     return (
                       <div key={effect} className="border-t border-border">
-                        <div className="flex items-center gap-3 bg-[#fafafa] px-6 py-3"><Badge tone={tone}>{g.groups[effect].title}</Badge><span className="text-[13px] text-muted-foreground">{rows.length} · {g.groups[effect].note}</span></div>
+                        <div className="flex items-center gap-3 bg-[#fafafa] px-6 py-3 dark:bg-sunken"><Badge tone={tone}>{g.groups[effect].title}</Badge><span className="text-[13px] text-muted-foreground">{rows.length} · {g.groups[effect].note}</span></div>
                         {rows.length ? <ul className="divide-y divide-border">{rows.map((x) => (
                           <li key={x.tool} className="flex items-center justify-between gap-4 px-6 py-3.5">
                             <span className="min-w-0"><span className="block text-[15px]">{t.tools.names[x.tool] ?? x.tool}</span><span className="block font-mono text-[13px] text-muted-foreground">{x.tool}.{x.action}</span></span>
-                            <span className="flex shrink-0 items-center gap-2 text-[13px] text-muted-foreground">{x.custom && <span className="rounded-md bg-[#f5f5f5] px-2 py-0.5">{g.custom}</span>}{t.tools.risk[x.risk]}</span>
+                            <span className="flex shrink-0 items-center gap-2 text-[13px] text-muted-foreground">{x.custom && <span className="rounded-md bg-[#f5f5f5] px-2 py-0.5 dark:bg-[rgb(237_232_222/0.07)]">{g.custom}</span>}{t.tools.risk[x.risk]}</span>
                           </li>))}</ul> : <p className="px-6 py-4 text-[14px] text-muted-foreground">{g.empty}</p>}
                       </div>
                     );

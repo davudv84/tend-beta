@@ -143,7 +143,7 @@ const PREVIEW_SHOT: Partial<Record<PreviewKey, ShotName>> = { overview: "overvie
 function Preview({ k }: { k: PreviewKey }) {
   const t = useT();
   const name = PREVIEW_SHOT[k];
-  if (name) return <div aria-hidden className="overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] bg-white"><div className="w-[620px]"><ShotImage name={name} alt="" sizes="620px" /></div></div>;
+  if (name) return <div aria-hidden className="overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] mk-shot"><div className="w-[620px]"><ShotImage name={name} alt="" sizes="620px" /></div></div>;
   const r = t.front.nav.res[k as keyof typeof t.front.nav.res];
   return (
     <AppPanel title={r[0]} icon={BookOpenIcon} bodyClassName="grid gap-2 p-4">

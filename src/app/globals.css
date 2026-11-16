@@ -396,6 +396,12 @@
   --color-mk-dim: #8c8c8c;
 }
 
+/* Behind an app screenshot while it loads: the app's own page colour, light or dark to match the screenshot the visitor gets (shot.tsx). */
+.mk .mk-shot { background: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  .mk .mk-shot { background: #131211; }
+}
+
 .mk {
   --background: #181818;
   --surface: #1d1d1d;

@@ -85,7 +85,7 @@ export function DesktopStory() {
   const steps = DESKTOP_STEPS;
   return (
     <figure ref={attach} aria-label={s.storyLabel} className="relative">
-      <div className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-white shadow-[0_30px_80px_-30px_rgb(0_0_0/0.85)]">
+      <div className="relative overflow-hidden rounded-xl border border-white/[0.1] mk-shot shadow-[0_30px_80px_-30px_rgb(0_0_0/0.85)]">
         <Frames steps={steps} at={step} alts={{ "story-1": s.story1, "story-2": s.story2, "story-3": s.story3, "story-4": s.story4 }} sizes="(min-width: 1480px) 1240px, 84vw" />
       </div>
       <Replay show={done} onClick={replay} label={s.replay} />
@@ -101,7 +101,7 @@ export function PhoneStory() {
   const steps = PHONE_STEPS;
   return (
     <figure ref={attach} aria-label={s.storyLabel} className="relative mx-auto w-[min(76vw,300px)]">
-      <div className="relative overflow-hidden rounded-[40px] border-[7px] border-[#1c1c1c] bg-white shadow-[0_30px_80px_-24px_rgb(0_0_0/0.9)]">
+      <div className="relative overflow-hidden rounded-[40px] border-[7px] border-[#1c1c1c] mk-shot shadow-[0_30px_80px_-24px_rgb(0_0_0/0.9)]">
         <span aria-hidden className="absolute top-2 left-1/2 z-10 h-[22px] w-[30%] -translate-x-1/2 rounded-full bg-black" />
         <div className="pt-[26px]">
           <div className="relative">

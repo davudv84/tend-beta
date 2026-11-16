@@ -71,7 +71,7 @@ export function Platform() {
                   <h3 className="mt-5 text-[22px] font-medium tracking-[-0.02em]"><Link href={href} className="outline-none hover:underline hover:underline-offset-4">{p[key].title}</Link></h3>
                   <p className="mt-2 max-w-[36ch] text-[15px] text-muted-foreground">{p[key].body}</p>
                 </div>
-                <div aria-hidden className={cn("mt-auto ml-6 h-[320px] overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] bg-white transition-opacity duration-500 md:ml-8 md:h-auto md:flex-1", on ? "mk-rise" : "md:opacity-30")}>
+                <div aria-hidden className={cn("mt-auto ml-6 h-[320px] overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] mk-shot transition-opacity duration-500 md:ml-8 md:h-auto md:flex-1", on ? "mk-rise" : "md:opacity-30")}>
                   <div className="w-[640px] md:w-[980px]"><ShotImage name={PLATFORM_SHOT[key]} alt="" sizes="(min-width: 768px) 980px, 640px" /></div>
                 </div>
               </div>
@@ -173,7 +173,7 @@ export function Everything() {
     if (!name) return <Screen inner="w-[calc(100%-1rem)]" className="h-full"><Terminal {...TERMINALS.home} minHeight={200} compact /></Screen>;
     // A crop that is wide and short sits in the middle of the card; a window runs off the card's right and bottom edges.
     if (k === "gateway") return <div aria-hidden className="mr-4 grid h-full place-items-center"><Shot name={name} alt="" sizes="400px" frame="card" /></div>;
-    return <div aria-hidden className="h-full overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] bg-white"><div className="w-[620px]"><ShotImage name={name} alt="" sizes="620px" /></div></div>;
+    return <div aria-hidden className="h-full overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] mk-shot"><div className="w-[620px]"><ShotImage name={name} alt="" sizes="620px" /></div></div>;
   };
   // The strip starts where the page's content starts, and runs to the window's edge.
   const gutter = "px-5 sm:px-8 xl:px-[calc((100vw-1200px)/2+2rem)]";
