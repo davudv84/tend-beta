@@ -9,7 +9,7 @@ import { getDb } from "@/server/db";
 import { isOperator } from "@/server/session";
 
 /** The browser's own bars take the site's colour on a phone, and the page is dark from the first frame. */
-export const viewport: Viewport = { themeColor: "#181818", colorScheme: "dark" };
+export const viewport: Viewport = { themeColor: "#181818", colorScheme: "dark", viewportFit: "cover" };
 
 /** The public homepage: what TEND is, shown with TEND's own screens. An operator who is already signed in goes straight to their Overview. */
 export default async function FrontPage() {

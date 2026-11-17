@@ -4,7 +4,6 @@ import { MousePointer2Icon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { BrandMark } from "@/ui/brand-mark";
 import { Badge } from "@/ui/primitives";
-// The gateway's payment tool and its real action (server/gateway.ts).
 const INVOICE_REQUEST = { tool: "pay_invoice", action: "execute" };
 
 /** The three outcomes, in the app's own words, drawn as a small flow in the app's dark colours: tool call → TEND → allowed, waiting, blocked. */

@@ -7,6 +7,6 @@ import { config } from "@/server/config";
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = config.appUrl;
   if (!base) return [];
-  const pages = ["/", "/how-it-works", "/docs", "/security", "/verification-report", "/about", "/contact", "/imprint", "/privacy", "/terms", ...PRODUCTS.map((p) => `/product/${p}`), "/compare", ...COMPETITORS.map((c) => `/compare/${c.slug}`)];
+  const pages = ["/", "/how-it-works", "/docs", "/threat-model", "/compare", ...COMPETITORS.map((c) => `/compare/${c.slug}`), "/changelog", "/security", "/verification-report", "/about", "/contact", "/imprint", "/privacy", "/terms", ...PRODUCTS.map((p) => `/product/${p}`)];
   return pages.map((p) => ({ url: `${base}${p === "/" ? "" : p}` }));
 }
