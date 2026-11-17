@@ -7,8 +7,7 @@
     "studio": "remotion studio",
     "footage": "bash scripts/prepare-footage.sh",
     "audio": "python3 scripts/make-audio.py",
-    "preview": "ffmpeg -y -i out/TEND_YC_DEMO_FINAL.mp4 -vf scale=1280:720:flags=lanczos -c:v libx264 -preset slow -crf 22 -c:a aac -b:a 160k -movflags +faststart out/TEND_YC_DEMO_PREVIEW.mp4",
-    "final": "remotion render TendDemo out/render_raw.mp4 --crf=14 --x264-preset=slow --audio-bitrate=256k && bash scripts/finalize.sh",
+    "final": "remotion render TendDemo out/render_v3.mp4 --crf=14 --x264-preset=slow --audio-bitrate=256k && ffmpeg -y -i out/render_v3.mp4 -c copy -movflags +faststart out/TEND_YC_DEMO_FINAL_V3.mp4 && rm out/render_v3.mp4",
     "stills": "node scripts/stills.mjs"
   },
   "dependencies": {

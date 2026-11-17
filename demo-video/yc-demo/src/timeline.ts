@@ -1,67 +1,62 @@
 /**
- * The whole edit lives here: which slice of the real recording plays when, where the camera looks, and what the
- * captions say. Times are OUTPUT seconds unless named `src` (seconds in source/demo-original.mp4).
+ * The whole edit lives here (V3): which slice of the real recording plays when, where the camera looks, and the few
+ * words that appear. Times are OUTPUT seconds unless named `src` (seconds in source/demo-original.mp4).
  *
- * Ground rules this file follows:
- *  - Every frame of product UI is the original recording. Both panels (dashboard + terminal) always show the SAME
- *    moment of it, so cause and effect stay real.
+ * Ground rules:
+ *  - Every frame of product UI is the original recording. Dashboard and terminal always show the SAME moment of it.
  *  - Segments only cut, trim, or slow down. Where the ORIGINAL was already sped up while waiting for the model,
- *    src/speed.ts shows that on screen ("2x · waiting for the model"), exactly as the original did.
+ *    src/speed.ts discloses it on screen, as the original did.
  */
 
 export const FPS = 60;
 export const f = (s: number) => Math.round(s * FPS);
 
+// ---------------------------------------------------------------- frame layout
+export const W = 1920;
+export const H = 1080;
+/** Footage viewport; the strip below it carries the caption line. Same colour as the room, so it only reads as a
+ *  strip when the camera is close enough for footage to reach it. */
+export const VIEW_H = 980;
+
 // ---------------------------------------------------------------- world geometry
-// The "world" is the original split screen pulled apart: dashboard plate on the left, terminal plate on the right.
-export const DASH = { x: 0, y: 0, w: 1280, h: 940 }; // source px 0..1280 x 0..940 (captions of the original cropped off)
+// The original split screen, kept as ONE continuous workspace: dashboard left, terminal right, edge to edge.
+export const DASH = { x: 0, y: 0, w: 1280, h: 940 }; // source px 0..1280 x 0..940 (original captions cropped off)
 export const TERM_SCALE = 940 / 1080;
-export const GAP = 36;
-export const TERM = { x: DASH.w + GAP, y: 0, w: 640 * TERM_SCALE, h: 940 }; // source px 1280..1920 x 0..1080
+export const TERM = { x: DASH.w, y: 0, w: 640 * TERM_SCALE, h: 940 }; // source px 1280..1920 x 0..1080
 export const WORLD = { w: TERM.x + TERM.w, h: 940 };
 
 export type Pt = { x: number; y: number };
-/** Dashboard source pixel -> world. */
 export const dash = (x: number, y: number): Pt => ({ x: DASH.x + x, y: DASH.y + y });
-/** Terminal source pixel (0..640, 0..1080) -> world. */
 export const term = (x: number, y: number): Pt => ({ x: TERM.x + x * TERM_SCALE, y: TERM.y + y * TERM_SCALE });
 
 // ---------------------------------------------------------------- footage segments
-export type Segment = {
-  start: number; // output s
-  end: number; // output s
-  src: number; // source s at `start`
-  rate: number; // source seconds per output second
-  fadeIn?: number; // crossfade from the previous segment, output s
-};
+export type Segment = { start: number; end: number; src: number; rate: number; fadeIn?: number };
 
 export const SEGMENTS: Segment[] = [
-  // SCENE 1 — THE BLOCK. Claude Code is asked to cat a decoy SSH key file; TEND's PreToolUse hook denies it.
-  { start: 0.0, end: 2.2, src: 28.6, rate: 1 },
-  // Nothing changes on screen here (terminal is idle until Claude's reply): held at a slower rate for reading.
-  { start: 2.2, end: 5.4, src: 30.8, rate: 0.4375 },
-  // SCENE 2 — WHAT JUST HAPPENED. The same moment, continuing: the dashboard already lists the blocked call.
-  { start: 5.4, end: 7.5, src: 32.2, rate: 1 },
-  // ...the Blocked filter, a few seconds later in the recording.
-  { start: 7.5, end: 11.1, src: 37.3, rate: 1, fadeIn: 0.25 },
-  // SCENE 3 — THE SECURITY LAYER. Earlier in the same recording: the real installer run…
-  { start: 11.1, end: 16.1, src: 5.3, rate: 1, fadeIn: 0.3 },
-  // …the rules chosen in TEND (Balanced) and saved…
-  { start: 16.1, end: 20.6, src: 10.6, rate: 1, fadeIn: 0.3 },
-  // …and a harmless `ls`, which runs and is recorded.
-  { start: 20.6, end: 25.0, src: 20.6, rate: 1, fadeIn: 0.3 },
-  // SCENE 4 — HUMAN APPROVAL. `rm scratch/old-report.txt` waits for a person; Allow once; it runs. One continuous take.
-  { start: 25.0, end: 39.6, src: 42.5, rate: 1, fadeIn: 0.3 },
-  // SCENE 5 — COMPLETE VISIBILITY. The Overview right after.
-  { start: 39.6, end: 44.9, src: 58.8, rate: 1, fadeIn: 0.3 },
+  // THE BLOCK — Claude Code tries `cat .ssh/demo_decoy.txt` (a decoy file); TEND's PreToolUse hook denies it.
+  { start: 0.0, end: 1.9, src: 28.9, rate: 1 },
+  // terminal is static until Claude replies: held slower so the denial can be read
+  { start: 1.9, end: 6.0, src: 30.8, rate: (32.2 - 30.8) / 4.1 },
+  // same moment, wider: the dashboard already lists it…
+  { start: 6.0, end: 7.8, src: 32.2, rate: 1 },
+  // …then the Blocked filter, seconds later
+  { start: 7.8, end: 11.4, src: 37.3, rate: 1, fadeIn: 0.3 },
+  // POLICY — earlier in the same recording: the installer's output…
+  { start: 11.4, end: 14.8, src: 6.4, rate: 1, fadeIn: 0.35 },
+  // …the rules chosen and saved in TEND…
+  { start: 14.8, end: 18.6, src: 11.2, rate: 1, fadeIn: 0.35 },
+  // …and a harmless `ls`, which simply runs and is recorded
+  { start: 18.6, end: 22.0, src: 21.4, rate: 1, fadeIn: 0.35 },
+  // APPROVAL — one continuous take: rm waits → Allow once → it runs → decision history
+  { start: 22.0, end: 36.0, src: 42.5, rate: 1, fadeIn: 0.35 },
+  // OVERVIEW
+  { start: 36.0, end: 41.2, src: 58.8, rate: 1, fadeIn: 0.35 },
 ];
 
-export const FOOTAGE_END = 44.9;
-export const END_START = 44.3; // end card fades in over the last footage
-export const TOTAL = 53.0;
+export const END_START = 40.6;
+export const TOTAL = 45.0;
 export const TOTAL_FRAMES = f(TOTAL);
 
-/** Source time shown at output time t (for the speed disclosure and for debugging). */
 export function srcAt(t: number): { src: number; rate: number } | null {
   let hit: Segment | null = null;
   for (const s of SEGMENTS) if (t >= s.start && t < s.end) hit = s;
@@ -70,160 +65,92 @@ export function srcAt(t: number): { src: number; rate: number } | null {
 }
 
 // ---------------------------------------------------------------- camera
-export type Cam = { t: number; at: Pt; z: number; ease?: "move" | "drift" | "settle" };
-const WIDE: Pt = { x: WORLD.w / 2, y: WORLD.h / 2 };
-const ZW = 0.925; // wide: the whole split screen
+/**
+ * Keyframes. `ease` shapes the move INTO this key: "move" (weighted start, long landing), "hold" (a near-still
+ * creep), "cut" (jump, used only on a picture cut). `dip` pulls the camera back mid-move by that fraction, so long
+ * traverses between panels arc out and back in like an operator re-finding the subject.
+ */
+export type Cam = { t: number; at: Pt; z: number; ease?: "move" | "hold" | "cut"; dip?: number };
+
+const WIDE: Cam["at"] = { x: WORLD.w / 2, y: WORLD.h / 2 };
+const ZW = Math.min((W * 0.985) / WORLD.w, (VIEW_H * 0.975) / WORLD.h);
+// Terminal "medium": the terminal's right edge at frame right, the dashboard filling the rest; bottom of frame
+// sits just under the terminal. No empty room beside the workspace.
+const termMed = (z: number, lift = 12): Cam["at"] => ({ x: WORLD.w + 6 - W / 2 / z, y: WORLD.h + lift - VIEW_H / 2 / z });
 
 export const CAMERA: Cam[] = [
-  // 1 — open tight on the terminal prompt, creep toward the denial
-  { t: 0.0, at: term(322, 948), z: 2.42 },
-  { t: 2.2, at: term(322, 962), z: 2.55, ease: "drift" },
-  { t: 5.2, at: term(322, 985), z: 2.78, ease: "drift" },
-  // 2 — pull back to reveal the dashboard, then travel to the blocked row
-  { t: 6.55, at: WIDE, z: ZW },
-  { t: 7.3, at: { x: WIDE.x - 20, y: WIDE.y }, z: ZW * 1.02, ease: "drift" },
-  { t: 8.5, at: dash(756, 420), z: 1.66 },
-  { t: 11.0, at: dash(756, 418), z: 1.76, ease: "drift" },
-  // 3 — out and across to the installer output in the terminal
-  { t: 11.75, at: { x: 1250, y: 560 }, z: 1.12 },
-  { t: 12.7, at: term(322, 870), z: 2.38, ease: "settle" },
-  { t: 15.9, at: term(322, 876), z: 2.52, ease: "drift" },
-  //   …across to the rules in the dashboard
-  { t: 16.75, at: dash(1000, 640), z: 1.25 },
-  { t: 17.6, at: dash(630, 668), z: 1.92, ease: "settle" },
-  { t: 20.4, at: dash(630, 662), z: 2.0, ease: "drift" },
-  //   …and out to both panels for the harmless command
-  { t: 21.5, at: { x: WIDE.x, y: 520 }, z: 1.02 },
-  { t: 24.8, at: { x: WIDE.x + 10, y: 520 }, z: 1.07, ease: "drift" },
-  // 4 — the delete request in the terminal…
-  { t: 25.9, at: term(322, 968), z: 2.3, ease: "settle" },
-  { t: 29.0, at: term(322, 976), z: 2.42, ease: "drift" },
-  //   …the approval card in TEND, then the person's click…
-  { t: 30.0, at: dash(756, 505), z: 1.72 },
-  { t: 31.0, at: dash(640, 548), z: 1.92, ease: "drift" },
-  { t: 31.9, at: dash(560, 575), z: 2.15, ease: "settle" },
-  //   …both sides as the decision lands…
-  { t: 33.3, at: { x: WIDE.x, y: 560 }, z: 1.0 },
-  { t: 35.0, at: { x: WIDE.x + 20, y: 580 }, z: 1.04, ease: "drift" },
-  //   …the terminal: it actually ran…
-  { t: 35.9, at: term(322, 952), z: 2.25 },
-  { t: 37.1, at: term(322, 958), z: 2.33, ease: "drift" },
-  //   …and the record of it
-  { t: 38.0, at: dash(756, 560), z: 1.58 },
-  { t: 39.5, at: dash(756, 556), z: 1.64, ease: "drift" },
-  // 5 — overview: wide, then the counters, then the record
-  { t: 40.3, at: WIDE, z: ZW, ease: "settle" },
-  { t: 41.4, at: dash(756, 262), z: 1.62 },
-  { t: 42.6, at: dash(756, 270), z: 1.66, ease: "drift" },
-  { t: 44.0, at: dash(756, 640), z: 1.42 },
-  { t: 45.4, at: dash(756, 660), z: 1.32, ease: "drift" },
+  // the block: medium on the terminal, one slow push as the denial lands
+  { t: 0.0, at: termMed(2.15), z: 2.15 },
+  { t: 6.0, at: termMed(2.42), z: 2.42, ease: "hold" },
+  // pull back to the whole workspace: the dashboard has it too
+  { t: 7.5, at: WIDE, z: ZW, ease: "move" },
+  // into the Activity log, title to blocked row
+  { t: 9.3, at: dash(760, 318), z: 1.6, ease: "move" },
+  { t: 11.3, at: dash(760, 322), z: 1.64, ease: "hold" },
+  // across to the installer output
+  { t: 12.8, at: termMed(2.1), z: 2.1, ease: "move", dip: 0.32 },
+  { t: 14.7, at: termMed(2.16), z: 2.16, ease: "hold" },
+  // back to the rules, whole card with the sidebar for context
+  { t: 16.1, at: dash(640, 632), z: 1.55, ease: "move", dip: 0.28 },
+  { t: 18.5, at: dash(640, 628), z: 1.58, ease: "hold" },
+  // both panels for the harmless command
+  { t: 19.9, at: { x: 1000, y: 498 }, z: 1.08, ease: "move" },
+  { t: 22.0, at: { x: 1004, y: 498 }, z: 1.09, ease: "hold" },
+  // approval: the request in the terminal…
+  { t: 23.3, at: termMed(2.25), z: 2.25, ease: "move" },
+  { t: 25.2, at: termMed(2.3), z: 2.3, ease: "hold" },
+  // …the card in TEND, whole, buttons in shot; hold through the click
+  { t: 26.9, at: dash(756, 468), z: 1.8, ease: "move", dip: 0.3 },
+  { t: 29.6, at: dash(756, 472), z: 1.83, ease: "hold" },
+  // …back to the terminal: it ran
+  { t: 31.2, at: termMed(2.2), z: 2.2, ease: "move", dip: 0.3 },
+  { t: 33.4, at: termMed(2.25), z: 2.25, ease: "hold" },
+  // …and the decision history
+  { t: 34.8, at: dash(756, 560), z: 1.7, ease: "move", dip: 0.28 },
+  { t: 36.0, at: dash(756, 560), z: 1.7, ease: "hold" },
+  // overview (picture cut): the whole page, settling toward the counters
+  { t: 36.0, at: dash(756, 470), z: 1.45, ease: "cut" },
+  { t: 41.2, at: dash(756, 420), z: 1.55, ease: "hold" },
 ];
 
 // ---------------------------------------------------------------- which panel has the viewer's attention
 export type Focus = "term" | "dash" | "both";
 export const FOCUS: { t: number; focus: Focus }[] = [
   { t: 0, focus: "term" },
-  { t: 5.6, focus: "both" },
-  { t: 7.1, focus: "dash" },
-  { t: 10.75, focus: "term" },
-  { t: 16.1, focus: "dash" },
-  { t: 20.6, focus: "both" },
-  { t: 25.0, focus: "term" },
-  { t: 29.3, focus: "dash" },
-  { t: 32.9, focus: "both" },
-  { t: 35.4, focus: "term" },
-  { t: 37.5, focus: "dash" },
+  { t: 6.2, focus: "both" },
+  { t: 8.2, focus: "dash" },
+  { t: 11.6, focus: "term" },
+  { t: 15.0, focus: "dash" },
+  { t: 18.8, focus: "both" },
+  { t: 22.2, focus: "term" },
+  { t: 25.8, focus: "dash" },
+  { t: 30.0, focus: "term" },
+  { t: 33.6, focus: "dash" },
 ];
 
-// ---------------------------------------------------------------- focus highlights (real UI, framed — never altered)
-export type Spot = {
-  start: number;
-  end: number;
-  plate: "dash" | "term";
-  // plate source px
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  tone: "blocked" | "approved" | "accent" | "waiting";
-  dim?: number; // how much the rest of the plate dims
-};
-
+// ---------------------------------------------------------------- emphasis (rare; a soft contrast change, no outline)
+export type Spot = { start: number; end: number; plate: "dash" | "term"; x: number; y: number; w: number; h: number; dim?: number };
 export const SPOTS: Spot[] = [
-  { start: 2.35, end: 5.35, plate: "term", x: 12, y: 982, w: 616, h: 42, tone: "blocked", dim: 0.5 },
-  { start: 8.6, end: 11.0, plate: "dash", x: 286, y: 392, w: 942, h: 58, tone: "blocked" },
-  { start: 13.0, end: 16.0, plate: "term", x: 12, y: 834, w: 616, h: 84, tone: "accent" },
-  { start: 17.7, end: 20.5, plate: "dash", x: 312, y: 550, w: 652, h: 98, tone: "accent" },
-  { start: 22.2, end: 24.9, plate: "dash", x: 286, y: 534, w: 942, h: 56, tone: "approved", dim: 0.35 },
-  { start: 28.6, end: 29.9, plate: "term", x: 12, y: 1002, w: 616, h: 28, tone: "waiting", dim: 0.45 },
-  { start: 30.1, end: 31.7, plate: "dash", x: 282, y: 296, w: 950, h: 412, tone: "accent", dim: 0.3 },
-  { start: 33.7, end: 35.3, plate: "dash", x: 286, y: 500, w: 942, h: 62, tone: "approved", dim: 0.35 },
-  { start: 35.9, end: 37.5, plate: "term", x: 12, y: 905, w: 616, h: 32, tone: "approved", dim: 0.45 },
-  { start: 38.1, end: 39.5, plate: "dash", x: 286, y: 510, w: 942, h: 64, tone: "approved", dim: 0.35 },
-  { start: 41.5, end: 42.9, plate: "dash", x: 760, y: 206, w: 474, h: 114, tone: "accent", dim: 0.3 },
+  // the denial line itself
+  { start: 2.3, end: 6.1, plate: "term", x: 4, y: 978, w: 632, h: 50, dim: 0.5 },
 ];
 
-// ---------------------------------------------------------------- captions (one statement at a time)
-export type Caption = {
-  start: number;
-  end: number;
-  kicker?: string;
-  text: string;
-  /** substring of `text` to color */
-  em?: { word: string; tone: "blocked" | "approved" | "accent" | "waiting" };
-  sub?: string;
-};
-
+// ---------------------------------------------------------------- captions: few, short, only where the UI needs help
+export type Caption = { start: number; end: number; text: string };
 export const CAPTIONS: Caption[] = [
-  { start: 0.35, end: 2.15, kicker: "Claude Code · real session", text: "Claude Code is asked to read an SSH key file." },
-  { start: 2.4, end: 5.3, kicker: "Claude Code · real session", text: "TEND blocked it. Nothing ran.", em: { word: "blocked", tone: "blocked" } },
-  {
-    start: 7.0,
-    end: 11.0,
-    kicker: "TEND · Activity",
-    text: "Blocked before execution.",
-    em: { word: "Blocked", tone: "blocked" },
-    sub: "Logged, with the rule that stopped it.",
-  },
-  {
-    start: 11.9,
-    end: 16.0,
-    kicker: "Setup · real installer output",
-    text: "One command connects Claude Code to TEND.",
-    sub: "Its hooks ask TEND before every tool call runs.",
-  },
-  {
-    start: 16.9,
-    end: 20.5,
-    kicker: "TEND · Rules",
-    text: "The rules live in TEND, outside the agent.",
-    em: { word: "in TEND", tone: "accent" },
-    sub: "Balanced: deletes, publishing, sudo and network access wait for a person.",
-  },
-  {
-    start: 21.3,
-    end: 24.9,
-    kicker: "Claude Code + TEND",
-    text: "Harmless commands run, and every one is recorded.",
-    em: { word: "run", tone: "approved" },
-  },
-  { start: 25.6, end: 29.0, kicker: "Human approval", text: "Deleting a file needs a person's OK.", em: { word: "a person's OK", tone: "waiting" } },
-  { start: 29.3, end: 32.4, kicker: "TEND · Approvals", text: "Claude Code waits. You decide in TEND.", em: { word: "You decide", tone: "accent" } },
-  {
-    start: 32.8,
-    end: 39.4,
-    kicker: "Claude Code + TEND",
-    text: "Allowed once. It ran, and the decision is on record.",
-    em: { word: "Allowed once.", tone: "approved" },
-  },
-  { start: 40.2, end: 44.6, kicker: "TEND · Overview", text: "Every action, decision and reason. One place." },
+  { start: 2.6, end: 5.9, text: "Blocked before execution" },
+  { start: 8.6, end: 11.2, text: "Logged with the rule that stopped it" },
+  { start: 12.4, end: 14.6, text: "Every tool call checked by TEND" },
+  { start: 15.7, end: 18.4, text: "Rules live in TEND, not the agent" },
+  { start: 19.6, end: 21.8, text: "Harmless commands just run" },
+  { start: 24.6, end: 29.2, text: "Human approval required" },
+  { start: 31.6, end: 34.4, text: "Allowed once, then executed" },
+  { start: 36.6, end: 40.3, text: "Every decision recorded" },
 ];
 
 // ---------------------------------------------------------------- sound cues (output seconds)
 export const CUES = {
-  block: 2.2,
-  rowReveal: 8.6,
-  approveClick: 25.0 + (49.55 - 42.5),
-  ran: 25.0 + (52.5 - 42.5),
-  end: 46.4,
+  block: 1.9,
+  approved: 22.0 + (50.0 - 42.5),
+  end: 41.3,
 };
