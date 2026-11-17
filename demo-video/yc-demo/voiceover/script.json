@@ -1,0 +1,50 @@
+{
+  "_note": "Voiceover script. `at` = output seconds where the line starts (keep in sync with VO in src/timeline.ts). To use your own voice: record each line as voiceover/founder/<id>.wav (any sample rate, mono or stereo) and run `npm run audio && npm run final`. Lines without a founder file fall back to the synthetic stand-in in voiceover/synthetic/.",
+  "lines": [
+    {
+      "id": "l1",
+      "at": 0.1,
+      "text": "AI agents can execute commands. Who controls what they're allowed to do?"
+    },
+    {
+      "id": "l2",
+      "at": 4.6,
+      "text": "Here, Claude Code tries to read a decoy file in dot S S H. The TEND hook denies it before it runs."
+    },
+    {
+      "id": "l3",
+      "at": 11.4,
+      "text": "The block is logged, with the rule that stopped it."
+    },
+    {
+      "id": "l4",
+      "at": 14.1,
+      "text": "TEND installs as Claude Code hooks, so every tool call is checked. The rules live in TEND. Everyday commands just run, and get recorded."
+    },
+    {
+      "id": "l5",
+      "at": 23.4,
+      "text": "Deleting a file needs approval. Claude Code waits, and the exact request shows up in TEND."
+    },
+    {
+      "id": "l6",
+      "at": 29.7,
+      "text": "I allow it once."
+    },
+    {
+      "id": "l6b",
+      "at": 32.6,
+      "text": "Only then does it run."
+    },
+    {
+      "id": "l7",
+      "at": 34.4,
+      "text": "Allowed, blocked, approved. Every decision is recorded, with its reason."
+    },
+    {
+      "id": "l8",
+      "at": 41.8,
+      "text": "TEND. Powerful agents. Total control."
+    }
+  ]
+}

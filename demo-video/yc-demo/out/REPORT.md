@@ -1,73 +1,90 @@
-# TEND — YC demo: edit report (V3)
+# TEND — YC demo: edit report (V4, with voiceover)
 
 ## Deliverables
 
 | File | What |
 |---|---|
-| `demo-video/yc-demo/out/TEND_YC_DEMO_FINAL_V3.mp4` | **Current cut (V3):** 1920×1080, 60 fps, H.264 High (CRF 14, slow), AAC 48 kHz, 45.0 s |
-| `demo-video/yc-demo/out/TEND_YC_DEMO_FINAL.mp4`, `…_PREVIEW.mp4` | Previous cut (V2, 53 s), kept unchanged. Its source is in git history (commit before V3). |
-| `demo-video/yc-demo/` | Editable Remotion project; it now builds V3. Everything editorial is in `src/timeline.ts`. |
-| `demo-video/yc-demo/source/demo-original.mp4` | The original recording, untouched |
+| `out/TEND_YC_DEMO_FINAL_V4.mp4` | **Current cut (V4):** 1920×1080, 30 fps, H.264 High, AAC 48 kHz, 46 s, with the stand-in voiceover |
+| `out/TEND_YC_DEMO_FINAL_V4_NO_VOICEOVER.mp4` | Same picture, cues only: to record your own voice over |
+| `out/TEND_YC_DEMO_FINAL_V3.mp4` | Previous cut (V3, 60 fps, no voice), unchanged |
+| `out/TEND_YC_DEMO_FINAL.mp4`, `…_PREVIEW.mp4` | V2, unchanged. V2/V3 sources are in git history. |
+| `voiceover/script.json` | The voiceover script with the start time of every line |
 
-Rebuild: `npm install && npm run footage && npm run audio && REMOTION_CHROME=/path/to/chrome-headless-shell npm run final`
+All paths are relative to `demo-video/yc-demo/`.
 
-## What changed in V3
+## The voiceover is a synthetic stand-in, not the founder
 
-- **Typography:** one line of Geist Medium, 30px, in a 100px strip under the picture, with 3–7 words and no punctuation
-  flourishes. The source labels, green squares, colored words, sublines and gradient scrim are all gone. There are 8 short
-  lines in 45 s, and none where the UI already says it.
-- **Composition:** dashboard and terminal are joined edge to edge as one workspace, with no gap, rounded corners or
-  drop shadow. The picture area is 1920×980, about 91% of the frame. Terminal shots put the terminal at frame right with
-  the real dashboard beside it, so there is no empty room.
-- **Camera:** gentler zoom (max 2.4× on the terminal, 1.8× on the dashboard), so commands, the approval card with its buttons,
-  and the rules card with its Save button are never cropped. Long moves between panels arc slightly back and in. Each
-  hold creeps almost imperceptibly instead of stopping dead. There are 11 moves in 45 s, each following the action.
-- **Emphasis:** one feathered contrast drop around the terminal's denial line. No outlines anywhere; everything else
-  is framing. The off-subject panel dims by at most 40%.
-- **Pacing:** 45 s. The installer is cut to 3.4 s. The approval is one continuous real take (14 s).
-- **Sound:** near-silent room tone, one low damped tone when the block lands, one soft confirmation when the request is
-  approved, and a faint low fifth under the end card. The ticks and drone were removed.
-- **Ending:** near-black, "Powerful agents." / "Total control." (second line in TEND green), the real mark from
-  `src/ui/brand-mark.tsx`, then tendhq.dev. Opacity and 6px of travel only, about 4 s.
+I can't record your voice, and a cloned or "founder-style" voice presented as yours would be fabricated. V4 is
+narrated by **Kokoro** (an open-weights text-to-speech model, voice `af_heart`), run locally. For YC, replace it with your own voice:
 
-## Footage used (all from the one original recording)
+1. Record each line of `voiceover/script.json` as its own file: `voiceover/founder/l1.wav`, `l2.wav`, … (a phone recording in a quiet room is fine).
+2. Run `npm run audio && npm run final`.
 
-| V3 (s) | Original (s) | On screen |
+Any line you record replaces the synthetic one at the same moment; lines you don't record keep the stand-in.
+Keep each line within about ±10% of the stand-in's length, or adjust its `at` time in `script.json`.
+
+| Line | Starts | Text |
 |---|---|---|
-| 0.0 – 6.0 | 28.9 – 32.2 | Terminal: `cat .ssh/demo_decoy.txt` → `blocked: PreToolUse:Bash hook error: TEND's policy does not allow this (policy_denied). Nothing ran.` (static part held at 0.34× to read) |
-| 6.0 – 7.8 | 32.2 – 34.0 | Whole workspace: the dashboard already lists the call as Blocked |
-| 7.8 – 11.4 | 37.3 – 40.9 | Activity filtered to Blocked: one row, reason `Commands containing ".ssh" are blocked` |
-| 11.4 – 14.8 | 6.4 – 9.8 | Real installer output: hooks added so Claude Code asks TEND before each tool runs |
-| 14.8 – 18.6 | 11.2 – 15.0 | Rules in TEND: Balanced selected and saved ("Saved and enforced: Balanced") |
-| 18.6 – 22.0 | 21.4 – 24.8 | `ls` runs; recorded as Allowed / Ran |
-| 22.0 – 36.0 | 42.5 – 56.5 | One take: `rm scratch/old-report.txt` → `waiting for a person to decide in TEND` → approval card → **Allow once** → `Bash completed with no output` → Decision history |
-| 36.0 – 41.2 | 58.8 – 64.0 | Overview: Allowed 1, Blocked 1, agents, recent activity |
-| 40.6 – 45.0 | — | End card |
+| l1 | 0.1 s | AI agents can execute commands. Who controls what they're allowed to do? |
+| l2 | 4.6 s | Here, Claude Code tries to read a decoy file in .ssh. The TEND hook denies it before it runs. |
+| l3 | 11.4 s | The block is logged, with the rule that stopped it. |
+| l4 | 14.1 s | TEND installs as Claude Code hooks, so every tool call is checked. The rules live in TEND. Everyday commands just run, and get recorded. |
+| l5 | 23.4 s | Deleting a file needs approval. Claude Code waits, and the exact request shows up in TEND. |
+| l6 | 29.7 s | I allow it once. |
+| l6b | 32.6 s | Only then does it run. |
+| l7 | 34.4 s | Allowed, blocked, approved. Every decision is recorded, with its reason. |
+| l8 | 41.8 s | TEND. Powerful agents. Total control. |
+
+Every sentence describes something visible on screen at that moment.
+
+## Structure (output time ← original recording time)
+
+| V4 | Original | Section · on-screen text · what is shown |
+|---|---|---|
+| 0.0 – 3.8 | 27.0 – 30.8 | **Hook.** "AI agents can execute commands." / "Who controls what they're allowed to do?" Claude Code is given `cat .ssh/demo_decoy.txt` and attempts it. |
+| 3.8 – 7.8 | 30.8 – 34.8 | **Blocking.** "Blocked before execution." The real terminal shows `blocked: PreToolUse:Bash hook error: TEND's policy does not allow this (policy_denied). Nothing ran.`, then Claude's own account that the file was not read. |
+| 7.8 – 13.9 | 35.0 – 41.1 | TEND Activity: the Blocked row (reason `Commands containing ".ssh" are blocked`), then the Blocked filter clicked. |
+| 13.9 – 16.7 | 6.6 – 9.4 | **Policy.** "Define rules. Enforce them automatically." The installer output: hooks added (PreToolUse, PostToolUse, …) so Claude Code asks TEND before each tool runs. |
+| 16.7 – 20.0 | 11.4 – 14.7 | Rules in TEND: Balanced, Save clicked. |
+| 20.0 – 22.9 | 22.0 – 24.9 | Activity: `ls` Allowed / Ran, "All commands run and are recorded". |
+| 22.9 – 36.2 | 42.6 – 55.9 | **Approval**, one continuous real take. "Sensitive actions require approval." `rm scratch/old-report.txt` → `waiting for a person to decide in TEND` → the approval card (exact request, reason) → **Allow once** clicked → `Bash completed with no output` → Decision history. |
+| 34.2 – 40.9 | 53.7 – 63.7 | **Visibility.** "Every decision recorded." Decision history (rm Ran, cat Blocked, ls Ran, each with its reason), then the Overview (Allowed 1, Blocked 1). |
+| 40.9 – 46.0 | — | **Ending.** Black screen, TEND mark, "Powerful agents. Total control.", tendhq.dev. |
+
+## Editing choices
+
+- **Readability:** terminal close-ups fill the frame width, so mono text is about 37 px tall on screen, roughly 1.6× V3.
+  Dashboard shots crop to a single table or card (about 2× the source). Nothing important is cut off: commands,
+  status lines, the approval card with both buttons, and the history with reasons are all fully in frame.
+- **Transitions:** hard cuts between scenes. The approval take uses short (1 s) camera moves between terminal and
+  dashboard, because they show one continuous real interaction.
+- **Dead time:** cut where possible. Waiting inside the approval take is kept, because it is the human's real
+  decision time. Where the original recording was already sped up while waiting for the model, the right side of the
+  caption strip says so (e.g. "2× while waiting for the model"). Nothing plays faster than the original.
+- **Audio:** voiceover at −16 LUFS, one quiet low tone when the block lands, and one very soft tone when the
+  request is approved. No music; it didn't improve this.
+- **Captions:** the exact section texts from the brief, in a quiet strip under the picture.
+
+## Resolution
+
+The only footage is `source/demo-original.mp4`: 1920×1080, 30 fps, about 260 kb/s. Any zoom therefore enlarges source
+pixels (up to about 3× in terminal close-ups, 2× on the dashboard). I did one Lanczos resample before framing, which
+is sharper than the browser's own scaling, and added no AI upscaling or sharpening. Text is clearly readable but soft.
+**The single biggest improvement available is a sharper source recording:** record the same session again at 2× / 4K (or on a Retina
+screen at native resolution), with a higher bitrate (≥ 20 Mb/s). Then put it at `source/demo-original.mp4`, re-check
+the source times in `src/timeline.ts`, and run `npm run footage && npm run final`.
 
 ## Capabilities shown, and the evidence
 
-- **Real Claude Code integration:** a real Claude Code terminal, connected by TEND's real installer.
-- **Pre-execution blocking:** the denial comes from Claude Code's `PreToolUse` hook, and the terminal prints `Nothing ran.`
-- **Policy enforcement:** each decision carries its rule as the reason; the Balanced policy is shown being saved in TEND.
-- **Human approval:** `rm` waits, a person clicks Allow once in TEND, and only then does it run.
-- **Monitoring / audit:** Activity log, Decision history (Ran / Blocked / Ran, with reasons), Overview counters.
+- **Claude Code hook-based enforcement:** the installer output (hooks added to Claude Code's settings) and the
+  `PreToolUse:Bash hook error … Nothing ran.` denial in the real terminal.
+- **Policy enforcement:** the Balanced rules saved in TEND; every decision carries its rule as the reason.
+- **Human approval:** `rm` waits, a person clicks Allow once, and only then does it run.
+- **Audit:** the Activity log, the Decision history and the Overview counters.
 
-## Honesty measures
+**Not claimed:** other agents or integrations, performance figures, or a rules editor (none is in the footage). The
+`.ssh` file is called a decoy, which is what it is.
 
-- Dashboard and terminal always show the same instant. No UI was recreated or retouched. Only the original edit's own
-  overlays were removed: its burned-in captions (cropped off) and its "2× / 1.5× waiting for the model" badge. That
-  disclosure is now shown at the right of the caption strip ("2× while waiting for the model") for exactly the same
-  source windows, including in terminal shots where the original badge was not visible.
-- Nothing plays faster than the original already did. The one slowed shot (the static terminal after the denial) only
-  makes things look slower.
-- No caption calls the file an SSH key; the on-screen command shows it is `.ssh/demo_decoy.txt`.
+## Not verified
 
-## Limitations
-
-- **Soft close-ups:** the source is 1080p at about 260 kb/s, so close-ups are soft. Zoom was kept moderate partly for
-  this reason.
-- **No re-test:** I did not run TEND or Claude Code for this edit; every claim rests on the recording.
-- **One agent:** only Claude Code appears, so no multi-agent claim is made.
-- **No rules editor:** the footage has no rules-editor screen. Rules are shown through the Balanced card and the reasons
-  attached to events.
-- **No voice-over:** the original has no usable audio. The video is designed to read with the sound off.
+I did not run TEND or Claude Code for this edit; every claim rests on the recording.
