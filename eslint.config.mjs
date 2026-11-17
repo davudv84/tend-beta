@@ -20,6 +20,8 @@ const eslintConfig = defineConfig([
     // Local data and tool state, never part of the app.
     ".data/**",
     "**/.claude-flow/**",
+    // The demo video (Remotion project with its own dependencies), not part of the app.
+    "demo-video/**",
   ]),
 ]);
 

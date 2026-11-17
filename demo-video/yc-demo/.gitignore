@@ -1,0 +1,7 @@
+node_modules
+public/footage/
+out/*
+!out/TEND_YC_DEMO_FINAL.mp4
+!out/TEND_YC_DEMO_PREVIEW.mp4
+!out/REPORT.md
+public/audio/
