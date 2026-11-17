@@ -33,9 +33,8 @@ Keep each line within about ±10% of the stand-in's length, or adjust its `at` t
 | l6 | 29.7 s | I allow it once. |
 | l6b | 32.6 s | Only then does it run. |
 | l7 | 34.4 s | Allowed, blocked, approved. Every decision is recorded, with its reason. |
-| l8 | 41.8 s | TEND. Powerful agents. Total control. |
 
-Every sentence describes something visible on screen at that moment.
+Every sentence describes something visible on screen at that moment. The end card has no voice; its text speaks for itself.
 
 ## Structure (output time ← original recording time)
 
