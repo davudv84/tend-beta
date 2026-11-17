@@ -135,24 +135,65 @@ type CardKey = (typeof CARDS)[number];
 const HREF: Record<CardKey, string> = { activity: "/product/activity", agents: "/product/agents", checks: "/product/checks", cli: "/docs", integrations: "/verification-report" };
 /** The real screenshot each card shows (scripts/screens); the terminal card shows the CLI's own output. */
 const CARD_SHOT: Partial<Record<CardKey, ShotName>> = { activity: "activity", agents: "agents", checks: "checks", integrations: "integrations" };
+/** How fast the strip drifts by itself, in pixels a second. */
+const DRIFT = 26;
 
 /**
- * Everything around the approval, each screen once: a row that snaps card by card, swiped on a phone and moved with the two arrows on
- * a desktop (each greyed out at its end). No copies and nothing moving by itself.
+ * Everything around the approval, each card with the app's real screen in it: an endless row that drifts slowly by itself, can be
+ * swiped on a phone and moved with the two arrows on a desktop.
+ * ponytail: one copy has to be wider than half the window (five cards are about 2100px); add a fourth copy if cards are ever removed.
  */
 export function Everything() {
   const t = useT();
   const e = t.front.everything;
   const strip = useRef<HTMLUListElement>(null);
-  const [edge, setEdge] = useState<{ start: boolean; end: boolean }>({ start: true, end: false });
+  // A loop with no end in either direction: the cards are drawn three times in a row and the strip stays inside the middle copy by
+  // stepping one copy's width whenever it leaves it, which nobody can see because the copies are identical. It drifts slowly to the
+  // left by itself and stops while the pointer or the focus is on it, for a moment after anyone scrolls it, when it is off screen, and
+  // for good under reduced motion. The two outer copies are hidden from screen readers and the keyboard.
   useEffect(() => {
     const el = strip.current;
     if (!el) return;
-    const update = () => setEdge({ start: el.scrollLeft < 8, end: el.scrollLeft + el.clientWidth > el.scrollWidth - 8 });
-    el.addEventListener("scroll", update, { passive: true });
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => { el.removeEventListener("scroll", update); ro.disconnect(); };
+    const period = () => (el.children[CARDS.length] as HTMLElement).offsetLeft - (el.children[0] as HTMLElement).offsetLeft;
+    const wrap = () => {
+      const w = period();
+      if (el.scrollLeft < w * 0.5) el.scrollLeft += w;
+      else if (el.scrollLeft >= w * 1.5) el.scrollLeft -= w;
+    };
+    el.scrollLeft = period();
+    let idle = 0;
+    const onScroll = () => { clearTimeout(idle); idle = window.setTimeout(wrap, 150); };
+    el.addEventListener("scroll", onScroll, { passive: true });
+
+    let frame = 0, last = 0, pos = el.scrollLeft, wrote = el.scrollLeft, quietUntil = 0, visible = false, held = false;
+    const hold = () => { held = true; };
+    const release = () => { held = false; };
+    const on = [["pointerenter", hold], ["pointerleave", release], ["focusin", hold], ["focusout", release]] as const;
+    for (const [name, fn] of on) el.addEventListener(name, fn);
+    const io = new IntersectionObserver(([x]) => { visible = x.isIntersecting; });
+    io.observe(el);
+    const tick = (now: number) => {
+      const dt = Math.min(64, now - last);
+      last = now;
+      // Somebody moved it (a swipe, the wheel, an arrow): leave it alone for a moment.
+      if (Math.abs(el.scrollLeft - wrote) > 2) quietUntil = now + 2500;
+      if (visible && !held && now > quietUntil) {
+        const w = period();
+        pos += (dt * DRIFT) / 1000;
+        if (pos >= w * 1.5) pos -= w;
+        el.scrollLeft = pos;
+      } else pos = el.scrollLeft;
+      wrote = el.scrollLeft;
+      frame = requestAnimationFrame(tick);
+    };
+    if (!prefersReducedMotion()) frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(idle);
+      io.disconnect();
+      el.removeEventListener("scroll", onScroll);
+      for (const [name, fn] of on) el.removeEventListener(name, fn);
+    };
   }, []);
   const move = (dir: 1 | -1) => {
     const el = strip.current;
@@ -165,9 +206,9 @@ export function Everything() {
     if (!name) return <Screen inner="w-[calc(100%-1rem)]" className="h-full"><Terminal {...TERMINALS.home} minHeight={200} compact /></Screen>;
     return <div aria-hidden className="h-full overflow-hidden rounded-tl-xl border-t border-l border-white/[0.1] mk-shot"><div className="w-[620px]"><ShotImage name={name} alt="" sizes="620px" /></div></div>;
   };
-  // The row starts where the page's content starts, runs to the window's edge, and snaps to the same line.
-  const gutter = "px-5 scroll-px-5 sm:px-8 sm:scroll-px-8 xl:px-[calc((100vw-1200px)/2+2rem)] xl:scroll-px-[calc((100vw-1200px)/2+2rem)]";
-  const arrow = "mk-press grid size-11 place-items-center rounded-full border border-white/[0.14] text-foreground/80 outline-none hover:bg-white/[0.06] disabled:pointer-events-none disabled:opacity-30";
+  // The row starts where the page's content starts, and runs to the window's edge.
+  const gutter = "px-5 sm:px-8 xl:px-[calc((100vw-1200px)/2+2rem)]";
+  const arrow = "mk-press grid size-11 place-items-center rounded-full border border-white/[0.14] text-foreground/80 outline-none hover:bg-white/[0.06]";
   return (
     <Band id="features" label="everything-title">
       <div className="py-16 md:py-24">
@@ -177,18 +218,18 @@ export function Everything() {
             <p className="mt-3 text-[13px] text-muted-foreground md:hidden">{e.swipe}</p>
           </div>
           <div className="hidden gap-2 md:flex">
-            <button type="button" onClick={() => move(-1)} disabled={edge.start} aria-label={e.prev} className={arrow}><ArrowLeftIcon className="size-4" strokeWidth={1.75} aria-hidden /></button>
-            <button type="button" onClick={() => move(1)} disabled={edge.end} aria-label={e.next} className={arrow}><ArrowRightIcon className="size-4" strokeWidth={1.75} aria-hidden /></button>
+            <button type="button" onClick={() => move(-1)} aria-label={e.prev} className={arrow}><ArrowLeftIcon className="size-4" strokeWidth={1.75} aria-hidden /></button>
+            <button type="button" onClick={() => move(1)} aria-label={e.next} className={arrow}><ArrowRightIcon className="size-4" strokeWidth={1.75} aria-hidden /></button>
           </div>
         </Container>
-        <ul ref={strip} className={cn("mk-strip relative mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 md:mt-12", gutter)}>
-          {CARDS.map((k) => (
-            <li key={k} className="w-[82vw] max-w-[400px] shrink-0 snap-start sm:w-[400px]">
+        <ul ref={strip} className={cn("mk-strip relative mt-10 flex gap-4 overflow-x-auto pb-2 md:mt-12", gutter)}>
+          {[0, 1, 2].flatMap((copy) => CARDS.map((k) => (
+            <li key={`${copy}-${k}`} aria-hidden={copy !== 1 || undefined} inert={copy !== 1} className="w-[82vw] max-w-[400px] shrink-0 sm:w-[400px]">
               <LazyMount margin="600px 1200px" className="h-[320px] overflow-hidden rounded-2xl border border-white/[0.08] bg-mk-surface pt-4 pl-4 [mask-image:linear-gradient(to_bottom,black_82%,transparent)]">{screen(k)}</LazyMount>
               <h3 className="mt-5 text-[17px] font-medium"><Link href={HREF[k]} className="group -my-2 inline-flex min-h-11 items-center gap-1 rounded-sm outline-none hover:underline hover:underline-offset-4">{e.cards[k][0]}<ArrowRightIcon className="size-3.5 opacity-60 transition-transform group-hover:translate-x-0.5" strokeWidth={2} aria-hidden /></Link></h3>
               <p className="mt-1 max-w-[34ch] text-[14px] leading-snug text-muted-foreground">{e.cards[k][1]}</p>
             </li>
-          ))}
+          )))}
         </ul>
       </div>
     </Band>
