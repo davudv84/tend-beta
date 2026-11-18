@@ -267,8 +267,16 @@ test("tendHttp: errors keep status and code but never the key or request body; a
     globalThis.fetch = async () => { throw new TypeError("fetch failed"); };
     assert.equal((await tendHttp("http://tend.test", key)("/x").catch((x) => x)).status, undefined);
 
+    // AbortSignal.timeout() uses an unref'd timer, and this mock holds no socket: with nothing else alive the runner sees an empty event loop
+    // and fails the test ("Promise resolution is still pending"), and every test after it in the file. A real fetch holds a socket. Hold
+    // the loop open the way a real connection would, until the timeout has fired.
+    const hold = setTimeout(() => {}, 30_000);
     globalThis.fetch = (_url, init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
-    assert.equal((await tendHttp("http://tend.test", key, { timeoutMs: 20 })("/x").catch((x) => x)).status, undefined);
+    try {
+      assert.equal((await tendHttp("http://tend.test", key, { timeoutMs: 20 })("/x").catch((x) => x)).status, undefined);
+    } finally {
+      clearTimeout(hold);
+    }
   } finally {
     globalThis.fetch = real;
   }

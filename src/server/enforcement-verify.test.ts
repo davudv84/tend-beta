@@ -1,0 +1,172 @@
+// Independent verification of TEND's authorization guarantees (SECURITY-VERIFICATION.md, phase 2). Written from the documented guarantees
+// and the public functions, not from authz.test.ts: it uses its own setup, injects the clock to cross every expiry, and attacks from the
+// outside (revoked/rotated keys, pauses, concurrency, a failing audit write). Self-authored: it is evidence, not third-party validation.
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { claimToken, consumeAuthorization, MAX_PENDING, requestAuthorization, spendApproved, TTL } from "./authz.ts";
+import { verifyAudit } from "./audit-chain.ts";
+import { newKey } from "./auth.ts";
+import { memoryDb } from "./db.ts";
+import { HttpError } from "./http.ts";
+import { agentByKey, control, decide, MAX_AGENTS_PER_WORKSPACE, registerAgent, revokeKey, rotateKey, setPolicy } from "./repo.ts";
+
+const PAY = { tool: "wire", action: "send", resource: "ACC-1", detail: "EUR 5.00 to X" };
+const RULES = [{ tool: "wire", action: "send", effect: "approve" }, { tool: "doc", action: "read", effect: "allow" }];
+
+async function world() {
+  const db = await memoryDb();
+  const { agent, apiKey } = await registerAgent(db, { name: "Probe", model: "m", provider: "Custom" });
+  await setPolicy(db, agent.id, RULES, "enforce");
+  const as = async (key = apiKey) => (await agentByKey(db, key))!; // what authAgent hands the routes: looked up by key, before the transaction
+  return { db, agent: await as(), apiKey, as };
+}
+const code = async (p: Promise<unknown>) => { try { await p; return "OK"; } catch (e) { if (e instanceof HttpError) return e.code; throw e; } };
+const status = (db: Awaited<ReturnType<typeof memoryDb>>, id: string) => db.get<{ status: string }>("SELECT status FROM authorizations WHERE id = ?", id).then((r) => r?.status);
+
+test("EV-1 an unanswered request expires and can then neither be approved nor yield a token", async () => {
+  const { db, agent } = await world();
+  const t0 = 1_000_000;
+  const { view } = await requestAuthorization(db, agent, PAY, null, t0);
+  assert.equal(view.status, "pending");
+  assert.notEqual(await code(decide(db, view.id, "approved", undefined, undefined, t0 + TTL.request + 1)), "OK", "a decision after expiry is refused");
+  assert.notEqual(await code(claimToken(db, agent, view.id, t0 + TTL.request + 1)), "OK");
+  assert.equal(await status(db, view.id), "expired");
+});
+
+test("EV-2 an approval nobody used in time stops working, both flows, and the action is never authorized", async () => {
+  const { db, agent } = await world();
+  const t0 = 2_000_000;
+  const a = (await requestAuthorization(db, agent, PAY, null, t0)).view, b = (await requestAuthorization(db, agent, { ...PAY, resource: "ACC-2" }, null, t0)).view;
+  await decide(db, a.id, "approved", undefined, undefined, t0 + 1_000);
+  await decide(db, b.id, "approved", undefined, undefined, t0 + 1_000);
+  const tokB = (await claimToken(db, agent, b.id, t0 + 2_000)).view as unknown as { token: string };
+  const late = t0 + 1_000 + TTL.approval + 1;
+  assert.notEqual(await code(spendApproved(db, agent, a.id, PAY, late)), "OK");
+  assert.notEqual(await code(consumeAuthorization(db, agent, b.id, { token: tokB.token, ...PAY, resource: "ACC-2" }, late)), "OK");
+  assert.notEqual(await status(db, a.id), "consumed");
+  assert.notEqual(await status(db, b.id), "consumed");
+});
+
+test("EV-3 a token is short-lived: valid inside its 60 s, refused after, even while the approval is still valid", async () => {
+  const { db, agent } = await world();
+  const t0 = 3_000_000;
+  const { view } = await requestAuthorization(db, agent, PAY, null, t0);
+  await decide(db, view.id, "approved", undefined, undefined, t0);
+  const tok = ((await claimToken(db, agent, view.id, t0 + 1)).view as unknown as { token: string }).token;
+  assert.equal(await code(consumeAuthorization(db, agent, view.id, { token: tok, ...PAY }, t0 + TTL.token + 1_000)), "token_expired");
+  assert.equal(await status(db, view.id), "approved", "a refused late consume spends nothing");
+  const tok2 = ((await claimToken(db, agent, view.id, t0 + TTL.token + 2_000)).view as unknown as { token: string }).token;
+  assert.equal(await code(consumeAuthorization(db, agent, view.id, { token: tok, ...PAY }, t0 + TTL.token + 3_000)), "invalid_token", "re-claiming kills the older token");
+  assert.equal(await code(consumeAuthorization(db, agent, view.id, { token: tok2, ...PAY }, t0 + TTL.token + 3_000)), "OK");
+});
+
+test("EV-4 revoking or rotating the key after approval ends everything that key had in flight", async () => {
+  for (const how of ["revoke", "rotate"] as const) {
+    const { db, agent, apiKey, as } = await world();
+    const { view } = await requestAuthorization(db, agent, PAY, null);
+    await decide(db, view.id, "approved");
+    const tok = ((await claimToken(db, agent, view.id)).view as unknown as { token: string }).token;
+    const newer = how === "revoke" ? (await revokeKey(db, agent.id), undefined) : (await rotateKey(db, agent.id)).apiKey;
+    // The route resolved the agent by the old key before the revocation committed: the transaction must still refuse.
+    assert.notEqual(await code(consumeAuthorization(db, agent, view.id, { token: tok, ...PAY })), "OK", how + " + token flow");
+    assert.notEqual(await code(spendApproved(db, agent, view.id, PAY)), "OK", how + " + spend flow");
+    assert.equal(await agentByKey(db, apiKey), undefined, "the old key no longer authenticates");
+    if (newer) assert.notEqual(await code(spendApproved(db, await as(newer), view.id, PAY)), "OK", "the new key cannot pick up what the old key started");
+    assert.notEqual(await status(db, view.id), "consumed");
+  }
+});
+
+test("EV-5 pausing or disabling the agent after approval stops the spend", async () => {
+  for (const action of ["pause", "disable"] as const) {
+    const { db, agent } = await world();
+    const { view } = await requestAuthorization(db, agent, PAY, null);
+    await decide(db, view.id, "approved");
+    await control(db, agent.id, action);
+    assert.notEqual(await code(spendApproved(db, agent, view.id, PAY)), "OK", action);
+  }
+});
+
+test("EV-6 a flood of parallel requests cannot leave more than MAX_PENDING waiting, and nothing is authorized without a person", async () => {
+  const { db, agent } = await world();
+  const out = await Promise.all(Array.from({ length: MAX_PENDING * 3 }, (_, i) => code(requestAuthorization(db, agent, { ...PAY, resource: `ACC-${i}` }, null, undefined, { spend: true }))));
+  const pending = (await db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM authorizations WHERE status = 'pending'"))!.n;
+  assert.ok(pending <= MAX_PENDING, `pending=${pending}`);
+  assert.equal((await db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM authorizations WHERE status IN ('approved','consumed')"))!.n, 0);
+  assert.ok(out.includes("too_many_pending"));
+});
+
+test("EV-7 racing approve, reject, cancel and spend: consumed only if a person approved and nobody cancelled first, and at most once", async () => {
+  for (let round = 0; round < 15; round++) {
+    const { db, agent } = await world();
+    const { view } = await requestAuthorization(db, agent, PAY, null);
+    const res = await Promise.allSettled([
+      decide(db, view.id, "approved"), decide(db, view.id, "rejected"),
+      ...Array.from({ length: 4 }, () => spendApproved(db, agent, view.id, PAY)),
+      import("./authz.ts").then((m) => m.cancelAuthorization(db, agent, view.id)),
+    ]);
+    const spends = res.slice(2, 6).filter((r) => r.status === "fulfilled").length;
+    const final = (await status(db, view.id))!;
+    assert.ok(spends <= 1, `round ${round}: spent ${spends}x`);
+    const decided = (await db.get<{ status: string }>("SELECT status FROM reviews WHERE id = ?", view.id))!.status;
+    if (spends === 1) assert.equal(final, "consumed"), assert.equal(decided, "approved", "consumed requires an approval");
+    if (final === "consumed") assert.equal(spends, 1);
+    assert.ok(["consumed", "rejected", "cancelled", "approved", "pending"].includes(final));
+  }
+});
+
+test("EV-8 the audit write and the authorization are one transaction: if the log cannot be written, nothing is authorized", async () => {
+  const { db, agent } = await world();
+  const { view } = await requestAuthorization(db, agent, PAY, null);
+  await decide(db, view.id, "approved");
+  await db.exec(`CREATE FUNCTION rt_block() RETURNS trigger AS $$ BEGIN IF NEW.type = 'authorization.consumed' THEN RAISE EXCEPTION 'audit write refused'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql;
+                 CREATE TRIGGER rt_block_t BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION rt_block();`);
+  await assert.rejects(spendApproved(db, agent, view.id, PAY));
+  assert.equal(await status(db, view.id), "approved", "not consumed, so the caller was never told yes");
+  const tok = ((await claimToken(db, agent, view.id)).view as unknown as { token: string }).token;
+  await assert.rejects(consumeAuthorization(db, agent, view.id, { token: tok, ...PAY }));
+  assert.equal(await status(db, view.id), "approved");
+  await db.exec("DROP TRIGGER rt_block_t ON events");
+  assert.equal(await code(spendApproved(db, agent, view.id, PAY)), "OK", "and works again once the log is writable");
+});
+
+test("EV-9 the audit trail says what happened: who asked, who decided, what was authorized, every refusal, and the chain verifies", async () => {
+  const { db, agent } = await world();
+  assert.equal((await requestAuthorization(db, agent, { tool: "wipe", action: "run" }, null)).view.status, "denied"); // no rule: denied and recorded
+  const { view } = await requestAuthorization(db, agent, PAY, null);
+  await decide(db, view.id, "approved", "ok by Sam", "operator-1");
+  assert.equal(await code(spendApproved(db, agent, view.id, { ...PAY, detail: "EUR 5000.00 to X" })), "mismatch");
+  await spendApproved(db, agent, view.id, PAY);
+  assert.equal(await code(spendApproved(db, agent, view.id, PAY)), "already_consumed");
+  const ev = (await db.all<{ type: string; actor: string; data: string }>("SELECT type, actor, data FROM events ORDER BY seq")).map((e) => ({ ...e, data: JSON.parse(e.data) }));
+  const seq = ev.map((e) => e.type).filter((t) => t.startsWith("authorization.") || t === "review.decided" || t === "alert.raised");
+  assert.deepEqual(seq, ["authorization.denied", "authorization.requested", "review.decided", "alert.raised", "authorization.consumed", "alert.raised"]);
+  assert.equal(ev.find((e) => e.type === "authorization.denied")!.data.reason, "no_policy");
+  const d = ev.find((e) => e.type === "review.decided")!;
+  assert.deepEqual([d.actor, d.data.status, d.data.by], ["human", "approved", "operator-1"]);
+  const c = ev.find((e) => e.type === "authorization.consumed")!;
+  assert.deepEqual([c.actor, c.data.tool, c.data.detail], ["system", "wire", "EUR 5.00 to X"], "the log shows what was approved, not what was attempted");
+  assert.deepEqual(ev.filter((e) => e.type === "alert.raised").map((e) => e.data.reason), ["parameters_differ", "replay"]);
+  const res = await verifyAudit(db);
+  assert.equal(res.ok, true);
+  const text = JSON.stringify(ev);
+  assert.ok(!text.includes("tend_az_") && !text.includes("tend_sk_"), "no token or key ever reaches the log");
+});
+
+test("EV-10 concurrent registrations cannot exceed the per-workspace agent limit", async () => {
+  const db = await memoryDb();
+  await db.run("INSERT INTO workspaces (id, name, created_at) VALUES ('wx', 'wx', 0)");
+  const n = MAX_AGENTS_PER_WORKSPACE + 30;
+  const out = await Promise.all(Array.from({ length: n }, (_, i) => code(registerAgent(db, { name: `a${i}`, model: "m", provider: "Custom" }, "u", "wx"))));
+  const stored = (await db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents WHERE workspace_id = 'wx'"))!.n;
+  assert.equal(stored, MAX_AGENTS_PER_WORKSPACE);
+  assert.equal(out.filter((x) => x === "OK").length, MAX_AGENTS_PER_WORKSPACE);
+  assert.equal(out.filter((x) => x === "too_many_agents").length, 30);
+});
+
+test("EV-11 a key's hash is all that is stored, and a different tenant's key never resolves to this agent", async () => {
+  const { db, agent, apiKey } = await world();
+  const row = (await db.get<{ key_hash: string }>("SELECT key_hash FROM agents WHERE id = ?", agent.id))!;
+  assert.ok(!JSON.stringify(await db.all("SELECT * FROM agents")).includes(apiKey), "the key itself is nowhere in the table");
+  assert.match(row.key_hash, /^[0-9a-f]{64}$/);
+  assert.equal(await agentByKey(db, newKey().key), undefined);
+});

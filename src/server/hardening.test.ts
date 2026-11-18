@@ -59,3 +59,10 @@ test("an operator request that the browser says came from another site is refuse
     await db.close();
   }
 });
+
+test("agent-written text loses invisible and direction-changing characters but keeps emoji joiners and newlines", async () => {
+  const { cleanText } = await import("../lib/clean.ts");
+  assert.equal(cleanText("pay‮ 5​0⁠ EUR­ㅤ⠀﻿\u{e0041}"), "pay 50 EUR");
+  assert.equal(cleanText("a\nb\tc"), "a\nb\tc");
+  assert.equal(cleanText("👨‍👩‍👧 क्‍ष"), "👨‍👩‍👧 क्‍ष", "joiners (U+200D) are kept for emoji and scripts");
+});
