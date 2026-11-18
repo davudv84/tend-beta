@@ -95,7 +95,7 @@ Checked by reading the code and by test: sessions (256-bit secret, hash only sto
 
 1. **High (by design):** cooperative enforcement can be bypassed by the agent's host (section 6.1, 6.4).
 2. **Medium:** tenant isolation is application-level with one global write lock; a missed check exposes all tenants and a busy tenant can still slow others down (V-7 mitigates).
-3. **Medium:** with no usable `TEND_ADMIN_TOKEN` and `TEND_PUBLIC` unset the instance becomes **publicly readable** (redacted shapes of activity). Confirmed on a production build. Not changed because it could alter a live deployment; set `TEND_PUBLIC=0` explicitly.
+3. ~~Medium: with no usable `TEND_ADMIN_TOKEN` and `TEND_PUBLIC` unset the instance becomes publicly readable.~~ **Fixed in round 2** (see section 12): a production build is locked unless `TEND_PUBLIC=1` is set.
 4. **Medium:** rate limits rely on the proxy setup (`TEND_TRUSTED_PROXY` and an origin not reachable directly).
 5. **Low:** per-account lockout (anyone with an email can lock the owner out for up to an hour, until a password reset). Deliberate, tested by the existing suite.
 6. **Low:** dev-tool dependencies with high advisories (no patched release); `shadcn` is a build-time dependency (`globals.css` imports it), so the build must install dev dependencies.
@@ -148,3 +148,55 @@ Not run: GitHub Actions itself, OWASP ZAP, CodeQL, Snyk, OSV-Scanner, gitleaks/t
 3. A security review of the Claude Code / Cursor / MCP integrations against the hosts' own current guidance, including managed settings.
 4. Run GitHub CodeQL and a full-registry Semgrep and OWASP ZAP baseline in CI, and gitleaks over the full history.
 5. Decide on look-alike-character policy for names and descriptions, and on 2FA before any customer data.
+
+## 12. Round 2 (autonomous hardening pass)
+
+Same branch, same rules (nothing pushed or deployed). New evidence below is again self-authored unless stated.
+
+### 12.1 Claude Code bypasses, tested against real Claude Code 2.1.327 (Haiku, harmless `echo` commands)
+
+| Scenario | Result |
+|---|---|
+| Hooks installed per project, nothing else | blocked (control) |
+| …plus `{"disableAllHooks": true}` in the repository's own `.claude/settings.json` | **BYPASSED: the command ran, TEND heard nothing** |
+| …plus `--setting-sources user` (omits project settings) | **BYPASSED: the command ran** (new finding) |
+| …plus `--dangerously-skip-permissions` | blocked: bypass mode does **not** skip hooks (docs said "untested") |
+| Hooks in **managed settings** (`/etc/claude-code/managed-settings.json`, `allowManagedHooksOnly`) with: repository `disableAllHooks`, `--setting-sources user`, `--settings` file with `disableAllHooks`, `--dangerously-skip-permissions`, `--permission-mode bypassPermissions`, another `CLAUDE_CONFIG_DIR` | **all blocked** |
+| Managed hooks, TEND stopped, a command the policy would allow | blocked |
+| `--bare` (Claude Code's help: skips settings hooks) | **not tested**: it cannot log in with a subscription here. Treated as a bypass. |
+
+**Fix:** `node tend-hooks.mjs install claude-code --managed --url … --yes` (administrator rights) writes the hooks, the script and the key file to Claude Code's organization settings folder, root-owned, with `allowManagedHooksOnly`; the key file is group-readable only; the hook trusts a root-owned key file only inside a root-owned folder nobody else can write (so the person, or an agent running as them, cannot repoint the hook at another server or swap the script). `status … --managed` checks it. Real-Claude-Code proof: `TEND_E2E_MANAGED=1 npm run e2e:claude-managed`, **15/15**. It writes `/etc/claude-code` and removes it again, so it only runs as root with an explicit opt-in. Unit tests: `tend-hooks.test.mjs` (managed status, refusal when not administrator).
+
+**This does not make enforcement complete.** It closes the repository-level and flag-level bypasses that were reproduced. It does not cover `--bare`, anyone with administrator rights, a host where managed settings are not applied, or any agent that is not Claude Code or does not call TEND.
+
+### 12.2 Other issues found and fixed
+
+| ID | Finding | Fix and evidence |
+|---|---|---|
+| R2-1 | **Public by default in production** when the admin token was missing or weak (anonymous visitors could read redacted activity). | `config.public` is false in production unless `TEND_PUBLIC=1`. `config-hardening.test.ts`; `prod-config.mjs` PC-9 now asserts 401; new check DS-6 shows an anonymous visitor gets no agent name, id or key from 43 pages and data routes. |
+| R2-2 | **Ambiguous argument names**: `{amount: 1, Amount: 5000}`, `"amount "`, `amount\u200b`, fullwidth, or a literal `"a.b"` next to `{a:{b}}` let a consumer read a different value than the rule. | `at()` returns UNKNOWN when two spellings coexist (stricter for deny/approve, ignored for allow). `EV-18`; new fuzz property "twin" (20,000 cases, 0 violations). |
+| R2-3 | **Look-alike letters** (Cyrillic "а" in a Latin word) in the agent's description. | Refused in `detail`; flagged `⚠ mixes alphabets` in the arguments shown to the approver. `EV-19`. |
+| R2-4 | **Hashed (MCP) arguments looked like content** on the approval card. | Shown as "NOT SHOWN IN FULL: N characters, fingerprint …". `EV-19`. |
+| R2-5 | A long or multi-line command could hide its tail below the scroll fold. | The card states the true line and character count. `EV-21`. |
+| R2-6 | **Resource limits**: quotas were per agent only. | One daily ceiling per workspace on events and authorizations (200,000 / 20,000), plus the request budget from round 1. `EV-20`. |
+| R2-7 | Unhandled errors were logged as the raw error object (database detail, parameters). | `describeError`: kind, code, 300 characters, stack. `hardening.test.ts`. |
+| R2-8 | Production without `DATABASE_URL` silently used the embedded database. | Loud warning (not refused: a single-machine production start stays possible). |
+
+### 12.3 Tenant isolation, exhaustively
+
+`redteam/live/tenant-matrix.mjs`: two real accounts on a production build; everything tenant A owns (agent and key, pending and approved authorizations, central policy, notification) is addressed through **every** route, 5 verbs, each of A's 5 object ids and 7 bodies, as B's operator, B's agent key and anonymous: **6,831 requests, no data of A returned, nothing of A changed, A's approval still spendable, no 5xx** (503 only from the push-subscription route where browser push is not configured). The isolation is still application-level (no row-level security), see section 7.
+
+### 12.4 Results of the round-2 run (clean checkout, Node 24.22, same emulation of the CI workflow as section 10)
+
+| Run | Result |
+|---|---|
+| `npm test` | **580 tests: 550 pass, 1 fail (the environmental `lsof` test, V-9), 29 skipped** (24 PostgreSQL, 5 macOS) |
+| Real PostgreSQL 16 | 24/24 |
+| `redteam/attacks.ts` | 29 HELD, 0 BROKEN |
+| Live agent-escape suite + fuzz (8 properties × 10,000) | 231 HELD, 0 BROKEN |
+| Tenant matrix / MCP proxy / production config (9) / DAST (6) / hook fail-closed (11) | all HELD |
+| Offline e2e (26 + 11 + 8 + 30 + 41 + 38) | 154/154 |
+| Real Claude Code: hooks 27, coverage 19, expiry 6, **managed 15** | 67/67 |
+| lint, `tsc`, production build, eslint-security, Semgrep ERROR, secretlint, `npm audit --omit=dev` | pass |
+
+Not run: GitHub Actions itself, OWASP ZAP, CodeQL, gitleaks, Snyk/OSV, Cursor, `--bare`, any real deployment.
