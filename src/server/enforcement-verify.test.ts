@@ -191,3 +191,48 @@ test("EV-12 numeric thresholds: no encoding a lenient tool would read as a large
   const parsed = JSON.parse('{"amount": 1e999}') as Record<string, unknown>;
   assert.notEqual(decide1(parsed), "allow");
 });
+
+test("EV-13 an agent key can expire: refused at the door and inside an in-flight authorization; rotating issues a fresh one; the server can cap the lifetime", async () => {
+  const db = await memoryDb();
+  const bad = [0, -1, 3651, 1.5, "7", [], {}, NaN];
+  for (const keyExpiresInDays of bad) assert.equal(await code(registerAgent(db, { name: "x", model: "m", provider: "Custom", keyExpiresInDays })), "invalid_key_expiry", JSON.stringify(keyExpiresInDays));
+  const { agent, apiKey, keyExpiresAt } = await registerAgent(db, { name: "Mortal", model: "m", provider: "Custom", keyExpiresInDays: 7 });
+  assert.ok(keyExpiresAt! > Date.now() + 6.9 * 86_400_000 && keyExpiresAt! < Date.now() + 7.1 * 86_400_000);
+  await setPolicy(db, agent.id, RULES, "enforce");
+  const live = (await agentByKey(db, apiKey))!;
+  const { view } = await requestAuthorization(db, live, PAY, null);
+  await decide(db, view.id, "approved");
+  await db.run("UPDATE agents SET key_expires_at = ? WHERE id = ?", Date.now() - 1, agent.id); // the week passes
+  assert.equal(await agentByKey(db, apiKey), undefined, "an expired key no longer authenticates");
+  assert.notEqual(await code(spendApproved(db, live, view.id, PAY)), "OK", "and what it had approved cannot be spent with it");
+  assert.notEqual(await status(db, view.id), "consumed");
+  const fresh = await rotateKey(db, agent.id, "op", 30);
+  assert.ok(await agentByKey(db, fresh.apiKey), "rotating issues a working key");
+  // the server-wide cap wins over a longer request
+  process.env.TEND_KEY_MAX_AGE_DAYS = "2";
+  try {
+    const capped = await registerAgent(db, { name: "Capped", model: "m", provider: "Custom", keyExpiresInDays: 365 });
+    assert.ok(capped.keyExpiresAt! < Date.now() + 2.1 * 86_400_000);
+    const uncapped = await registerAgent(db, { name: "Capped too", model: "m", provider: "Custom" });
+    assert.ok(uncapped.keyExpiresAt! < Date.now() + 2.1 * 86_400_000, "no request still means the cap, not forever");
+  } finally { delete process.env.TEND_KEY_MAX_AGE_DAYS; }
+  assert.equal((await registerAgent(db, { name: "Default", model: "m", provider: "Custom" })).keyExpiresAt, null, "default is unchanged: no expiry");
+});
+
+test("EV-14 the person deciding sees every argument the rules saw, with hidden characters made visible, ", async () => {
+  const db = await memoryDb();
+  const reg = await registerAgent(db, { name: "Args", model: "m", provider: "Custom" });
+  await setPolicy(db, reg.agent.id, [{ tool: "refund", action: "issue", effect: "approve" }], "enforce");
+  const a = (await agentByKey(db, reg.apiKey))!;
+  const args = { amount: 5000, to: "ops@example.com‮.evil", note: "line1\nline2​", nested: { deep: [1, 2] }, long: "x".repeat(900) };
+  const { view } = await requestAuthorization(db, a, { tool: "refund", action: "issue", detail: "refund EUR 5", args }, null);
+  const ev = (await db.all<{ data: string }>("SELECT data FROM events WHERE type = 'authorization.requested'")).map((r) => JSON.parse(r.data)).find((d) => d.authorizationId === view.id)!;
+  const text = ev.argsText as string;
+  assert.match(text, /^amount: 5000$/m);
+  assert.ok(text.includes("to: ops@example.com<U+202E>.evil"), text);
+  assert.ok(text.includes("line1 ↵ line2<U+200B>"), "newlines and zero-width characters are shown, not acted on");
+  assert.ok(text.includes('nested: {"deep":[1,2]}'));
+  assert.ok(text.includes("(900 characters in all)"), "long values say so");
+  assert.ok(!/[‮​]/.test(text), "no raw direction or zero-width character is left");
+  assert.ok(text.length <= 1201);
+});

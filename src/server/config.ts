@@ -155,7 +155,9 @@ export const config = {
   /** Where people open TEND, for links in mails. Never taken from a request header, which a client controls. */
   get appUrl() {
     const v = (process.env.TEND_APP_URL ?? "").replace(/\/+$/, "");
-    return /^https?:\/\/[^\s/]+$/.test(v) ? v : "";
+    // Verification and reset links are secrets in a mail: a production server (not a local-only one) sends them over https or not at all.
+    const https = process.env.NODE_ENV === "production" && !this.localHttp;
+    return (https ? /^https:\/\/[^\s/]+$/ : /^https?:\/\/[^\s/]+$/).test(v) ? v : "";
   },
   /** Who is told by mail that a new account waits for approval (optional). */
   get adminEmail() {
@@ -168,6 +170,14 @@ export const config = {
   get agentRequestsPerMinute() {
     const v = Number(process.env.TEND_AGENT_RPM ?? "");
     return Number.isInteger(v) && v >= 10 && v <= 10_000 ? v : 120;
+  },
+  /**
+   * TEND_KEY_MAX_AGE_DAYS (1–3650): every agent key issued from now on expires after at most this many days (a caller may ask for less, never
+   * more). Unset: keys do not expire, as before. Keys already issued keep their (empty) expiry; rotate them to apply it.
+   */
+  get keyMaxAgeDays(): number | undefined {
+    const v = Number(process.env.TEND_KEY_MAX_AGE_DAYS ?? "");
+    return Number.isInteger(v) && v >= 1 && v <= 3650 ? v : undefined;
   },
   get localHttp() {
     return process.env.TEND_LOCAL_HTTP === "1" && !process.env.VERCEL && this.trustedProxy === 0 && !this.databaseUrl;

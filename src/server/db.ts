@@ -310,6 +310,9 @@ export const MIGRATIONS: string[] = [
      NEW.hash := encode(sha256(convert_to(coalesce(prev, '') || '|' || NEW.seq::text || '|' || NEW.id || '|' || NEW.agent_id || '|' || NEW.type || '|' || NEW.at::text || '|' || NEW.actor || '|' || NEW.data, 'UTF8')), 'hex');
      RETURN NEW;
    END $fn$;`,
+  // Optional expiry of an agent's API key (NULL = never, as before). Set when a key is issued; checked on every request and again inside each
+  // authorization transaction, so an expired key stops what it had in flight like a revoked one.
+  `ALTER TABLE agents ADD COLUMN key_expires_at BIGINT;`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */

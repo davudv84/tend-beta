@@ -18,7 +18,7 @@ import type { Agent } from "../lib/types";
 import { hashKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError } from "./http.ts";
-import { evaluateEffective, fingerprint, ID, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
+import { evaluateEffective, fingerprint, ID, INVISIBLE, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
 import { agentBudget, agentRow, centralOf, insertEvent, keyRevoked, toAgent } from "./repo.ts";
 
 export const TTL = { request: 10 * 60_000, approval: 5 * 60_000, token: 60_000 };
@@ -44,6 +44,28 @@ const exactOf = (r: AuthRequest) => {
   const v = ["command", "path", "url"].map((k) => r.args?.[k]).find((x) => typeof x === "string" && x.length > 0) as string | undefined;
   return v ? { exact: v } : {};
 };
+/**
+ * Every argument the request carries except the one already shown as the exact command, path or address, as `name: value` lines for the person
+ * deciding. The policy (and the fingerprint the approval is bound to) look at ALL arguments, so the person must be able to see them too: an
+ * amount or a recipient that decided the rule is not left out because the agent's one-line `detail` does not mention it. Characters that render
+ * as nothing or reverse text are shown as <U+XXXX> instead of acting, so what is read is what is there. Long values are cut and say so.
+ */
+export const VISIBLE_LIMIT = { entries: 12, value: 300, total: 1200 };
+const visible = (s: string) => s.replace(/\r?\n/g, " ↵ ").replace(/\t/g, " ⇥ ").replace(new RegExp(INVISIBLE.source, "gu"), (c) => `<U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}>`);
+const argsTextOf = (r: AuthRequest, primary?: string) => {
+  if (!r.args) return {};
+  const rows = Object.entries(r.args).filter(([k]) => k !== primary);
+  if (!rows.length) return {};
+  const line = ([k, v]: [string, unknown]) => {
+    const raw = typeof v === "string" ? v : JSON.stringify(v) ?? String(v);
+    const shown = visible(raw);
+    return `${visible(k)}: ${shown.length > VISIBLE_LIMIT.value ? `${shown.slice(0, VISIBLE_LIMIT.value)}… (${raw.length} characters in all)` : shown}`;
+  };
+  let text = rows.slice(0, VISIBLE_LIMIT.entries).map(line).join("\n");
+  if (rows.length > VISIBLE_LIMIT.entries) text += `\n… and ${rows.length - VISIBLE_LIMIT.entries} more arguments`;
+  return { argsText: text.length > VISIBLE_LIMIT.total ? `${text.slice(0, VISIBLE_LIMIT.total)}…` : text };
+};
+const exactKey = (r: AuthRequest) => ["command", "path", "url"].find((k) => typeof r.args?.[k] === "string" && (r.args[k] as string).length > 0);
 const bound = (r: Pick<AuthRequest, "tool" | "action" | "resource" | "detail">) => ({ tool: r.tool, action: r.action, ...(r.resource && { resource: r.resource }), ...(r.detail && { detail: r.detail }) });
 
 /** What an agent may see about an authorization. Never the fingerprint or token hash. */
@@ -136,7 +158,7 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
     const stored = (await q.get<Row>("SELECT * FROM authorizations WHERE id = ?", id))!;
     await insertEvent(q, status === "denied"
       ? { agentId: agent.id, type: "authorization.denied", actor: "system", at: now, data: { authorizationId: id, ...bound(r), ...why } }
-      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), ...(status === "pending" && exactOf(r)), status: status === "consumed" ? "approved" : status, approval: status === "pending", expiresAt: view(stored).expiresAt, ...why } });
+      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), ...(status === "pending" && { ...exactOf(r), ...argsTextOf(r, exactKey(r)) }), status: status === "consumed" ? "approved" : status, approval: status === "pending", expiresAt: view(stored).expiresAt, ...why } });
     if (status === "consumed") await insertEvent(q, { agentId: agent.id, type: "authorization.consumed", actor: "system", at: now, data: { authorizationId: id, ...bound(r) } });
     return { view: view(stored), created: true };
   });

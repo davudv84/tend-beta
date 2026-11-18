@@ -1796,7 +1796,7 @@ export const en = {
       allowed: "Allowed once. The agent can now run it, one time.",
       denied: "Not allowed. It won’t run.",
       details: "Details",
-      rows: { assistant: "Agent", action: "Action", item: "Item", detail: "Detail", id: "Request", asked: "Asked", lapses: "Expires" },
+      rows: { assistant: "Agent", action: "Action", args: "Arguments", item: "Item", detail: "Detail", id: "Request", asked: "Asked", lapses: "Expires" },
       change: "Change what needs your OK",
       technical: "Open in the technical view",
       exact: "The exact request",

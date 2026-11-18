@@ -12,6 +12,7 @@ import type { DB, Q } from "./db.ts";
 import { HttpError, spend } from "./http.ts";
 import { notifyFor } from "./notifications.ts";
 import { parsePolicy, policyProblem } from "./policy.ts";
+import { config } from "./config.ts";
 import { DEFAULT_WORKSPACE } from "./session.ts";
 
 /** Postgres BIGINT columns hold whole milliseconds. */
@@ -21,7 +22,7 @@ const ms = (t: number) => Math.round(t);
 
 interface AgentRow {
   id: string; profile: string; origin: "demo" | "connected"; status: Agent["status"]; integration_enabled: number;
-  permissions: string; public: number; key_hash: string | null; key_prefix: string | null; config_version: number;
+  permissions: string; public: number; key_hash: string | null; key_prefix: string | null; key_expires_at: number | null; config_version: number;
   acked_version: number; created_at: number; last_seen_at: number | null; disconnected_at: number | null;
   /** Enforcement settings stay out of `Agent` on purpose: that type is sent to browsers, and a policy is not for visitors. */
   enforcement: "monitor" | "enforce"; policy: string;
@@ -56,7 +57,7 @@ const presented = new WeakMap<object, string>();
 export async function agentByKey(q: Q, key: string) {
   const hash = hashKey(key);
   const r = await q.get<AgentRow>("SELECT * FROM agents WHERE key_hash = ?", hash);
-  if (!r) return undefined;
+  if (!r || keyExpired(r)) return undefined;
   const agent = toAgent(r);
   presented.set(agent, hash);
   return agent;
@@ -65,16 +66,25 @@ export async function agentByKey(q: Q, key: string) {
  * Whether the key an agent was authenticated with is no longer its key. Checked again inside each authorization transaction, under the lock:
  * the key is looked up before the transaction starts, and a revocation that commits in between must win.
  */
-export const keyRevoked = (row: Pick<AgentRow, "key_hash"> | undefined, agent: object) => {
+export const keyRevoked = (row: Pick<AgentRow, "key_hash" | "key_expires_at"> | undefined, agent: object, now = Date.now()) => {
   const hash = presented.get(agent);
-  return hash !== undefined && row?.key_hash !== hash;
+  return hash !== undefined && (row?.key_hash !== hash || keyExpired(row, now));
 };
+/** A key past its expiry is as good as revoked (key_expires_at is NULL for keys that do not expire). */
+const keyExpired = (row: Pick<AgentRow, "key_expires_at">, now = Date.now()) => row.key_expires_at !== null && row.key_expires_at !== undefined && Number(row.key_expires_at) <= now;
+/** When a key issued now expires: the earlier of what the caller asked for (days) and the server's TEND_KEY_MAX_AGE_DAYS; null = never. */
+export function keyExpiry(requestedDays: unknown, now = Date.now()): number | null {
+  const asked = requestedDays === undefined || requestedDays === null ? undefined : requestedDays;
+  if (asked !== undefined && (typeof asked !== "number" || !Number.isInteger(asked) || asked < 1 || asked > 3650)) throw new HttpError(422, "invalid_key_expiry", "keyExpiresInDays must be a whole number of days from 1 to 3650.");
+  const days = Math.min(asked ?? Infinity, config.keyMaxAgeDays ?? Infinity);
+  return Number.isFinite(days) ? now + days * 86_400_000 : null;
+}
 
-export function insertAgent(q: Q, a: Agent, keyHash?: string, keyPrefix?: string, workspace = DEFAULT_WORKSPACE) {
+export function insertAgent(q: Q, a: Agent, keyHash?: string, keyPrefix?: string, workspace = DEFAULT_WORKSPACE, keyExpiresAt: number | null = null) {
   const profile: Profile = { name: a.name, model: a.model, provider: a.provider, role: a.role, description: a.description, cadenceHours: a.cadenceHours };
-  return q.run(`INSERT INTO agents (id, profile, origin, status, integration_enabled, permissions, public, key_hash, key_prefix, config_version, acked_version, created_at, workspace_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    a.id, JSON.stringify(profile), a.origin, a.status, a.integrationEnabled ? 1 : 0, JSON.stringify(a.permissions), a.public ? 1 : 0, keyHash ?? null, keyPrefix ?? null, a.configVersion, a.ackedVersion, ms(a.connectedAt), workspace);
+  return q.run(`INSERT INTO agents (id, profile, origin, status, integration_enabled, permissions, public, key_hash, key_prefix, config_version, acked_version, created_at, workspace_id, key_expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    a.id, JSON.stringify(profile), a.origin, a.status, a.integrationEnabled ? 1 : 0, JSON.stringify(a.permissions), a.public ? 1 : 0, keyHash ?? null, keyPrefix ?? null, a.configVersion, a.ackedVersion, ms(a.connectedAt), workspace, keyExpiresAt);
 }
 
 // ---- workspaces --------------------------------------------------------------------------------
@@ -631,6 +641,7 @@ export async function registerAgent(db: DB, input: unknown, by?: string, workspa
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agent";
   const k = newKey();
   const now = Date.now();
+  const expires = keyExpiry(o.keyExpiresInDays, now);
   return db.tx(async (q) => {
     await q.lockEvents();
     // Quotas are per agent, so without a cap on agents one account could multiply them without bound (the event log cannot be trimmed).
@@ -643,9 +654,9 @@ export async function registerAgent(db: DB, input: unknown, by?: string, workspa
       id, name, model, provider, role: S(o.role, 60) || "Connected agent", description: S(o.description, 300), status: "active",
       integrationEnabled: true, permissions: [], cadenceHours: 0, connectedAt: now, origin: "connected", configVersion: 1, ackedVersion: 0, public: o.public === true,
     };
-    await insertAgent(q, agent, k.hash, k.prefix, workspace);
+    await insertAgent(q, agent, k.hash, k.prefix, workspace, expires);
     await insertEvent(q, { agentId: id, type: "agent.registered", actor: "human", at: now, data: { agent, ...(by && { by }) } });
-    return { agent, apiKey: k.key };
+    return { agent, apiKey: k.key, keyExpiresAt: expires };
   });
 }
 
@@ -664,16 +675,17 @@ async function endOutstanding(q: Q, agentId: string, now: number, by?: string) {
   return rows.length;
 }
 
-export async function rotateKey(db: DB, agentId: string, by?: string) {
+export async function rotateKey(db: DB, agentId: string, by?: string, keyExpiresInDays?: unknown) {
   const k = newKey();
+  const expires = keyExpiry(keyExpiresInDays);
   return db.tx(async (q) => {
     await q.lockEvents();
     const a = await mustAgent(q, agentId);
     if (a.origin !== "connected") throw new HttpError(409, "not_connected", "Demo agents don’t have API keys.");
-    await q.run("UPDATE agents SET key_hash = ?, key_prefix = ? WHERE id = ?", k.hash, k.prefix, agentId);
+    await q.run("UPDATE agents SET key_hash = ?, key_prefix = ?, key_expires_at = ? WHERE id = ?", k.hash, k.prefix, expires, agentId);
     await endOutstanding(q, agentId, Date.now(), by);
-    await insertEvent(q, { agentId, type: "key.rotated", actor: "human", data: { prefix: k.prefix, ...(by && { by }) } });
-    return { apiKey: k.key, prefix: k.prefix };
+    await insertEvent(q, { agentId, type: "key.rotated", actor: "human", data: { prefix: k.prefix, ...(expires && { expiresAt: expires }), ...(by && { by }) } });
+    return { apiKey: k.key, prefix: k.prefix, keyExpiresAt: expires };
   });
 }
 
@@ -686,7 +698,7 @@ export async function revokeKey(db: DB, agentId: string, by?: string) {
     await q.lockEvents();
     const a = await mustAgent(q, agentId);
     if (a.origin !== "connected") throw new HttpError(409, "not_connected", "Demo agents don’t have API keys.");
-    if (!(await q.run("UPDATE agents SET key_hash = NULL, key_prefix = NULL WHERE id = ? AND key_hash IS NOT NULL", agentId))) return { revoked: false as const, cancelled: 0 };
+    if (!(await q.run("UPDATE agents SET key_hash = NULL, key_prefix = NULL, key_expires_at = NULL WHERE id = ? AND key_hash IS NOT NULL", agentId))) return { revoked: false as const, cancelled: 0 };
     const now = Date.now();
     const cancelled = await endOutstanding(q, agentId, now, by);
     await insertEvent(q, { agentId, type: "key.revoked", actor: "human", at: now, data: { cancelled, ...(by && { by }) } });

@@ -1783,7 +1783,7 @@ export const de: Dict = {
       allowed: "Einmal erlaubt. Der Agent kann es jetzt ein Mal ausführen.",
       denied: "Nicht erlaubt. Es wird nicht ausgeführt.",
       details: "Details",
-      rows: { assistant: "Agent", action: "Aktion", item: "Gegenstand", detail: "Einzelheit", id: "Anfrage", asked: "Angefragt", lapses: "Verfällt" },
+      rows: { assistant: "Agent", action: "Aktion", args: "Argumente", item: "Gegenstand", detail: "Einzelheit", id: "Anfrage", asked: "Angefragt", lapses: "Verfällt" },
       change: "Ändern, was Ihre Zustimmung braucht",
       technical: "In der technischen Ansicht öffnen",
       exact: "Die genaue Anfrage",

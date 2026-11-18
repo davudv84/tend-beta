@@ -106,13 +106,16 @@ test("a kept checkpoint catches an INTERIOR event deleted and the chain recomput
   await db.close();
 });
 
+// The migration that binds seq into the hash, found by what it does (later migrations may follow it).
+const V2 = MIGRATIONS.findIndex((m) => m.includes("events.chain.v2_after"));
+
 test("events written after the seq-binding migration verify across the v1→v2 boundary, and tampering either side is caught", async () => {
   const db = await pglite(); // raw, so we can stop one migration short of seq-binding
-  for (let i = 0; i < MIGRATIONS.length - 1; i++) await db.exec(MIGRATIONS[i]);
+  for (let i = 0; i < V2; i++) await db.exec(MIGRATIONS[i]);
   await db.run("INSERT INTO agents (id, profile, origin, created_at, workspace_id) VALUES ('a', '{}', 'connected', 0, 'default')");
   const add = (id: string, data = "{}") => db.run("INSERT INTO events (id, agent_id, type, at, actor, data) VALUES (?, 'a', 'test', 1, 'system', ?)", id, data);
   for (let i = 0; i < 5; i++) await add(`v1-${i}`); // v1 hashes (no seq), under the old trigger
-  await db.exec(MIGRATIONS[MIGRATIONS.length - 1]); // records the boundary, swaps the trigger to v2
+  await db.exec(MIGRATIONS[V2]); // records the boundary, swaps the trigger to v2
   for (let i = 0; i < 5; i++) await add(`v2-${i}`); // v2 hashes (seq bound in)
   assert.equal((await verifyAudit(db)).ok, true, "the whole chain verifies across the boundary");
   // tamper a pre-boundary (v1) interior event
@@ -121,10 +124,10 @@ test("events written after the seq-binding migration verify across the v1→v2 b
   await db.close();
   // and a post-boundary (v2) change, on a fresh build
   const db2 = await pglite();
-  for (let i = 0; i < MIGRATIONS.length - 1; i++) await db2.exec(MIGRATIONS[i]);
+  for (let i = 0; i < V2; i++) await db2.exec(MIGRATIONS[i]);
   await db2.run("INSERT INTO agents (id, profile, origin, created_at, workspace_id) VALUES ('a', '{}', 'connected', 0, 'default')");
   await db2.run("INSERT INTO events (id, agent_id, type, at, actor, data) VALUES ('v1-only', 'a', 'test', 1, 'system', '{}')");
-  await db2.exec(MIGRATIONS[MIGRATIONS.length - 1]);
+  await db2.exec(MIGRATIONS[V2]);
   for (let i = 0; i < 3; i++) await db2.run("INSERT INTO events (id, agent_id, type, at, actor, data) VALUES (?, 'a', 'test', 1, 'system', '{}')", `v2-${i}`);
   await db2.tx(async (q) => { await allowEventRemoval(q); await q.run("UPDATE events SET data = '{\"x\":1}' WHERE id = 'v2-1'"); });
   assert.equal((await verifyAudit(db2)).ok, false, "a v2-side change is caught");

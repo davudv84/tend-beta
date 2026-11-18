@@ -15,7 +15,7 @@ export const DETAIL_MAX = 200;
 // Also characters that render as nothing or as a blank and can carry hidden text: the combining grapheme joiner, the Hangul fillers, the
 // braille blank, the tag characters (invisible ASCII look-alikes) and the supplementary variation selectors. Kept in step with the hooks
 // adapter (examples/hooks/tend-hooks.mjs), which turns the same characters into spaces before it asks.
-const INVISIBLE = new RegExp(`[${[
+export const INVISIBLE = new RegExp(`[${[
   [0x00, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x34f, 0x34f], [0x61c, 0x61c], [0x115f, 0x1160], [0x180e, 0x180e], [0x200b, 0x200f],
   [0x2028, 0x202e], [0x2060, 0x206f], [0x2800, 0x2800], [0x3164, 0x3164], [0xfeff, 0xfeff], [0xffa0, 0xffa0], [0xfff9, 0xfffb],
   [0xe0000, 0xe007f], [0xe0100, 0xe01ef],

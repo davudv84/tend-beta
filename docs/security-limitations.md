@@ -51,6 +51,17 @@ Read this before you put anything real behind TEND. This beta is for controlled 
 - **Measured locally only.** Latency and throughput figures (docs/benchmark.md) come from one machine with an embedded database; a hosted TEND
   adds a network round trip per request (two per protected call, three after an approval).
 
+## Added by the security verification (see SECURITY-VERIFICATION.md)
+
+- **Approvers see every argument.** A pending request now lists all of its arguments (names and values, hidden or direction-changing characters
+  shown as `<U+XXXX>`, long values cut and marked), not only the agent's one-line description. The description is still agent-written text.
+- **A list that disagrees with itself is unknown.** `amount: [5000, 1]` against "approve when amount > 50" asks for approval (a tool that uses any
+  one element must not get around a rule).
+- **Agent keys can expire** (optional): `keyExpiresInDays` when registering or rotating a key, and `TEND_KEY_MAX_AGE_DAYS` as a server-wide cap. An expired key is
+  refused like a revoked one, including for approvals it had in flight. Default: no expiry, as before.
+- **Claude Code hooks can be switched off by the repository you open** (`disableAllHooks` in its own settings; tested with real Claude Code). Use
+  Claude Code's managed settings if you need to prevent that, and treat a silent agent as a signal.
+
 ## If you find a problem
 
 Do not test against other people's systems or real data. Tell the TEND team privately with the steps to reproduce it; please do not post it publicly.
