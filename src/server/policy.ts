@@ -126,16 +126,24 @@ function holds(c: Condition, value: unknown): Match {
     return each1.every((r) => r === true) ? true : each1.every((r) => r === false) ? false : "unknown";
   }
   const each = (test: (v: unknown) => boolean) => values.every(test);
-  if (c.equals !== undefined && !each((v) => v !== null && text(v) === text(c.equals))) return false;
-  if (c.in && !each((v) => v !== null && c.in!.some((x) => text(x) === text(v)))) return false;
-  // Not in the list: only for plain text or numbers; null or true is not a value outside the list, it is no value.
-  if (c.notIn && !each((v) => (typeof v === "string" || typeof v === "number") && !c.notIn!.some((x) => text(x) === text(v)))) return false;
   // A value of the wrong type for a text or number condition (the string "5000" for amount > 50, a number for contains) cannot be compared:
   // it is UNKNOWN, never "does not match", so a type change can make a request stricter and never looser.
   const numeric = c.lt !== undefined || c.lte !== undefined || c.gt !== undefined || c.gte !== undefined;
   const textual = !!(c.startsWith || c.endsWith || c.contains || c.pathUnder || c.emailDomainIn);
   const wrongType = (numeric && !each((v) => typeof v === "number" && Number.isFinite(v))) || (textual && !each((v) => typeof v === "string"));
   if (wrongType) return "unknown";
+  // A string a consumer might read differently from how it is compared here (a NUL, a zero-width or direction-changing character) cannot be judged
+  // either way. Treated as "no match" it would let a deny or approve rule on that argument be stepped around ("evil.com\u200b", "rm\u0000 -rf").
+  const comparesText = c.equals !== undefined || !!c.in || !!c.notIn || textual;
+  if (comparesText && values.some((v) => typeof v === "string" && INVISIBLE_ARG.test(v))) return "unknown";
+  // Same for a path that is not a plain absolute one (".." segments, backslashes, relative): where it points depends on who resolves it.
+  if (c.pathUnder && values.some((v) => typeof v === "string" && (!v.startsWith("/") || v.split("/").includes("..") || v.includes("\\")))) return "unknown";
+  // And an e-mail value that is not one plain address (a display name, a list, a comment): which address it sends to depends on the mailer.
+  if (c.emailDomainIn && values.some((v) => typeof v === "string" && !ADDRESS.test(v))) return "unknown";
+  if (c.equals !== undefined && !each((v) => v !== null && text(v) === text(c.equals))) return false;
+  if (c.in && !each((v) => v !== null && c.in!.some((x) => text(x) === text(v)))) return false;
+  // Not in the list: only for plain text or numbers; null or true is not a value outside the list, it is no value.
+  if (c.notIn && !each((v) => (typeof v === "string" || typeof v === "number") && !c.notIn!.some((x) => text(x) === text(v)))) return false;
   const s = (test: (v: string) => boolean) => each((v) => typeof v === "string" && test(v.toLowerCase()));
   if (c.startsWith && !s((v) => v.startsWith(c.startsWith!.toLowerCase()))) return false;
   if (c.endsWith && !s((v) => v.endsWith(c.endsWith!.toLowerCase()))) return false;

@@ -179,6 +179,14 @@ export const config = {
     const v = Number(process.env.TEND_KEY_MAX_AGE_DAYS ?? "");
     return Number.isInteger(v) && v >= 1 && v <= 3650 ? v : undefined;
   },
+  /**
+   * Authenticated agent requests per minute for ALL agents of one workspace together (TEND_WORKSPACE_RPM, 100–100000; default 3000, which is
+   * 25 agents at the default per-agent rate). Past it callers get 429 and nothing is let through.
+   */
+  get workspaceRequestsPerMinute() {
+    const v = Number(process.env.TEND_WORKSPACE_RPM ?? "");
+    return Number.isInteger(v) && v >= 100 && v <= 100_000 ? v : 3000;
+  },
   get localHttp() {
     return process.env.TEND_LOCAL_HTTP === "1" && !process.env.VERCEL && this.trustedProxy === 0 && !this.databaseUrl;
   },

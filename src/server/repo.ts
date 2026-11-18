@@ -54,12 +54,16 @@ export const allAgents = async (q: Q, workspace?: string) =>
 
 // Which key each agent object was authenticated with, kept beside the object (never in it, so it cannot end up in a response).
 const presented = new WeakMap<object, string>();
+/** The workspace an authenticated agent object belongs to (set by agentByKey; the Agent type that browsers receive does not carry it). */
+const workspaceOfAgent = new WeakMap<object, string>();
+export const workspaceOf = (agent: object) => workspaceOfAgent.get(agent);
 export async function agentByKey(q: Q, key: string) {
   const hash = hashKey(key);
   const r = await q.get<AgentRow>("SELECT * FROM agents WHERE key_hash = ?", hash);
   if (!r || keyExpired(r)) return undefined;
   const agent = toAgent(r);
   presented.set(agent, hash);
+  workspaceOfAgent.set(agent, r.workspace_id);
   return agent;
 }
 /**

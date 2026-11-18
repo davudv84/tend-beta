@@ -236,3 +236,40 @@ test("EV-14 the person deciding sees every argument the rules saw, with hidden c
   assert.ok(!/[‮​]/.test(text), "no raw direction or zero-width character is left");
   assert.ok(text.length <= 1201);
 });
+
+test("EV-15 deny-list rules cannot be stepped around by values a consumer would read differently (traversal, display-name addresses, hidden characters)", async () => {
+  const { evaluate } = await import("./policy.ts");
+  const agent = { status: "active" as const, integrationEnabled: true, permissions: [] as string[] };
+  const eff = (rules: unknown, tool: string, args: Record<string, unknown>) => evaluate(agent, rules, { tool, action: "x", resource: null, detail: null, args }).effect;
+  const files = [{ tool: "read", action: "x", effect: "allow" }, { tool: "read", action: "x", effect: "deny", when: { path: { pathUnder: ["/etc", "/root/.ssh"] } } }];
+  assert.equal(eff(files, "read", { path: "/etc/passwd" }), "deny");
+  assert.equal(eff(files, "read", { path: "/srv/data/report.txt" }), "allow");
+  for (const path of ["/srv/../etc/passwd", "/etc/../etc/shadow", "/srv/x/../../root/.ssh/id_rsa", "etc/passwd", "../etc/passwd", "\\etc\\passwd", "/etc\u0000/x", "/etc‮/x", "/srv/\\..\\etc", "./etc/passwd", ["/srv/a", "/srv/../etc/passwd"], ["/srv/a", "/etc/passwd"]])
+    assert.equal(eff(files, "read", { path }), "deny", JSON.stringify(path));
+  const mail = [{ tool: "send", action: "x", effect: "allow" }, { tool: "send", action: "x", effect: "deny", when: { to: { emailDomainIn: ["competitor.com"] } } }];
+  assert.equal(eff(mail, "send", { to: "bob@competitor.com" }), "deny");
+  assert.equal(eff(mail, "send", { to: "bob@example.com" }), "allow");
+  for (const to of ["Bob <bob@competitor.com>", "bob@example.com, bob@competitor.com", "bob@competitor.com​", "\"bob@example.com\" <bob@competitor.com>", "bob@competitor.com (ok)", ["a@example.com", "b@competitor.com"], "bob@competitor.com\u0000.example.com"])
+    assert.equal(eff(mail, "send", { to }), "deny", JSON.stringify(to));
+  const cmd = [{ tool: "sh", action: "x", effect: "allow" }, { tool: "sh", action: "x", effect: "deny", when: { command: { contains: "rm -rf" } } }, { tool: "sh", action: "x", effect: "approve", when: { host: { equals: "prod" } } }];
+  for (const command of ["rm\u0000 -rf /", "rm -rf​ /", "r​m -rf /", "rm -rf /"]) assert.equal(eff(cmd, "sh", { command }), "deny", JSON.stringify(command));
+  assert.equal(eff(cmd, "sh", { command: "ls -la\n", host: "dev" }), "allow", "a trailing newline is ordinary and does not make a command unknown");
+  assert.equal(eff(cmd, "sh", { command: "ls", host: "prod​" }), "approve", "a hidden character in 'prod' cannot step around the approve rule");
+});
+
+test("EV-16 agents of one workspace share a request budget, so one tenant cannot monopolise the database-wide write lock; other workspaces are unaffected", async () => {
+  const { authAgent } = await import("./agent-auth.ts");
+  const db = await memoryDb();
+  await db.run("INSERT INTO workspaces (id, name, created_at) VALUES ('wa', 'wa', 0), ('wb', 'wb', 0)");
+  process.env.TEND_WORKSPACE_RPM = "100"; process.env.TEND_AGENT_RPM = "10000";
+  try {
+    const a1 = await registerAgent(db, { name: "a1", model: "m", provider: "Custom" }, "u", "wa");
+    const a2 = await registerAgent(db, { name: "a2", model: "m", provider: "Custom" }, "u", "wa");
+    const b1 = await registerAgent(db, { name: "b1", model: "m", provider: "Custom" }, "u", "wb");
+    const req = (key: string) => new Request("http://x/api/v1/agent/inbox", { headers: { authorization: `Bearer ${key}` } });
+    const out = await Promise.all(Array.from({ length: 140 }, (_, i) => code(authAgent(db, req(i % 2 ? a1.apiKey : a2.apiKey)))));
+    assert.ok(out.filter((x) => x === "OK").length <= 100, "no more than the workspace budget got through");
+    assert.ok(out.includes("rate_limited"));
+    assert.equal(await code(authAgent(db, req(b1.apiKey))), "OK", "another workspace is unaffected");
+  } finally { delete process.env.TEND_WORKSPACE_RPM; delete process.env.TEND_AGENT_RPM; }
+});
