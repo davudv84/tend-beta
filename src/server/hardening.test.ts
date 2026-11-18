@@ -66,3 +66,13 @@ test("agent-written text loses invisible and direction-changing characters but k
   assert.equal(cleanText("a\nb\tc"), "a\nb\tc");
   assert.equal(cleanText("👨‍👩‍👧 क्‍ष"), "👨‍👩‍👧 क्‍ष", "joiners (U+200D) are kept for emoji and scripts");
 });
+
+test("an unhandled error is logged without the database detail, parameters or request that came with it", async () => {
+  const { describeError } = await import("./http.ts");
+  const e = Object.assign(new Error('duplicate key value violates unique constraint "users_email_key"'), { code: "23505", detail: "Key (email)=(victim@example.com) already exists.", parameters: ["victim@example.com", "tend_sk_secretsecretsecretsecret"], query: "INSERT INTO users …" });
+  const text = describeError(e);
+  assert.match(text, /^Error \[23505\]: duplicate key value/);
+  assert.ok(!/victim@example\.com|tend_sk_|INSERT INTO/.test(text), text);
+  assert.ok(describeError("x".repeat(5000)).length <= 200);
+  assert.ok(describeError(new Error("m".repeat(5000))).length < 1500);
+});

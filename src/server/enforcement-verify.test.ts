@@ -320,3 +320,21 @@ test("EV-19 look-alike letters: refused in the agent's description, flagged in t
   assert.match(text, /body: ⚠ NOT SHOWN IN FULL: 5000 characters, fingerprint abababababab/);
   assert.match(text, /note: fine$/m);
 });
+
+test("EV-20 a workspace has one daily ceiling on what all its agents write, on top of each agent's own", async () => {
+  const { QUOTA, ingestEvents } = await import("./repo.ts");
+  const db = await memoryDb();
+  await db.run("INSERT INTO workspaces (id, name, created_at) VALUES ('wq', 'wq', 0), ('wr', 'wr', 0)");
+  const mk = async (name: string, ws: string) => { const r = await registerAgent(db, { name, model: "m", provider: "Custom" }, "u", ws); return (await agentByKey(db, r.apiKey))!; };
+  const [a1, a2, other] = [await mk("q1", "wq"), await mk("q2", "wq"), await mk("r1", "wr")];
+  const saved = QUOTA.workspaceEventsPerDay;
+  QUOTA.workspaceEventsPerDay = 10;
+  try {
+    const ev = { type: "task.started", data: { taskId: "t", title: "x" } };
+    const out: string[] = [];
+    for (let i = 0; i < 8; i++) out.push(await code(ingestEvents(db, i % 2 ? a1 : a2, [ev, ev])));
+    assert.equal(out.filter((x) => x === "OK").length, 5, "10 events in all, two per call, across two agents");
+    assert.ok(out.includes("workspace_quota_exceeded"));
+    assert.equal(await code(ingestEvents(db, other, [ev])), "OK", "another workspace is unaffected");
+  } finally { QUOTA.workspaceEventsPerDay = saved; }
+});

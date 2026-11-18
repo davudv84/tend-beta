@@ -19,6 +19,16 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * An error as one log entry: its kind, code and a short message, plus the stack. Never the error object itself: a database error carries the query's
+ * detail and parameters (an e-mail address, a key fragment), and a fetch error can carry the request. Everything is cut to a safe length.
+ */
+export function describeError(e: unknown): string {
+  if (!(e instanceof Error)) return String(typeof e === "string" ? e : typeof e).slice(0, 200);
+  const code = (e as { code?: unknown }).code;
+  return `${e.name}${typeof code === "string" || typeof code === "number" ? ` [${String(code).slice(0, 20)}]` : ""}: ${e.message.slice(0, 300)}\n${(e.stack ?? "").split("\n").filter((l) => l.trimStart().startsWith("at ")).slice(0, 8).join("\n")}`;
+}
+
 export const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   Response.json(data, { status, headers: { "cache-control": "no-store", ...headers } });
 
@@ -51,7 +61,7 @@ export function route<C>(fn: (req: Request, ctx: C) => Promise<Response> | Respo
     } catch (e) {
       await deliverQueued();
       if (e instanceof HttpError) return json({ error: e.code, message: e.message, ...e.extra }, e.status, e.status === 429 ? { "retry-after": String(e.extra?.retryAfter ?? 10) } : {});
-      console.error("[tend] unhandled error", e);
+      console.error("[tend] unhandled error", describeError(e));
       return json({ error: "internal_error", message: "Something went wrong on the server." }, 500);
     }
   };

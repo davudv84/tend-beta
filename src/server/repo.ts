@@ -158,10 +158,16 @@ export const lastSeq = async (q: Q) => (await q.get<{ seq: number }>("SELECT COA
  * An object, not constants, so tests can lower it.
  */
 export const MAX_AGENTS_PER_WORKSPACE = 50;
-export const QUOTA = { eventsPerMinute: 600, eventsPerDay: 50_000, authorizationsPerDay: 5_000, pendingReviews: 20 };
+export const QUOTA = { eventsPerMinute: 600, eventsPerDay: 50_000, authorizationsPerDay: 5_000, pendingReviews: 20, workspaceEventsPerDay: 200_000, workspaceAuthorizationsPerDay: 20_000 };
 
 /** Takes `cost` units of an agent's allowance, or refuses with 429 and says when it frees up. Atomic: parallel callers cannot overspend it. */
-export async function agentBudget(q: Q, agentId: string, kind: "events" | "authorizations", cost = 1) {
+export async function agentBudget(q: Q, agentId: string, kind: "events" | "authorizations", cost = 1, workspace?: string) {
+  // The log cannot be trimmed, and quotas per agent multiply with the number of agents: one more ceiling for everything a workspace's agents write in a day.
+  if (workspace) {
+    const max = kind === "events" ? QUOTA.workspaceEventsPerDay : QUOTA.workspaceAuthorizationsPerDay;
+    const r = await spend(q, `quota:ws:${kind}:day:${workspace}`, max, { windowMs: 86_400_000, cost });
+    if (!r.ok) throw new HttpError(429, "workspace_quota_exceeded", `This workspace has used its allowance of ${max} ${kind} per day across all its agents. Retry later.`, { quota: `workspace_${kind}_per_day`, limit: max, retryAfter: r.retryAfter });
+  }
   const windows: [string, number, number][] = kind === "events"
     ? [["minute", 60_000, QUOTA.eventsPerMinute], ["day", 86_400_000, QUOTA.eventsPerDay]]
     : [["day", 86_400_000, QUOTA.authorizationsPerDay]];
@@ -273,7 +279,7 @@ export async function ingestEvents(db: DB, agent: Agent, inputs: unknown[], now 
   for (const p of parsed) guard(agent, p.type);
   // Before the lock is taken, so a flood is refused cheaply. Presence pings store nothing and cost nothing.
   const storable = parsed.filter((p) => p.type !== "agent.heartbeat").length;
-  if (storable) await agentBudget(db, agent.id, "events", storable);
+  if (storable) await agentBudget(db, agent.id, "events", storable, workspaceOf(agent));
   return db.tx(async (q) => {
     // Taken first, so two retries of the same request can't both pass the duplicate check.
     await q.lockEvents();
@@ -387,7 +393,7 @@ export async function ingestCheckIn(db: DB, agent: Agent, body: unknown, actor: 
   if (!parsed.ok) throw new HttpError(422, "invalid_check_in", "The check-in did not validate.", { errors: parsed.errors });
   guard(agent, "check_in");
   const v = parsed.value;
-  if (actor === "agent") await agentBudget(db, agent.id, "events"); // an operator composing for a demo agent is not an agent's key
+  if (actor === "agent") await agentBudget(db, agent.id, "events", 1, workspaceOf(agent)); // an operator composing for a demo agent is not an agent's key
   return db.tx(async (q) => {
     await q.lockEvents();
     const now = Date.now();

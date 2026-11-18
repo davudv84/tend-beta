@@ -19,7 +19,7 @@ import { hashKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError } from "./http.ts";
 import { evaluateEffective, fingerprint, ID, INVISIBLE, mixesAlphabets, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
-import { agentBudget, agentRow, centralOf, insertEvent, keyRevoked, toAgent } from "./repo.ts";
+import { agentBudget, agentRow, centralOf, insertEvent, keyRevoked, toAgent, workspaceOf } from "./repo.ts";
 
 export const TTL = { request: 10 * 60_000, approval: 5 * 60_000, token: 60_000 };
 export const MAX_PENDING = 20;
@@ -124,7 +124,7 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
   if (idemKey !== null && !ID.test(idemKey)) throw new HttpError(422, "invalid_idempotency_key", "Idempotency-Key must be 1–64 characters of letters, digits, _ . : -");
   const r = parsed.request, fp = fingerprint(agent.id, r);
   await sweepExpired(db, now); // committed on its own: the checks below may throw and roll their transaction back
-  await agentBudget(db, agent.id, "authorizations"); // denials are stored too, so they count: a refused flood must not fill the table
+  await agentBudget(db, agent.id, "authorizations", 1, workspaceOf(agent)); // denials are stored too, so they count: a refused flood must not fill the table
   return db.tx(async (q) => {
     await q.lockEvents();
     await expireStale(q, now);

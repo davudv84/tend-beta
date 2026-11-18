@@ -452,6 +452,8 @@ async function open() {
   // On Vercel the filesystem is ephemeral and shared by nothing: refuse to run without a real database.
   if (!url && config.onVercel)
     throw new HttpError(503, "database_not_configured", "No database is configured. Set DATABASE_URL to a Postgres connection string.");
+  if (!url && process.env.NODE_ENV === "production" && !config.localHttp)
+    console.error("[tend] WARNING: production build without DATABASE_URL: using the embedded single-process database in " + config.dataDir + ". Two instances would not share data and a container restart may lose it. Set DATABASE_URL.");
   const db = url ? await postgres(url) : await pglite(path.join(config.dataDir, "pglite"));
   await migrate(db);
   return db;
