@@ -113,6 +113,8 @@ jobs:
         run: node redteam/live/run-all.mjs
       - name: Production configuration (HSTS, cookies, CSP, weak admin token)
         run: node --no-warnings redteam/live/prod-config.mjs
+      - name: Tenant isolation matrix (tenant B against every route and every object of tenant A)
+        run: node --no-warnings redteam/live/tenant-matrix.mjs
       - name: Dynamic scan of every API route and page (hostile verbs, bodies, headers)
         run: node --no-warnings redteam/live/dynamic-scan.mjs
       - name: MCP proxy in front of a real MCP server (deny, approval, replay, fail-closed)
