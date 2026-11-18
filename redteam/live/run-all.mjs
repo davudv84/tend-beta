@@ -37,6 +37,6 @@ try {
 }
 const fuzz = spawnSync(process.execPath, ["--no-warnings", path.join(here, "fuzz-policy.mjs")], { encoding: "utf8", cwd: root, env: { ...process.env, N: "10000" } });
 console.log("\n=== fuzz-policy.mjs\n" + fuzz.stdout);
-for (const k of ["summary", "typeNum", "crash", "fp", "monoRule"]) if (!new RegExp(`${k}\\s+violations=0`).test(fuzz.stdout)) { console.log(`FUZZ VIOLATION in ${k}`); broken++; }
+for (const k of ["summary", "typeNum", "crash", "fp", "monoRule", "list"]) if (!new RegExp(`${k}\\s+violations=0`).test(fuzz.stdout)) { console.log(`FUZZ VIOLATION in ${k}`); broken++; }
 console.log(`\nHELD=${held} BROKEN/INCONCLUSIVE=${broken}`);
 process.exit(broken ? 1 : 0);

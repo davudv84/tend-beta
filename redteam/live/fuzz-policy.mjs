@@ -13,7 +13,7 @@ const mkPolicy = () => Array.from({ length: 1 + Math.floor(rnd() * 5) }, mkRule)
 const mkArgs = () => Object.fromEntries(keys.filter(() => rnd() < 0.7).map((k) => [k, rnd() < 0.15 ? [scalars(), scalars()] : scalars()]));
 const eff = (rules, args) => evaluate(agent, rules, { tool: "t", action: "a", resource: null, detail: null, args });
 const N = Number(process.env.N ?? 20000);
-const viol = { summary: [], typeNum: [], crash: [], fp: [], monoRule: [] };
+const viol = { summary: [], typeNum: [], crash: [], fp: [], monoRule: [], list: [] };
 const seen = new Map();
 for (let i = 0; i < N; i++) {
   const rules = mkPolicy(), args = mkArgs();
@@ -30,6 +30,12 @@ for (let i = 0; i < N; i++) {
   for (const k of Object.keys(args)) if (typeof args[k] === "number" && !rules.some((r) => r.when?.[k] && Object.keys(r.when[k]).some((o) => textOps.includes(o)))) {
     const a2 = { ...args, [k]: String(args[k]) };
     if (strength[eff(rules, a2).effect] < strength[base.effect]) viol.typeNum.push({ rules, args, k, base: base.effect, got: eff(rules, a2).effect });
+  }
+  // P7: a list is at least as strict as its strictest element (a tool that uses any one element must not be handed a way around a rule)
+  for (const k of Object.keys(args)) if (!Array.isArray(args[k])) {
+    const b = scalars(), lst = { ...args, [k]: [args[k], b] };
+    const worst = Math.max(strength[eff(rules, { ...args, [k]: args[k] }).effect], strength[eff(rules, { ...args, [k]: b }).effect]);
+    if (strength[eff(rules, lst).effect] < worst) viol.list.push({ rules, args, k, b });
   }
   // P5: fingerprint injectivity on random requests
   const r = { tool: "t", action: "a", resource: rnd() < 0.5 ? "r" + Math.floor(rnd() * 3) : null, detail: rnd() < 0.5 ? "d" + Math.floor(rnd() * 3) : null, args };

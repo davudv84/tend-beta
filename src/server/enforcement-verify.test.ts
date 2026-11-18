@@ -170,3 +170,24 @@ test("EV-11 a key's hash is all that is stored, and a different tenant's key nev
   assert.match(row.key_hash, /^[0-9a-f]{64}$/);
   assert.equal(await agentByKey(db, newKey().key), undefined);
 });
+
+test("EV-12 numeric thresholds: no encoding a lenient tool would read as a large number gets past 'approve when amount > 50'", async () => {
+  const { evaluate } = await import("./policy.ts");
+  const rules = [{ tool: "refund", action: "issue", effect: "allow" }, { tool: "refund", action: "issue", effect: "approve", when: { amount: { gt: 50 } } }];
+  const agent = { status: "active" as const, integrationEnabled: true, permissions: [] as string[] };
+  const decide1 = (args: Record<string, unknown> | undefined) => evaluate(agent, rules, { tool: "refund", action: "issue", resource: null, detail: null, ...(args && { args }) }).effect;
+  const encodings: unknown[] = [5000, 5000.0, 5e3, "5000", " 5000", "5000 ", "+5000", "5e3", "5E3", "0x1388", "0b1001110001000", "5000.0", "5_000", "5,000", "٥٠٠٠", "५०००", "Infinity", "1e999", Infinity, NaN, null, true, "true", [], [5000], ["5000"], [5000, 1], [1, 5000], { valueOf: 5000 }, { amount: 5000 }, { sha256: "x".repeat(64), length: 9 }, "5000\u0000", "5000abc", ""];
+  for (const v of encodings) {
+    const e = decide1({ amount: v });
+    // a plain number at or below 50 is the only thing allowed through
+    const plainSmall = typeof v === "number" && Number.isFinite(v) && v <= 50;
+    assert.equal(e === "allow", plainSmall, `amount=${JSON.stringify(v)} → ${e}`);
+  }
+  for (const key of ["Amount", "amount ", " amount", "amounts", "amount​", "AMOUNT", "a.amount", "args.amount"]) assert.notEqual(decide1({ [key]: 5000 }), "allow", `key ${JSON.stringify(key)}`);
+  assert.notEqual(decide1(undefined), "allow");
+  assert.equal(decide1({ amount: 50 }), "allow");
+  assert.equal(decide1({ amount: 50.01 }), "approve");
+  // JSON.parse turns 1e999 into Infinity: it must not sail past either
+  const parsed = JSON.parse('{"amount": 1e999}') as Record<string, unknown>;
+  assert.notEqual(decide1(parsed), "allow");
+});

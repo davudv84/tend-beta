@@ -118,6 +118,13 @@ function holds(c: Condition, value: unknown): Match {
   const values = Array.isArray(value) ? value : [value];
   if (!values.length) return "unknown"; // an empty list is no value to compare
   if (!values.every(scalar)) return "unknown"; // an object, a nested list or a summary where a plain value belongs
+  // A list is judged element by element. If the elements disagree (amount: [5000, 1] against "amount > 50") the answer is UNKNOWN, not "no":
+  // a tool that uses any one of them would otherwise be handed a way around an approve or deny rule. Unknown applies deny and approve rules
+  // and ignores allow rules, so a mixed list can only make a request stricter.
+  if (values.length > 1) {
+    const each1 = values.map((v) => holds(c, v));
+    return each1.every((r) => r === true) ? true : each1.every((r) => r === false) ? false : "unknown";
+  }
   const each = (test: (v: unknown) => boolean) => values.every(test);
   if (c.equals !== undefined && !each((v) => v !== null && text(v) === text(c.equals))) return false;
   if (c.in && !each((v) => v !== null && c.in!.some((x) => text(x) === text(v)))) return false;
