@@ -115,6 +115,8 @@ jobs:
         run: node --no-warnings redteam/live/prod-config.mjs
       - name: Dynamic scan of every API route and page (hostile verbs, bodies, headers)
         run: node --no-warnings redteam/live/dynamic-scan.mjs
+      - name: MCP proxy in front of a real MCP server (deny, approval, replay, fail-closed)
+        run: node --no-warnings redteam/live/mcp-proxy.mjs
       - name: Real hooks adapter fails closed when TEND goes away
         run: node --no-warnings redteam/live/hook-failclosed.mjs
       - name: Offline end-to-end suites (authorization, gateway, connect, accounts, open beta, onboarding)

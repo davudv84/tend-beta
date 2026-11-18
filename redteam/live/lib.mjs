@@ -56,6 +56,8 @@ export async function makeAgent(tenant, name, policyRules, enforcement = "enforc
 export const results = [];
 export function record(id, area, title, verdict, evidence) {
   results.push({ id, area, title, verdict, evidence });
+  // A failed check must fail the process (and so the CI step): BROKEN and INCONCLUSIVE both count.
+  if (verdict === "BROKEN" || String(verdict).startsWith("INCONCLUSIVE")) process.exitCode = 1;
   const tag = verdict === "HELD" ? "HELD  " : verdict === "BROKEN" ? "BROKEN" : verdict;
   console.log(`[${tag}] ${id} ${title}${evidence ? "\n         " + String(evidence).replace(/\n/g, "\n         ").slice(0, 600) : ""}`);
 }

@@ -273,3 +273,13 @@ test("EV-16 agents of one workspace share a request budget, so one tenant cannot
     assert.equal(await code(authAgent(db, req(b1.apiKey))), "OK", "another workspace is unaffected");
   } finally { delete process.env.TEND_WORKSPACE_RPM; delete process.env.TEND_AGENT_RPM; }
 });
+
+test("EV-17 SSRF: the only outbound URL an operator can make the server call (a push endpoint) is limited to the real push services", async () => {
+  const { pushEndpointOk } = await import("./notifications.ts");
+  const ok = ["https://fcm.googleapis.com/fcm/send/abc", "https://updates.push.services.mozilla.com/wpush/v2/abc", "https://web.push.apple.com/abc", "https://abc.notify.windows.com/w/?token=x"];
+  const no = ["http://fcm.googleapis.com/x", "https://fcm.googleapis.com.evil.com/x", "https://evil.com/fcm.googleapis.com", "https://fcm.googleapis.com@evil.com/x", "https://user:pw@fcm.googleapis.com/x",
+    "https://169.254.169.254/latest/meta-data", "https://[::1]/", "https://127.0.0.1/", "https://localhost/", "https://fcm.googleapis.com:8443/x", "https://fcm.googleapis.com./x", "https://a.b.notify.windows.com/x",
+    "https://x.notify.windows.com.evil.com/", "https://evilpush.apple.com/x", "file:///etc/passwd", "gopher://fcm.googleapis.com/", "https://fcm.googleapis.com/x#frag", "//fcm.googleapis.com/x", "", 5, null, "https://" + "a".repeat(1100)];
+  for (const u of ok) assert.equal(pushEndpointOk(u), true, u);
+  for (const u of no) assert.equal(pushEndpointOk(u), false, String(u));
+});
