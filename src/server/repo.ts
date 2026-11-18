@@ -143,6 +143,7 @@ export const lastSeq = async (q: Q) => (await q.get<{ seq: number }>("SELECT COA
  * trimmed afterwards, so the limit has to be at the door. Generous for real use: 600 events a minute is ten a second.
  * An object, not constants, so tests can lower it.
  */
+export const MAX_AGENTS_PER_WORKSPACE = 50;
 export const QUOTA = { eventsPerMinute: 600, eventsPerDay: 50_000, authorizationsPerDay: 5_000, pendingReviews: 20 };
 
 /** Takes `cost` units of an agent's allowance, or refuses with 429 and says when it frees up. Atomic: parallel callers cannot overspend it. */
@@ -632,6 +633,9 @@ export async function registerAgent(db: DB, input: unknown, by?: string, workspa
   const now = Date.now();
   return db.tx(async (q) => {
     await q.lockEvents();
+    // Quotas are per agent, so without a cap on agents one account could multiply them without bound (the event log cannot be trimmed).
+    if (workspace !== DEFAULT_WORKSPACE && (await q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents WHERE workspace_id = ? AND origin = 'connected'", workspace))!.n >= MAX_AGENTS_PER_WORKSPACE)
+      throw new HttpError(429, "too_many_agents", `A workspace can have at most ${MAX_AGENTS_PER_WORKSPACE} connected agents. Remove one you no longer use.`, { limit: MAX_AGENTS_PER_WORKSPACE });
     // Ids are global. In a user's workspace a random suffix keeps them from saying whether another workspace already has the name.
     let id = workspace === DEFAULT_WORKSPACE ? base : `${base}-${randomBytes(3).toString("hex")}`;
     for (let i = 2; await agentRow(q, id); i++) id = workspace === DEFAULT_WORKSPACE ? `${base}-${i}` : `${base}-${randomBytes(3).toString("hex")}`;

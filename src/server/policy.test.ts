@@ -131,3 +131,48 @@ test("migration: new agents are in monitor mode with an empty policy, and no tok
   await assert.rejects(() => db.run("INSERT INTO authorizations (id, agent_id, tool, action, fingerprint, status, created_at, expires_at, idempotency_key) VALUES ('i2', ?, 't', 'a', 'f', 'pending', 0, 1, 'k')", a.id));
   await db.close();
 });
+
+// ---- red-team regressions (SECURITY-REPORT.md F-01, F-02) -------------------------------------------------------------------------
+
+test("F-01: a wrong-typed or missing argument can make a request stricter, never looser (approve/deny when amount > 50)", () => {
+  const rules = [
+    { tool: "refund", action: "issue", effect: "allow" },
+    { tool: "refund", action: "issue", effect: "approve", when: { amount: { gt: 50 } } },
+  ];
+  const ask = (args?: Record<string, unknown>) => evaluate(agent(), rules, { tool: "refund", action: "issue", resource: null, detail: null, ...(args && { args }) }).effect;
+  assert.equal(ask({ amount: 5000 }), "approve");
+  assert.equal(ask({ amount: 5 }), "allow");
+  for (const amount of ["5000", "5e3", " 5000", "NaN", true, null, [], { v: 5000 }, ["5000"]])
+    assert.notEqual(ask({ amount }), "allow", `amount=${JSON.stringify(amount)} must not step around the approval rule`);
+  assert.notEqual(ask({}), "allow", "leaving the argument out must not step around the approval rule");
+  assert.notEqual(ask(), "allow", "no arguments at all must not step around it");
+});
+
+test("F-01: the same for deny-when text conditions and the allow-when pattern still works", () => {
+  const deny = [{ tool: "shell", action: "run", effect: "allow" }, { tool: "shell", action: "run", effect: "deny", when: { command: { contains: "rm -rf" } } }];
+  const run = (rules: unknown, args: Record<string, unknown>) => evaluate(agent(), rules, { tool: "shell", action: "run", resource: null, detail: null, args }).effect;
+  assert.equal(run(deny, { command: "rm -rf /" }), "deny");
+  assert.equal(run(deny, { command: "ls" }), "allow");
+  assert.equal(run(deny, { command: 5 }), "deny", "a number where text belongs is unknown, so the deny rule applies");
+  const allowWhen = [{ tool: "shell", action: "run", effect: "allow", when: { command: { startsWith: "ls" } } }, { tool: "shell", action: "run", effect: "deny" }];
+  assert.equal(run(allowWhen, { command: "ls -la" }), "allow");
+  for (const command of [5, true, null, ["ls", "rm"]]) assert.equal(run(allowWhen, { command }), "deny");
+  assert.equal(run(allowWhen, {}), "deny");
+});
+
+test("F-02: text a person reads as the exact request cannot hide direction changes, zero-width or control characters", () => {
+  const ok = (command: string) => parseAuthRequest({ tool: "bash", action: "run", args: { command } }).ok;
+  assert.equal(ok("ls -la"), true);
+  assert.equal(ok("echo a\n  echo b\tc"), true, "newline and tab are legitimate in a command");
+  for (const bad of ["a‮b", "a​b", "a\u0007b", "a\u0000b", "a⁦b", "a­b", "a﻿b", "a\u{e0041}b"]) assert.equal(ok(bad), false, JSON.stringify(bad));
+  for (const k of ["path", "url"]) assert.equal(parseAuthRequest({ tool: "t", action: "a", args: { [k]: "x‮y" } }).ok, false, k);
+});
+
+test("F-04: a workspace cannot register unlimited agents", async () => {
+  const { registerAgent, MAX_AGENTS_PER_WORKSPACE } = await import("./repo.ts");
+  const db = await memoryDb();
+  for (const w of ["ws_test", "ws_other"]) await db.run("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, 0)", w, w);
+  for (let i = 0; i < MAX_AGENTS_PER_WORKSPACE; i++) await registerAgent(db, { name: `a${i}`, model: "m", provider: "Custom" }, "u", "ws_test");
+  await assert.rejects(registerAgent(db, { name: "one too many", model: "m", provider: "Custom" }, "u", "ws_test"), (e: { status?: number; code?: string }) => e.status === 429 && e.code === "too_many_agents");
+  await registerAgent(db, { name: "other workspace is unaffected", model: "m", provider: "Custom" }, "u", "ws_other");
+});

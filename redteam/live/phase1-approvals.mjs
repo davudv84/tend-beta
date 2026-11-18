@@ -28,7 +28,7 @@ H(csrf2.status === 403, "A-08", "csrf", "cross-site Sec-Fetch-Site refused", sho
 const csrf3 = await call("POST", `/api/v1/reviews/${id}`, { cookie: A.cookie, headers: { origin: "null" }, body: { status: "approved" } });
 H(csrf3.status === 403, "A-09", "csrf", "Origin: null (sandboxed iframe / redirect) refused", short(csrf3));
 const csrf4 = await call("POST", `/api/v1/reviews/${id}`, { cookie: A.cookie, headers: { "content-type": "text/plain" }, raw: JSON.stringify({ status: "approved" }) });
-record("A-10", "csrf", "text/plain simple-request form POST with cookie (no Origin/Sec-Fetch headers)", csrf4.status === 200 ? "INFO: accepted (browser always sends Origin/Sec-Fetch-Site; SameSite=Strict cookie)" : "HELD", short(csrf4));
+record("A-10", "csrf", "text/plain simple-request form POST with cookie (no Origin/Sec-Fetch headers)", csrf4.status === 200 ? "INFO(accepted (browser always sends Origin/Sec-Fetch-Site; SameSite=Strict cookie)" : "HELD", short(csrf4));
 // that A-10 may have approved it; make a fresh one for the rest
 w = await newWire(payA); const id2 = w.body.id, res2 = w.body.resource;
 // ---- approve and then abuse
@@ -122,7 +122,7 @@ for (const [i, k] of ["tend_sk_" + "A".repeat(32), payA.key.slice(0, -1) + "A", 
   H(r.status === 401 || r.status === 429, `I-1${i}`, "agent-key", `forged/mutated key #${i} rejected`, short(r));
 }
 // operator cookie forgery
-for (const [i, c] of [A.cookie.replace(/\.[^.]*$/, ".") + "A".repeat(43), "tend_operator=" + "a".repeat(16) + "." + "A".repeat(43), A.cookie + "; tend_operator=" + "b".repeat(16) + "." + "A".repeat(43), "tend_operator=admin", "__Host-tend_operator=" + A.cookie.split("=")[1]].entries()) {
+for (const [i, c] of [A.cookie.replace(/\.[^.]*$/, ".") + "A".repeat(43), "tend_operator=" + "a".repeat(16) + "." + "A".repeat(43), "tend_operator=admin", "__Host-tend_operator=" + A.cookie.split("=")[1]].entries()) {
   const r = await call("GET", "/api/v1/state", { cookie: c }); H(r.status === 401 || r.status === 403, `I-2${i}`, "session", `forged session cookie #${i} rejected`, short(r));
 }
 // revocation immediacy

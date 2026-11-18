@@ -20,6 +20,8 @@ const INVISIBLE = new RegExp(`[${[
   [0x2028, 0x202e], [0x2060, 0x206f], [0x2800, 0x2800], [0x3164, 0x3164], [0xfeff, 0xfeff], [0xffa0, 0xffa0], [0xfff9, 0xfffb],
   [0xe0000, 0xe007f], [0xe0100, 0xe01ef],
 ].map(([a, b]) => `${String.fromCodePoint(a)}-${String.fromCodePoint(b)}`).join("")}]`, "u");
+// Like INVISIBLE, but newline and tab stay: a multi-line command is legitimate and is shown as written.
+const INVISIBLE_ARG = { test: (v: string) => INVISIBLE.test(v.replace(/[\n\t]/g, "")) };
 const MAX_RULES = 50;
 
 export type Effect = "allow" | "approve" | "deny";
@@ -109,16 +111,24 @@ function holds(c: Condition, value: unknown): Match {
   const onlyExists = Object.keys(c).every((k) => k === "exists");
   if (value === UNKNOWN) return onlyExists ? c.exists !== false : "unknown";
   if (c.exists !== undefined && (value !== undefined) !== c.exists) return false;
-  if (value === undefined) return onlyExists;
+  // A missing argument cannot be compared. For an allow rule that still means "does not apply" (unknown allow rules are ignored); for a deny
+  // or approve rule it must not mean "does not apply", or leaving the argument out would step around the rule.
+  if (value === undefined) return onlyExists ? c.exists === false : "unknown";
   if (onlyExists) return true;
   const values = Array.isArray(value) ? value : [value];
-  if (!values.length) return false;
+  if (!values.length) return "unknown"; // an empty list is no value to compare
   if (!values.every(scalar)) return "unknown"; // an object, a nested list or a summary where a plain value belongs
   const each = (test: (v: unknown) => boolean) => values.every(test);
   if (c.equals !== undefined && !each((v) => v !== null && text(v) === text(c.equals))) return false;
   if (c.in && !each((v) => v !== null && c.in!.some((x) => text(x) === text(v)))) return false;
   // Not in the list: only for plain text or numbers; null or true is not a value outside the list, it is no value.
   if (c.notIn && !each((v) => (typeof v === "string" || typeof v === "number") && !c.notIn!.some((x) => text(x) === text(v)))) return false;
+  // A value of the wrong type for a text or number condition (the string "5000" for amount > 50, a number for contains) cannot be compared:
+  // it is UNKNOWN, never "does not match", so a type change can make a request stricter and never looser.
+  const numeric = c.lt !== undefined || c.lte !== undefined || c.gt !== undefined || c.gte !== undefined;
+  const textual = !!(c.startsWith || c.endsWith || c.contains || c.pathUnder || c.emailDomainIn);
+  const wrongType = (numeric && !each((v) => typeof v === "number" && Number.isFinite(v))) || (textual && !each((v) => typeof v === "string"));
+  if (wrongType) return "unknown";
   const s = (test: (v: string) => boolean) => each((v) => typeof v === "string" && test(v.toLowerCase()));
   if (c.startsWith && !s((v) => v.startsWith(c.startsWith!.toLowerCase()))) return false;
   if (c.endsWith && !s((v) => v.endsWith(c.endsWith!.toLowerCase()))) return false;
@@ -235,7 +245,13 @@ export function parseAuthRequest(input: unknown): { ok: true; request: AuthReque
   if (o.args !== undefined && o.args !== null) {
     if (typeof o.args !== "object" || Array.isArray(o.args)) errors.push("args must be a JSON object");
     else if (tooDeep(o.args, 5) || canonical(o.args).length > ARGS_MAX) errors.push(`args must be at most ${ARGS_MAX} characters of JSON, nested at most 5 deep`);
-    else args = o.args as Record<string, unknown>;
+    else {
+      // The text a person reads as "the exact request" comes from these arguments (authz.ts exactOf), so it gets the same rule as `detail`:
+      // nothing that renders differently from what it is (bidi overrides, zero-width, control characters other than newline and tab).
+      const shown = ["command", "path", "url"].find((k) => typeof (o.args as Record<string, unknown>)[k] === "string" && INVISIBLE_ARG.test((o.args as Record<string, string>)[k]));
+      if (shown) errors.push(`args.${shown} must not contain control, zero-width or direction-changing characters`);
+      else args = o.args as Record<string, unknown>;
+    }
   }
   if (errors.length || !tool || !action) return { ok: false, errors };
   return { ok: true, request: { tool, action, resource, detail, ...(args && { args }) } };

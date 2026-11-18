@@ -22,7 +22,7 @@ Production (tendhq.dev, tend-beta-mauve.vercel.app) was never touched. No real k
 |---|---|---|---|---|---|
 | F-01 | Numeric `when` conditions fail open on wrong-typed or missing args | Medium | CONFIRMED | `src/server/policy.ts` `holds()` (the `n()` helper, lines ~112–128) | `approve`/`deny` rule with `gt/lt/gte/lte` is skipped, so the request falls to a broader `allow`. |
 | F-02 | Approver sees unsanitized `args.command/path/url` ("exact") | Medium | CONFIRMED (stored and served); display effect SUSPECTED | `src/server/authz.ts:43-46`, `src/server/policy.ts` `parseAuthRequest` | A hostile agent can make the approver read a different command than the one that runs. |
-| F-03 | Per-account sign-in limit lets anyone lock a victim out for 1 h | Low–Medium | CONFIRMED | `src/server/accounts.ts:212-221` | Knowing only an email, 20 wrong guesses block the correct password, even with the right password. |
+| F-03 | Per-account sign-in limit lets anyone lock a victim out for 1 h | Info (accepted tradeoff) | CONFIRMED | `src/server/accounts.ts:212-221` | Knowing only an email, 20 wrong guesses block the correct password, even with the right password. |
 | F-04 | No per-tenant agent cap, quotas are per agent | Medium when sign-up is open, otherwise Low | CONFIRMED (60 agents in 0.8 s); storage growth SUSPECTED | `registerAgent`, `QUOTA` in `repo.ts` | Storage and cost exhaustion. The event log cannot be trimmed. |
 | F-05 | Dependencies: `next` advisories, `shadcn` in runtime deps | Low | CONFIRMED | `package.json` | `npm audit`: 23 vulns (13 high, 10 moderate, 0 critical). Most are in the dev and shadcn chain. |
 | F-06 | No CI, so no automated security regression | Low | CONFIRMED | no `.github/` | The agent-escape suite is not run on PRs. |
@@ -69,7 +69,9 @@ Same treatment for `startsWith/endsWith/contains/pathUnder/emailDomainIn` on a p
 ```
 Also render control or bidi code points visibly in the approval card, for example as `⟦U+202E⟧`, and show the length.
 
-### F-03: account lockout DoS
+### F-03: account lockout DoS (reviewed in Phase 5: left as is)
+
+The tests in `accounts.test.ts` show this is deliberate: 20 guesses an hour per account bounds guessing from many addresses, and a password reset ends the lockout. Relaxing it per address would weaken that bound, so no change was made. Optional later: alert the owner by mail.
 
 **Steps:** 40 wrong passwords for `victim@…`, then the correct one returns `429 rate_limited` (retryAfter 3600).
 
@@ -109,7 +111,7 @@ Also render control or bidi code points visibly in the approval card, for exampl
 | Headers | CSP with nonce and `strict-dynamic`, `frame-ancestors 'none'`, `X-Frame-Options`, nosniff, Referrer, Permissions, COOP, `no-store` on API, no `x-powered-by`, no permissive CORS. | 7 |
 | Exposure | `.env`, `.git`, sources, source maps, debug routes all 404. | 13 |
 | Enumeration | Same answer for known and unknown email on sign-in, register and reset. | 3 |
-| Secrets | Full history of 73 commits: only dummy `postgres://u:p@…` and `tend_sk_XXXX0000` fixtures. `.env*` never committed. No `NEXT_PUBLIC_*`, no `dangerouslySetInnerHTML`, no `eval` or `child_process`. | n/a |
+| Secrets | Full history of 73 commits: only dummy placeholder database URLs and `tend_sk_`-prefixed test fixtures. `.env*` never committed. No `NEXT_PUBLIC_*`, no `dangerouslySetInnerHTML`, no `eval` or `child_process`. | n/a |
 | SSRF | Push endpoint allow-list (FCM, Mozilla, Apple, WNS only). The gateway takes no URL, path or command. | code and gateway tests |
 | Fuzz (20,000 cases) | No crash, no collision in the fingerprint, no loosening from long-value summaries, a deny rule only tightens. | 4 properties |
 
@@ -134,3 +136,20 @@ Their own suite: 507 pass, 9 fail. The failures are all in the `examples/claude-
   - Deny-list `when` rules are weak.
   - No SSO, 2FA or roles yet.
 - **Next:** fix the two Medium findings, add CI regression tests, independent pentest.
+
+## 6. Phase 5: fixes and regression (branch `claude/new-session-pptz6s`)
+
+| Finding | Result |
+|---|---|
+| F-01 | **Fixed.** `holds()` in `policy.ts` returns "unknown" for wrong-typed, missing or empty values. Unknown deny/approve rules apply, unknown allow rules are ignored. Fuzz `typeNum`: 170 → 0 violations. |
+| F-02 | **Fixed.** `parseAuthRequest` refuses `args.command/path/url` with control, zero-width or direction-changing characters (newline and tab allowed) with a 422. |
+| F-03 | **Left as is.** Existing tests show it is a deliberate tradeoff (a password reset ends the lockout). |
+| F-04 | **Fixed.** At most 50 connected agents per workspace (`MAX_AGENTS_PER_WORKSPACE`, 429 `too_many_agents`). A workspace-level event quota is still open. |
+| F-05 | **Fixed.** `next` and `eslint-config-next` 16.4.6. `shadcn` moved to `devDependencies` (`globals.css` imports `shadcn/tailwind.css` at build time, so the build must install dev dependencies, as Vercel does). `npm audit --omit=dev`: 0 vulnerabilities. |
+| F-06 | **Fixed.** `.github/workflows/security.yml` runs lint, types, `npm test`, `npm audit`, `redteam/attacks.ts`, a build and the live suite on every PR. |
+| F-07 | Documented in `docs/security-limitations.md`. |
+| F-08, F-09 | Open: set `TEND_TRUSTED_PROXY` and `TEND_APP_URL` in production. Key expiry is a product decision. |
+
+**Regression tests:** `src/server/policy.test.ts` (F-01 ×2, F-02, F-04). On the old code they fail; on the fix they pass. The live suite (`node redteam/live/run-all.mjs`, 231 held, 0 broken on a production build of the fixed code) and the fuzz properties run in CI.
+
+**Test status:** `npm test` still shows failures in `examples/claude-agent` and the isolated-server port test when the whole suite runs in this container. The example tests pass when run alone. The port test needs `lsof`. One push test is flaky under load and passes alone.

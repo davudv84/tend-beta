@@ -1,0 +1,35 @@
+name: security
+
+# Runs the agent-escape regression suite on every pull request: unit tests, the module-level attacks, and the live hostile-agent harness
+# (redteam/live) against a throwaway local server with an embedded database. Fails if any attack that must be held is not.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  redteam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Lint and types
+        run: npm run lint && npm run typecheck
+      - name: Unit and integration tests
+        run: npm test
+      - name: Dependency audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Module-level attacks
+        run: node --no-warnings redteam/attacks.ts
+      - name: Build
+        run: npm run build
+      - name: Live agent-escape suite
+        run: node redteam/live/run-all.mjs

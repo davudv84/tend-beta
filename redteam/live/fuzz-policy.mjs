@@ -25,7 +25,9 @@ for (let i = 0; i < N; i++) {
     if (strength[eff(rules, a2).effect] < strength[base.effect]) viol.summary.push({ rules, args, k });
   }
   // P4: numeric value expressed as a numeric string (same meaning to a lenient tool) must not loosen
-  for (const k of Object.keys(args)) if (typeof args[k] === "number") {
+  const textOps = ["startsWith", "endsWith", "contains", "pathUnder", "emailDomainIn"];
+  // only keys whose conditions are numeric/equality: for text operators a string IS the right type
+  for (const k of Object.keys(args)) if (typeof args[k] === "number" && !rules.some((r) => r.when?.[k] && Object.keys(r.when[k]).some((o) => textOps.includes(o)))) {
     const a2 = { ...args, [k]: String(args[k]) };
     if (strength[eff(rules, a2).effect] < strength[base.effect]) viol.typeNum.push({ rules, args, k, base: base.effect, got: eff(rules, a2).effect });
   }
