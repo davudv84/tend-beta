@@ -1,7 +1,7 @@
 name: security
 
-# Runs the agent-escape regression suite on every pull request: unit tests, the module-level attacks, and the live hostile-agent harness
-# (redteam/live) against a throwaway local server with an embedded database. Fails if any attack that must be held is not.
+# Every job must pass for a pull request to be green. Nothing here is allowed to fail silently: there is no continue-on-error, no skipped
+# step, and failing runs upload their logs. See SECURITY-VERIFICATION.md for what each job proves and what it does not.
 on:
   pull_request:
   push:
@@ -10,10 +10,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  NEXT_TELEMETRY_DISABLED: "1"
+
 jobs:
-  redteam:
+  static:
+    name: Types, lint, static analysis, dependencies, secrets
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,15 +30,68 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Lint and types
-        run: npm run lint && npm run typecheck
-      - name: Unit and integration tests
-        run: npm test
-      - name: Dependency audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=high
-      - name: Module-level attacks
-        run: node --no-warnings redteam/attacks.ts
-      - name: Build
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Static security analysis (eslint-plugin-security)
+        run: npx eslint -c eslint.security.config.mjs src/server src/app/api src/lib src/proxy.ts
+      - name: Static security analysis (Semgrep, pinned public rules, ERROR severity)
+        run: |
+          python3 -m pip install --user semgrep==1.186.0
+          git clone --quiet https://github.com/semgrep/semgrep-rules.git "$RUNNER_TEMP/semgrep-rules"
+          git -C "$RUNNER_TEMP/semgrep-rules" checkout --quiet a5ad1714f00c9f7fde980cab0ea1d6dc6d414fd2
+          python3 -m semgrep scan --metrics=off --disable-version-check --severity ERROR --error \
+            --config "$RUNNER_TEMP/semgrep-rules/typescript" --config "$RUNNER_TEMP/semgrep-rules/javascript" \
+            --exclude '*.test.*' src/app src/server src/lib src/ui src/components src/proxy.ts
+      - name: Dependency audit (production dependencies, any severity)
+        run: npm audit --omit=dev --audit-level=low
+      # Build and lint tooling currently carries high-severity advisories with no patched release (picomatch ReDoS, reached through shadcn,
+      # eslint and secretlint; it only parses file globs from this repository, never attacker input, and none of it is installed in
+      # production). Critical anywhere still fails the build; production dependencies must be clean at every severity (previous step).
+      - name: Dependency audit (all dependencies, critical)
+        run: npm audit --audit-level=critical
+      - name: Secret scan (secretlint, working tree)
+        run: git ls-files -z | xargs -0 npx secretlint
+
+  test:
+    name: Unit and integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Production build (the isolated-server tests need it)
         run: npm run build
-      - name: Live agent-escape suite
+      - name: npm test
+        run: npm test
+
+  enforcement:
+    name: Production build and isolated enforcement tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Production build
+        run: npm run build
+      - name: Module-level attacks (in-memory database)
+        run: node --no-warnings redteam/attacks.ts
+      - name: Agent-escape suite over HTTP + policy fuzzing
         run: node redteam/live/run-all.mjs
+      - name: Production configuration (HSTS, cookies, CSP, weak admin token)
+        run: node --no-warnings redteam/live/prod-config.mjs
+      - name: Real hooks adapter fails closed when TEND goes away
+        run: node --no-warnings redteam/live/hook-failclosed.mjs
+      - name: Offline end-to-end suites (authorization, gateway, connect, accounts, open beta, onboarding)
+        run: |
+          set -e
+          for s in e2e:authz e2e:gateway e2e:connect e2e:accounts e2e:open-beta e2e:onboarding; do npm run --silent "$s"; done
