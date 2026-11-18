@@ -212,3 +212,43 @@ test("a key file that others can read, or a link to one, is not used", () => {
   symlinkSync(real, key);
   assert.match(run(), /not set up/, "a symlink: refused");
 });
+
+test("managed status trusts nothing a normal user could have changed: a folder or file that is not root-owned and write-protected is reported", async () => {
+  const { managedStatus } = await import("./tend-hooks.mjs");
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const none = managedStatus("claude-code", path.join(tmpdir(), "no-such-managed-dir"));
+  assert.equal(none.present, false);
+  assert.match(none.problems.join(" "), /no managed enforcement/);
+  // a folder anyone can write is not tamper-proof, whatever it contains
+  const dir = mkdtempSync(path.join(tmpdir(), "tend-managed-"));
+  mkdirSync(path.join(dir, "tend"));
+  writeFileSync(path.join(dir, "managed-settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: 'node "/x/tend-hooks.mjs" hook claude-code pre' }] }] }, allowManagedHooksOnly: true }));
+  const s = managedStatus("claude-code", dir);
+  assert.equal(s.tendHooks, true);
+  assert.equal(s.managedOnly, true);
+  if (typeof process.getuid === "function" && process.getuid() !== 0) {
+    assert.equal(s.folderRootOnly, false, "a user-owned folder is not root-owned");
+    assert.match(s.problems.join(" "), /writable by someone other than root/);
+  }
+  assert.match(s.problems.join(" "), /script is missing/);
+  assert.match(s.problems.join(" "), /key file is missing or not root-owned/);
+  writeFileSync(path.join(dir, "managed-settings.json"), JSON.stringify({ hooks: {}, disableAllHooks: true }));
+  assert.match(managedStatus("claude-code", dir).problems.join(" "), /disableAllHooks: true, so hooks are OFF/);
+  writeFileSync(path.join(dir, "managed-settings.json"), "{ not json");
+  assert.match(managedStatus("claude-code", dir).problems.join(" "), /not valid JSON/);
+});
+
+test("a managed install is refused unless run as an administrator, and cannot be combined with --project", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  if (typeof process.getuid !== "function" || process.getuid() === 0) return; // as root the refusal path cannot be exercised; scripts/claude-managed-e2e.mjs covers root
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), "tend-managed-")), "m");
+  const r = spawnSync(process.execPath, [path.join(import.meta.dirname, "tend-hooks.mjs"), "install", "claude-code", "--managed", "--managed-dir", dir, "--url", "http://127.0.0.1:9", "--yes"], { env: { ...process.env, TEND_AGENT_KEY: "tend_sk_" + "a".repeat(32) }, encoding: "utf8" });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /administrator/);
+  assert.equal(existsSync(dir), false, "nothing was written");
+});
