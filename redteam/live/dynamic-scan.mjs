@@ -46,6 +46,15 @@ try {
     }
   }
   record("DS-1", "dast", `${routes.length} API routes × 3 identities × verbs × hostile bodies: no 5xx, no stack traces/paths, TRACE off, no unexpected 200 for non-operators`, bad.length ? "BROKEN" : "HELD", bad.slice(0, 8).join("\n"));
+  // private data must not reach an anonymous visitor through server-rendered pages either
+  const secretName = `PrivateAgent-${randomBytes(6).toString("hex")}`;
+  await raw("POST", "/api/v1/agents", { cookie, body: JSON.stringify({ name: secretName, model: "m", provider: "Custom" }), headers: { "content-type": "application/json" } });
+  const leaks = [];
+  for (const p of [...pages, "/api/v1/state", "/api/v1/events?since=0", "/api/v1/notifications", "/api/v1/central-policies"]) {
+    const r = await raw("GET", p, {});
+    if (r.text.includes(secretName) || r.text.includes(ids.id) || /tend_sk_[A-Za-z0-9_-]{20,}/.test(r.text)) leaks.push(`${p} ${r.status}`);
+  }
+  record("DS-6", "dast", `anonymous visitors get no agent name, id or key from any of ${pages.length + 4} pages and data routes`, leaks.length ? "BROKEN" : "HELD", leaks.join(", "));
   const pageBad = [];
   for (const p of pages) {
     const r = await raw("GET", p, { cookie });

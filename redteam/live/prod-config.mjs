@@ -33,5 +33,5 @@ s = await startIsolatedServer({ root, env: { TEND_ADMIN_TOKEN: "password1234pass
 try {
   const r = await fetch(s.url + "/api/operator/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "password1234password1234password" }) });
   H(r.status === 403, "PC-8", "a weak TEND_ADMIN_TOKEN (low variety / repeated) is refused in production: nobody can sign in", `sign-in → ${r.status}`);
-  const st = await fetch(s.url + "/api/v1/state"); record("PC-9", "production", "with NO usable admin token the instance defaults to PUBLIC read-only (TEND_PUBLIC unset): visitors can read the dashboard", st.status === 200 ? "INFO(unsafe default if the token is missing/weak: set TEND_PUBLIC=0)" : "HELD", `state → ${st.status}`);
+  const st = await fetch(s.url + "/api/v1/state"); H(st.status === 401, "PC-9", "with NO usable admin token and TEND_PUBLIC unset a production build stays LOCKED (never public by default)", `state → ${st.status}`);
 } finally { await s.stop(); }

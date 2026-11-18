@@ -13,7 +13,7 @@ const mkPolicy = () => Array.from({ length: 1 + Math.floor(rnd() * 5) }, mkRule)
 const mkArgs = () => Object.fromEntries(keys.filter(() => rnd() < 0.7).map((k) => [k, rnd() < 0.15 ? [scalars(), scalars()] : scalars()]));
 const eff = (rules, args) => evaluate(agent, rules, { tool: "t", action: "a", resource: null, detail: null, args });
 const N = Number(process.env.N ?? 20000);
-const viol = { summary: [], typeNum: [], crash: [], fp: [], monoRule: [], list: [], hidden: [] };
+const viol = { summary: [], typeNum: [], crash: [], fp: [], monoRule: [], list: [], hidden: [], twin: [] };
 const seen = new Map();
 for (let i = 0; i < N; i++) {
   const rules = mkPolicy(), args = mkArgs();
@@ -41,6 +41,11 @@ for (let i = 0; i < N; i++) {
   for (const k of Object.keys(args)) if (typeof args[k] === "string") for (const ch of ["\u200b", "\u0000", "\u202e"]) {
     const v = args[k], mid = Math.floor(v.length / 2);
     for (const w of [v + ch, ch + v, v.slice(0, mid) + ch + v.slice(mid)]) if (strength[eff(rules, { ...args, [k]: w }).effect] < strength[base.effect]) viol.hidden.push({ k, w: JSON.stringify(w).slice(0, 30), base: base.effect, got: eff(rules, { ...args, [k]: w }).effect, rules: JSON.stringify(rules).slice(0, 500), args: JSON.stringify(args).slice(0, 200) });
+  }
+  // P9: a second spelling of an argument name (case, trailing space, hidden character) next to the real one never loosens the decision
+  for (const k of Object.keys(args)) for (const tw of [k.toUpperCase(), k + " ", k + "\u200b"]) if (!(tw in args)) {
+    const w = { ...args, [tw]: scalars() };
+    if (strength[eff(rules, w).effect] < strength[base.effect]) viol.twin.push({ k: JSON.stringify(tw), base: base.effect, got: eff(rules, w).effect, rules: JSON.stringify(rules).slice(0, 300) });
   }
   // P5: fingerprint injectivity on random requests
   const r = { tool: "t", action: "a", resource: rnd() < 0.5 ? "r" + Math.floor(rnd() * 3) : null, detail: rnd() < 0.5 ? "d" + Math.floor(rnd() * 3) : null, args };

@@ -18,7 +18,7 @@ import type { Agent } from "../lib/types";
 import { hashKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError } from "./http.ts";
-import { evaluateEffective, fingerprint, ID, INVISIBLE, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
+import { evaluateEffective, fingerprint, ID, INVISIBLE, mixesAlphabets, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
 import { agentBudget, agentRow, centralOf, insertEvent, keyRevoked, toAgent } from "./repo.ts";
 
 export const TTL = { request: 10 * 60_000, approval: 5 * 60_000, token: 60_000 };
@@ -57,9 +57,13 @@ const argsTextOf = (r: AuthRequest, primary?: string) => {
   const rows = Object.entries(r.args).filter(([k]) => k !== primary);
   if (!rows.length) return {};
   const line = ([k, v]: [string, unknown]) => {
+    // A value an adapter replaced by its hash and length (MCP proxy, long values): the person cannot read it, and is told so rather than shown a hash as if it were content.
+    if (v && typeof v === "object" && !Array.isArray(v) && typeof (v as { sha256?: unknown }).sha256 === "string" && Object.keys(v).every((x) => x === "sha256" || x === "length"))
+      return `${visible(k)}: ⚠ NOT SHOWN IN FULL: ${(v as { length?: unknown }).length ?? "many"} characters, fingerprint ${String((v as { sha256: string }).sha256).slice(0, 12)}… The approval covers exactly this content.`;
     const raw = typeof v === "string" ? v : JSON.stringify(v) ?? String(v);
     const shown = visible(raw);
-    return `${visible(k)}: ${shown.length > VISIBLE_LIMIT.value ? `${shown.slice(0, VISIBLE_LIMIT.value)}… (${raw.length} characters in all)` : shown}`;
+    const warn = mixesAlphabets(raw) || mixesAlphabets(k) ? " ⚠ mixes alphabets in one word (look-alike letters)" : "";
+    return `${visible(k)}: ${shown.length > VISIBLE_LIMIT.value ? `${shown.slice(0, VISIBLE_LIMIT.value)}… (${raw.length} characters in all)` : shown}${warn}`;
   };
   let text = rows.slice(0, VISIBLE_LIMIT.entries).map(line).join("\n");
   if (rows.length > VISIBLE_LIMIT.entries) text += `\n… and ${rows.length - VISIBLE_LIMIT.entries} more arguments`;

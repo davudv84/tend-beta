@@ -22,6 +22,11 @@ export const INVISIBLE = new RegExp(`[${[
 ].map(([a, b]) => `${String.fromCodePoint(a)}-${String.fromCodePoint(b)}`).join("")}]`, "u");
 // Like INVISIBLE, but newline and tab stay: a multi-line command is legitimate and is shown as written.
 const INVISIBLE_ARG = { test: (v: string) => INVISIBLE.test(v.replace(/[\n\t]/g, "")) };
+/**
+ * Whether one word mixes Latin letters with Cyrillic or Greek ones ("pаyment" with a Cyrillic "а"): look-alike letters that read as a different word
+ * to a person and as the same word to nobody else. Whole words in another alphabet are fine; only a word that mixes them is flagged.
+ */
+export const mixesAlphabets = (s: string) => (s.match(/\p{L}[\p{L}\p{M}]*/gu) ?? []).some((w) => /\p{Script=Latin}/u.test(w) && /[\p{Script=Cyrillic}\p{Script=Greek}]/u.test(w));
 const MAX_RULES = 50;
 
 export type Effect = "allow" | "approve" | "deny";
@@ -98,10 +103,22 @@ function insidePath(path: string, root: string) {
 type Match = boolean | "unknown";
 const UNKNOWN = Symbol("unknown");
 const summarized = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v) && typeof (v as { sha256?: unknown }).sha256 === "string";
-/** The value at a dot path in the request's arguments, undefined, or UNKNOWN when the path runs into a summary. */
+/** A key as a lenient consumer might read it: case, width, whitespace and invisible characters folded away ("Amount", "amount ", "ａmount", "amount\u200b"). */
+const foldKey = (k: string) => k.normalize("NFKC").toLowerCase().replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/\s+/g, "");
+/**
+ * The value at a dot path in the request's arguments, undefined, or UNKNOWN when the path runs into a summary or is ambiguous: an object that
+ * also carries a key that folds to the same name ({ amount: 1, Amount: 5000 }, or a literal "a.b" next to { a: { b } }) is read differently by
+ * different consumers, so a rule on it can neither be said to match nor not to (decidingRule then takes the stricter reading).
+ */
 const at = (args: Record<string, unknown> | null, path: string) => {
-  const v = path.split(".").reduce<unknown>((v, k) => (v === UNKNOWN || summarized(v) ? UNKNOWN
-    : v && typeof v === "object" && !Array.isArray(v) && Object.hasOwn(v, k) ? (v as Record<string, unknown>)[k] : undefined), args);
+  if (args && path.includes(".") && Object.hasOwn(args, path)) return UNKNOWN;
+  const v = path.split(".").reduce<unknown>((v, k) => {
+    if (v === UNKNOWN || summarized(v)) return UNKNOWN;
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+    const o = v as Record<string, unknown>, want = foldKey(k);
+    if (Object.keys(o).some((own) => own !== k && foldKey(own) === want)) return UNKNOWN;
+    return Object.hasOwn(o, k) ? o[k] : undefined;
+  }, args);
   return summarized(v) ? UNKNOWN : v;
 };
 /** Compared as text, case-insensitive: 1001 and "1001" are one value, so a type change cannot step around a rule. */
@@ -254,6 +271,7 @@ export function parseAuthRequest(input: unknown): { ok: true; request: AuthReque
   let detail: string | null = null;
   if (o.detail !== undefined && o.detail !== null) {
     if (typeof o.detail !== "string" || o.detail.length === 0 || o.detail.length > DETAIL_MAX || INVISIBLE.test(o.detail)) errors.push(`detail must be 1–${DETAIL_MAX} printable characters`);
+    else if (mixesAlphabets(o.detail)) errors.push("detail must not mix look-alike letters from different alphabets in one word (for example Latin with Cyrillic)");
     else detail = o.detail;
   }
   let args: Record<string, unknown> | null = null;

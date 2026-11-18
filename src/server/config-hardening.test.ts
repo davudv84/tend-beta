@@ -21,3 +21,13 @@ test("a weak or missing admin token is refused in production, so operator sign-i
   withEnv({ NODE_ENV: "production", TEND_ADMIN: undefined, TEND_ADMIN_TOKEN: "short" }, () => assert.equal(config.adminToken, ""));
   withEnv({ NODE_ENV: "production", TEND_ADMIN: undefined, TEND_ADMIN_TOKEN: "Zk3qP9vLx2mW8tYh5NcRb7JdFg4sAe1UoQ6iXy0TpVn" }, () => assert.equal(config.adminToken.length > 0, true));
 });
+
+test("a production build is never public by default, even with no usable admin token; development keeps its read-only sample view; TEND_PUBLIC=1 is explicit", () => {
+  const prod = { NODE_ENV: "production", TEND_ADMIN: undefined } as const;
+  withEnv({ ...prod, TEND_PUBLIC: undefined, TEND_ADMIN_TOKEN: undefined }, () => assert.equal(config.public, false, "no token, unset: locked"));
+  withEnv({ ...prod, TEND_PUBLIC: undefined, TEND_ADMIN_TOKEN: "weakweakweakweakweakweakweakweak" }, () => assert.equal(config.public, false, "weak token, unset: locked"));
+  withEnv({ ...prod, TEND_PUBLIC: "1", TEND_ADMIN_TOKEN: undefined }, () => assert.equal(config.public, true, "explicit"));
+  withEnv({ ...prod, TEND_PUBLIC: "0", TEND_ADMIN_TOKEN: undefined }, () => assert.equal(config.public, false));
+  withEnv({ NODE_ENV: "development", TEND_ADMIN: undefined, TEND_PUBLIC: undefined, TEND_ADMIN_TOKEN: undefined }, () => assert.equal(config.public, true));
+  withEnv({ NODE_ENV: "production", TEND_ADMIN: "0", TEND_PUBLIC: "1" }, () => assert.equal(config.public, false, "admin off never means public"));
+});

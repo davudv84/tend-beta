@@ -89,7 +89,10 @@ export const config = {
   get public() {
     if (this.adminDisabled) return false;
     const v = process.env.TEND_PUBLIC;
-    return v ? v === "1" || v === "true" : !this.adminToken;
+    if (v) return v === "1" || v === "true";
+    // Unset: development and tests keep the old behaviour (no admin token → a read-only look at the sample data). A production build never opens
+    // the dashboard to visitors by default: a missing or weak admin token then leaves it locked, not public. Making it public is an explicit TEND_PUBLIC=1.
+    return process.env.NODE_ENV === "production" ? false : !this.adminToken;
   },
   /** Run the server-side demo simulation for demo agents. */
   get demo() {

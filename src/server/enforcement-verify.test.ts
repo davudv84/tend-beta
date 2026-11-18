@@ -283,3 +283,40 @@ test("EV-17 SSRF: the only outbound URL an operator can make the server call (a 
   for (const u of ok) assert.equal(pushEndpointOk(u), true, u);
   for (const u of no) assert.equal(pushEndpointOk(u), false, String(u));
 });
+
+test("EV-18 an argument present under two spellings (case, width, whitespace, hidden characters, dotted key) is unknown, so a rule cannot be read around", async () => {
+  const { evaluate } = await import("./policy.ts");
+  const agent = { status: "active" as const, integrationEnabled: true, permissions: [] as string[] };
+  const eff = (rules: unknown, args: Record<string, unknown>) => evaluate(agent, rules, { tool: "r", action: "x", resource: null, detail: null, args }).effect;
+  const money = [{ tool: "r", action: "x", effect: "allow" }, { tool: "r", action: "x", effect: "approve", when: { amount: { gt: 50 } } }];
+  assert.equal(eff(money, { amount: 5 }), "allow");
+  assert.equal(eff(money, { amount: 5000 }), "approve");
+  for (const twin of ["Amount", "AMOUNT", "amount ", " amount", "amount​", "am​ount", "ａmount", "amo unt"])
+    assert.equal(eff(money, { amount: 1, [twin]: 5000 }), "approve", `amount: 1 next to ${JSON.stringify(twin)}: 5000`);
+  const nested = [{ tool: "r", action: "x", effect: "allow" }, { tool: "r", action: "x", effect: "approve", when: { "order.total": { gt: 50 } } }];
+  assert.equal(eff(nested, { order: { total: 5 } }), "allow");
+  assert.equal(eff(nested, { order: { total: 5000 } }), "approve");
+  assert.equal(eff(nested, { order: { total: 5, Total: 5000 } }), "approve", "twin inside a nested object");
+  assert.equal(eff(nested, { order: { total: 5 }, "order.total": 5000 }), "approve", "a literal dotted key next to the nested value");
+});
+
+test("EV-19 look-alike letters: refused in the agent's description, flagged in the arguments; unreadable (hashed) arguments are labelled as such", async () => {
+  const { parseAuthRequest, mixesAlphabets } = await import("./policy.ts");
+  const ok = (detail: string) => parseAuthRequest({ tool: "t", action: "a", detail }).ok;
+  assert.equal(mixesAlphabets("pаyment"), true, "Cyrillic а inside a Latin word");
+  assert.equal(mixesAlphabets("οk"), true, "Greek omicron inside a Latin word");
+  assert.equal(ok("payаment to Supplier"), false);
+  assert.equal(ok("EUR 5 to Supplier"), true);
+  assert.equal(ok("Zahlung 5 EUR an Müller"), true, "accents are fine");
+  assert.equal(ok("Платёж 5 EUR to Supplier"), true, "a whole Cyrillic word next to Latin words is fine");
+  assert.equal(ok("Ελληνικά and English"), true);
+  const db = await memoryDb();
+  const reg = await registerAgent(db, { name: "Look", model: "m", provider: "Custom" });
+  await setPolicy(db, reg.agent.id, [{ tool: "wire", action: "send", effect: "approve" }], "enforce");
+  const a = (await agentByKey(db, reg.apiKey))!;
+  const { view } = await requestAuthorization(db, a, { tool: "wire", action: "send", args: { to: "suppаier", body: { sha256: "ab".repeat(32), length: 5000 }, note: "fine" } }, null);
+  const text = ((await db.all<{ data: string }>("SELECT data FROM events WHERE type = 'authorization.requested'")).map((r) => JSON.parse(r.data)).find((d) => d.authorizationId === view.id)!).argsText as string;
+  assert.match(text, /to: suppаier ⚠ mixes alphabets/);
+  assert.match(text, /body: ⚠ NOT SHOWN IN FULL: 5000 characters, fingerprint abababababab/);
+  assert.match(text, /note: fine$/m);
+});
