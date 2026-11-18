@@ -59,8 +59,10 @@ Read this before you put anything real behind TEND. This beta is for controlled 
   one element must not get around a rule).
 - **Agent keys can expire** (optional): `keyExpiresInDays` when registering or rotating a key, and `TEND_KEY_MAX_AGE_DAYS` as a server-wide cap. An expired key is
   refused like a revoked one, including for approvals it had in flight. Default: no expiry, as before.
-- **Claude Code hooks can be switched off by the repository you open** (`disableAllHooks` in its own settings; tested with real Claude Code). Use
-  Claude Code's managed settings if you need to prevent that, and treat a silent agent as a signal.
+- **Claude Code hooks installed per user or project can be switched off by the repository you open** (`disableAllHooks` in its own settings,
+  or `--setting-sources user`; tested with real Claude Code). `install claude-code --managed` (administrator rights) puts them in Claude Code's
+  organization settings, which a repository and the flags tried here cannot override (tested, 15 checks). `--bare` is untested and treated as a
+  bypass. TEND cannot see an agent whose hooks are off: it is silent, not alarmed.
 
 ## If you find a problem
 

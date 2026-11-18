@@ -2098,7 +2098,7 @@ export const de: Dict = {
       outsideSub: "Das kann TEND weder sehen noch stoppen.",
       outsideItems: [
         "Alles, was nicht durch die Hooks läuft: andere Apps und Agenten, Befehle, die Sie selbst eingeben, und Arbeit, bevor TEND verbunden war.",
-        "Werden die Hooks entfernt oder abgeschaltet, sieht TEND nichts. Die eigene .claude/settings.json eines Repositorys kann das für sich selbst mit disableAllHooks tun (getestet: der Befehl lief, TEND erfuhr nichts). Öffnen Sie Repositorys, denen Sie nicht vertrauen, mit Vorsicht. Der Modus zum Umgehen der Berechtigungen wurde mit TEND nicht getestet.",
+        "Werden die Hooks entfernt oder abgeschaltet, sieht TEND nichts. Die eigene .claude/settings.json eines Repositorys kann das für sich selbst mit disableAllHooks tun (getestet: der Befehl lief, TEND erfuhr nichts). Öffnen Sie Repositorys, denen Sie nicht vertrauen, mit Vorsicht. Werden die Hooks als verwaltete Einstellungen installiert (Administratorrechte, siehe Entwicklerdokumentation), ist das ausgeschlossen; getestet mit echtem Claude Code. Der Modus --bare wurde nicht getestet. Der Modus zum Umgehen der Berechtigungen überspringt die Hooks nicht (getestet).",
         "Regeln über Befehlstext prüfen den Text, nicht die Wirkung. Ein Skript, ein Alias oder eine Variable kann dasselbe tun, ohne auf das Muster zu passen.",
         "Ist ein Aufruf erlaubt, wird nicht Schritt für Schritt geprüft, was er startet (ein Skript, eine Installation, einen Build).",
         "Wie ein beobachteter Aufruf ausging, meldet der Agent selbst. Stürzt er ab oder geht die Meldung verloren, hat TEND nur die Anfrage.",

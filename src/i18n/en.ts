@@ -2111,7 +2111,7 @@ export const en = {
       outsideSub: "TEND cannot see or stop these.",
       outsideItems: [
         "Anything that does not go through the hooks: other apps and agents, commands you type yourself, and work done before TEND was connected.",
-        "If the hooks are removed or switched off, TEND sees nothing. A repository's own .claude/settings.json can do that for itself with disableAllHooks (tested: the command ran and TEND heard nothing), so open repositories you don't trust with care. Bypass-permissions mode has not been tested with TEND.",
+        "If the hooks are removed or switched off, TEND sees nothing. A repository's own .claude/settings.json can do that for itself with disableAllHooks (tested: the command ran and TEND heard nothing), so open repositories you don't trust with care. Installing the hooks as managed settings (administrator rights, see the developer docs) closes that and was tested against real Claude Code; the --bare mode was not tested. Bypass-permissions mode does not skip the hooks (tested).",
         "Rules about command text match the text, not what it does. A script, an alias or a variable can do the same thing without matching the pattern.",
         "Once a call is allowed, what it starts (a script, an install, a build) is not checked step by step.",
         "How a monitored call ended is the agent’s own report. If the agent crashes or the report is lost, TEND only has the request.",

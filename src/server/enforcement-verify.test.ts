@@ -338,3 +338,17 @@ test("EV-20 a workspace has one daily ceiling on what all its agents write, on t
     assert.equal(await code(ingestEvents(db, other, [ev])), "OK", "another workspace is unaffected");
   } finally { QUOTA.workspaceEventsPerDay = saved; }
 });
+
+test("EV-21 a long or multi-line exact command comes with its true size, so a tail below the fold is not mistaken for a short command", async () => {
+  const db = await memoryDb();
+  const reg = await registerAgent(db, { name: "Long", model: "m", provider: "Custom" });
+  await setPolicy(db, reg.agent.id, [{ tool: "shell", action: "Bash", effect: "approve" }], "enforce");
+  const a = (await agentByKey(db, reg.apiKey))!;
+  const argsOf = async (command: string) => { const { view } = await requestAuthorization(db, a, { tool: "shell", action: "Bash", args: { command } }, null); return ((await db.all<{ data: string }>("SELECT data FROM events WHERE type = 'authorization.requested'")).map((r) => JSON.parse(r.data)).find((d) => d.authorizationId === view.id)!); };
+  const long = `ls\n${"\n".repeat(30)}rm -rf ~`;
+  const d = await argsOf(long);
+  assert.equal(d.exact, long, "the exact text is shown in full");
+  assert.match(d.argsText, /command \(the exact text above\): 32 lines, \d+ characters in all/);
+  const short = await argsOf("ls -la");
+  assert.equal(short.argsText, undefined, "an ordinary one-line command adds nothing");
+});

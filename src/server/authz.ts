@@ -55,7 +55,10 @@ const visible = (s: string) => s.replace(/\r?\n/g, " ↵ ").replace(/\t/g, " ⇥
 const argsTextOf = (r: AuthRequest, primary?: string) => {
   if (!r.args) return {};
   const rows = Object.entries(r.args).filter(([k]) => k !== primary);
-  if (!rows.length) return {};
+  // The exact text box scrolls; say how long what is in it really is, so a command with its tail far below the fold is not mistaken for a short one.
+  const exact = primary ? (r.args[primary] as string) : "";
+  const size = exact.split("\n").length > 1 || exact.length > 300 ? [`${primary} (the exact text above): ${exact.split("\n").length} lines, ${exact.length} characters in all`] : [];
+  if (!rows.length && !size.length) return {};
   const line = ([k, v]: [string, unknown]) => {
     // A value an adapter replaced by its hash and length (MCP proxy, long values): the person cannot read it, and is told so rather than shown a hash as if it were content.
     if (v && typeof v === "object" && !Array.isArray(v) && typeof (v as { sha256?: unknown }).sha256 === "string" && Object.keys(v).every((x) => x === "sha256" || x === "length"))
@@ -65,7 +68,7 @@ const argsTextOf = (r: AuthRequest, primary?: string) => {
     const warn = mixesAlphabets(raw) || mixesAlphabets(k) ? " ⚠ mixes alphabets in one word (look-alike letters)" : "";
     return `${visible(k)}: ${shown.length > VISIBLE_LIMIT.value ? `${shown.slice(0, VISIBLE_LIMIT.value)}… (${raw.length} characters in all)` : shown}${warn}`;
   };
-  let text = rows.slice(0, VISIBLE_LIMIT.entries).map(line).join("\n");
+  let text = [...size, ...rows.slice(0, VISIBLE_LIMIT.entries).map(line)].join("\n");
   if (rows.length > VISIBLE_LIMIT.entries) text += `\n… and ${rows.length - VISIBLE_LIMIT.entries} more arguments`;
   return { argsText: text.length > VISIBLE_LIMIT.total ? `${text.slice(0, VISIBLE_LIMIT.total)}…` : text };
 };
