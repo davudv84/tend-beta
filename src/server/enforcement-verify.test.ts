@@ -377,3 +377,15 @@ test("EV-22 a viewer's event feed is read from the database per workspace: anoth
   const { eventsAfter } = await import("./repo.ts");
   assert.ok((await eventsAfter(db, 0, 1000, [b.id])).every((e) => e.agentId === b.id));
 });
+
+test("EV-23 a decision is final: a rejected request cannot be approved later, an approved one cannot be rejected into a state that spends, and the authorization follows the review", async () => {
+  for (const [first, second] of [["rejected", "approved"], ["approved", "rejected"]] as const) {
+    const { db, agent } = await world();
+    const { view } = await requestAuthorization(db, agent, PAY, null);
+    await decide(db, view.id, first);
+    assert.equal(await code(decide(db, view.id, second)), "already_decided", `${first} then ${second}`);
+    assert.equal((await db.get<{ status: string }>("SELECT status FROM reviews WHERE id = ?", view.id))!.status, first);
+    assert.equal(await status(db, view.id), first, "the authorization still says what the first decision said");
+    if (first === "rejected") assert.notEqual(await code(spendApproved(db, agent, view.id, PAY)), "OK");
+  }
+});

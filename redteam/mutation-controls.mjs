@@ -18,13 +18,17 @@ const unit = [
   { id: "M-04", why: "traversal paths are 'not under' instead of unknown", file: "src/server/policy.ts", find: "  if (c.pathUnder && values.some((v) => typeof v === \"string\" && (!v.startsWith(\"/\")", to: "  if (false as boolean && values.some((v) => typeof v === \"string\" && (!v.startsWith(\"/\")", tests: [U] },
   { id: "M-05", why: "a missing argument is 'no match' for deny/approve rules", file: "src/server/policy.ts", find: '  if (value === undefined) return onlyExists ? c.exists === false : "unknown";', to: "  if (value === undefined) return onlyExists ? c.exists === false : false;", tests: [U, P] },
   { id: "M-06", why: "two spellings of an argument name are no longer ambiguous", file: "src/server/policy.ts", find: "    if (Object.keys(o).some((own) => own !== k && foldKey(own) === want)) return UNKNOWN;", to: "", tests: [U] },
-  { id: "M-07", why: "spend no longer checks the approval's expiry", file: "src/server/authz.ts", find: "WHERE id = ? AND agent_id = ? AND status = 'approved' AND approved_until > ? AND fingerprint = ?\", now, id, agent.id, now, fp)", to: "WHERE id = ? AND agent_id = ? AND status = 'approved' AND fingerprint = ?\", now, id, agent.id, fp)", tests: [U] },
+  { id: "M-07", why: "an approval nobody used in time can still be spent (both the sweep and the spend check on its expiry removed; either alone is covered by the other)", file: "src/server/authz.ts", edits: [
+    { find: "WHERE id = ? AND agent_id = ? AND status = 'approved' AND approved_until > ? AND fingerprint = ?\", now, id, agent.id, now, fp)", to: "WHERE id = ? AND agent_id = ? AND status = 'approved' AND fingerprint = ?\", now, id, agent.id, fp)" },
+    { find: "OR (status = 'approved' AND approved_until <= ?) RETURNING id, agent_id\", now, now);", to: "OR (status = 'approved' AND FALSE AND approved_until <= ?) RETURNING id, agent_id\", now, now);" }], tests: [U] },
   { id: "M-08", why: "spend no longer compares the request with what was approved", file: "src/server/authz.ts", find: "WHERE id = ? AND agent_id = ? AND status = 'approved' AND approved_until > ? AND fingerprint = ?\", now, id, agent.id, now, fp)", to: "WHERE id = ? AND agent_id = ? AND status = 'approved' AND approved_until > ?\", now, id, agent.id, now)", tests: [U] },
   { id: "M-09", why: "a revoked or expired key no longer stops an approval already in flight", file: "src/server/authz.ts", find: '  if (keyRevoked(a, agent)) return { effect: "deny" as const, reason: "key_revoked" };', to: "", tests: [U] },
   { id: "M-10", why: "the agent cap per workspace is removed", file: "src/server/repo.ts", find: "if (workspace !== DEFAULT_WORKSPACE && (await q.get", to: "if (false as boolean && (await q.get", tests: [U] },
   { id: "M-11", why: "the event feed reads every workspace's rows again", file: "src/server/sync.ts", find: "await eventsAfter(db, seq, 500, [...ids])", to: "await eventsAfter(db, seq, 500)", tests: [U] },
   { id: "M-12", why: "an expired key still authenticates", file: "src/server/repo.ts", find: "  if (!r || keyExpired(r)) return undefined;", to: "  if (!r) return undefined;", tests: [U] },
-  { id: "M-13", why: "a pending request can be cancelled/approved after the agent cancelled (status guard dropped in decide)", file: "src/server/repo.ts", find: "WHERE id = ? AND status = 'pending' AND expires_at > ?\",\n        status, ms(now)", to: "WHERE id = ? AND expires_at > ?\",\n        status, ms(now)", tests: [U] },
+  { id: "M-13", why: "a decided review can be decided again (the status check and the SQL guard in decide both removed; either alone is covered by the other)", file: "src/server/repo.ts", edits: [
+    { find: "if (r.status !== \"pending\") throw new HttpError(409, \"already_decided\"", to: "if (false as boolean) throw new HttpError(409, \"already_decided\"" },
+    { find: "WHERE id = ? AND status = 'pending' AND expires_at > ?\",\n        status, ms(now)", to: "WHERE id = ? AND expires_at > ?\",\n        status, ms(now)" }], tests: [U] },
   { id: "M-14", why: "agent-written free text keeps invisible characters", file: "src/lib/clean.ts", find: "[0x00, 0x08], [0x0b, 0x0c], [0x0e, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x34f, 0x34f], [0x61c, 0x61c], [0x115f, 0x1160], [0x180e, 0x180e],\n  [0x200b, 0x200b], [0x200e, 0x200f]", to: "[0x00, 0x08], [0x0b, 0x0c], [0x0e, 0x1f], [0x7f, 0x9f], [0x200e, 0x200f]", tests: ["src/server/hardening.test.ts"] },
   { id: "M-15", why: "the production default becomes public again", file: "src/server/config.ts", find: '    return process.env.NODE_ENV === "production" ? false : !this.adminToken;', to: "    return !this.adminToken;", tests: ["src/server/config-hardening.test.ts"] },
 ];
@@ -39,8 +43,9 @@ const sameAsGit = (f) => { try { execFileSync("git", ["diff", "--quiet", "--", f
 async function mutate(m, check) {
   const file = path.join(root, m.file);
   const original = readFileSync(file, "utf8");
-  if (!original.includes(m.find)) { results.push([m.id, "INVALID (the code it mutates has changed)", m.why]); undetected++; return; }
-  writeFileSync(file, original.replace(m.find, m.to));
+  const edits = m.edits ?? [{ find: m.find, to: m.to }];
+  if (!edits.every((e) => original.includes(e.find))) { results.push([m.id, "INVALID (the code it mutates has changed)", m.why]); undetected++; return; }
+  writeFileSync(file, edits.reduce((text, e) => text.replace(e.find, e.to), original));
   let verdict;
   try { verdict = await check(); } finally { writeFileSync(file, original); }
   results.push([m.id, verdict, m.why]);
@@ -56,7 +61,8 @@ if (process.argv.includes("--routes")) {
 } else {
   const base = run([U, P, "src/server/hardening.test.ts", "src/server/config-hardening.test.ts"]);
   if (base.status !== 0) { console.log("The unmutated tree already fails these tests; fix that first.\n" + base.stdout.split("\n").filter((l) => /^not ok/.test(l)).join("\n")); process.exit(2); }
-  for (const m of unit) await mutate(m, async () => { const r = run(m.tests); return r.status !== 0 ? `DETECTED (${(r.stdout.match(/^not ok .*/gm) ?? []).length} test(s) fail)` : "UNDETECTED: the tests still pass"; });
+  const only = (process.argv.find((a) => a.startsWith("--only="))?.slice(7) ?? "").split(",").filter(Boolean);
+  for (const m of unit.filter((x) => !only.length || only.includes(x.id))) await mutate(m, async () => { const r = run(m.tests); return r.status !== 0 ? `DETECTED (${(r.stdout.match(/^not ok .*/gm) ?? []).length} test(s) fail)` : "UNDETECTED: the tests still pass"; });
 }
 for (const f of [...unit, ...routes].map((m) => m.file)) if (!sameAsGit(f) && !process.env.MUTATION_ALLOW_DIRTY) { /* a file may legitimately differ from git if it has uncommitted work */ }
 console.log("\n" + results.map(([id, v, why]) => `${id.padEnd(6)} ${v.padEnd(44)} ${why}`).join("\n"));
