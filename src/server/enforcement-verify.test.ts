@@ -352,3 +352,28 @@ test("EV-21 a long or multi-line exact command comes with its true size, so a ta
   const short = await argsOf("ls -la");
   assert.equal(short.argsText, undefined, "an ordinary one-line command adds nothing");
 });
+
+test("EV-22 a viewer's event feed is read from the database per workspace: another workspace's rows are not read, cannot crowd it out, and its sequence numbers are not disclosed", async () => {
+  const { since, snapshot } = await import("./sync.ts");
+  const { ingestEvents } = await import("./repo.ts");
+  const db = await memoryDb();
+  await db.run("INSERT INTO workspaces (id, name, created_at) VALUES ('wa', 'wa', 0), ('wb', 'wb', 0)");
+  const mk = async (name: string, ws: string) => { const r = await registerAgent(db, { name, model: "m", provider: "Custom" }, "u", ws); return (await agentByKey(db, r.apiKey))!; };
+  const a = await mk("alpha", "wa"), b = await mk("bravo", "wb");
+  const viewer = (workspace: string) => ({ role: "operator" as const, canAct: true, public: false, operatorAvailable: true, demo: false, workspace });
+  const before = await snapshot(db, viewer("wb"));
+  // A writes far more than one batch (500) of events after B's cursor; B writes one
+  await ingestEvents(db, b, [{ type: "task.started", data: { taskId: "b1", title: "B's one event" } }]);
+  for (let i = 0; i < 12; i++) await ingestEvents(db, a, Array.from({ length: 50 }, (_, j) => ({ type: "task.started", data: { taskId: `t${i}-${j}`, title: `A-secret-${i}-${j}` } })));
+  const feed = await since(db, viewer("wb"), before.seq);
+  assert.equal(feed.events.length, 1, "B sees its own event even though A wrote 600 in between (no crowding out)");
+  assert.ok(!JSON.stringify(feed).includes("A-secret"));
+  const globalMax = (await db.get<{ m: number }>("SELECT MAX(seq) AS m FROM events"))!.m;
+  assert.ok(feed.seq < globalMax - 500, `B's cursor (${feed.seq}) must not track the platform-wide sequence (${globalMax})`);
+  const snap = await snapshot(db, viewer("wb"));
+  assert.ok(snap.seq < globalMax - 500, "nor does a snapshot's cursor");
+  assert.equal((await since(db, viewer("wb"), snap.seq)).events.length, 0);
+  // and the rows themselves: the scoped query returns nothing of A's
+  const { eventsAfter } = await import("./repo.ts");
+  assert.ok((await eventsAfter(db, 0, 1000, [b.id])).every((e) => e.agentId === b.id));
+});

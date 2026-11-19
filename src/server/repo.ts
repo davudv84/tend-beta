@@ -140,14 +140,28 @@ export async function insertEvents(q: Q, list: NewEvent[]) {
   }
 }
 
-export const eventsAfter = async (q: Q, seq: number, n: number) => (await q.all<EventRow>("SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?", seq, n)).map(toWire);
+/**
+ * Events after a sequence number. With `agentIds` only those agents' rows leave the database, so another workspace's events are never read into
+ * this request, cannot crowd this viewer's batch out, and their sequence numbers (the platform's write rate) are not disclosed. Without it: every
+ * workspace, for tests and operator tooling only.
+ */
+export const eventsAfter = async (q: Q, seq: number, n: number, agentIds?: string[]) => {
+  if (agentIds && !agentIds.length) return [];
+  const only = agentIds ? ` AND agent_id IN (${agentIds.map(() => "?").join(", ")})` : "";
+  return (await q.all<EventRow>(`SELECT * FROM events WHERE seq > ?${only} ORDER BY seq LIMIT ?`, seq, ...(agentIds ?? []), n)).map(toWire);
+};
 /** The latest events, oldest first. With `agentIds`, only theirs: the limit is then per viewer, so another workspace's volume cannot crowd them out. */
 export const recentEvents = async (q: Q, since: number, n: number, agentIds?: string[]) => {
   if (agentIds && !agentIds.length) return [];
   const only = agentIds ? ` AND agent_id IN (${agentIds.map(() => "?").join(", ")})` : "";
   return (await q.all<EventRow>(`SELECT * FROM events WHERE at > ?${only} ORDER BY seq DESC LIMIT ?`, ms(since), ...(agentIds ?? []), n)).map(toWire).reverse();
 };
-export const lastSeq = async (q: Q) => (await q.get<{ seq: number }>("SELECT COALESCE(MAX(seq), 0) AS seq FROM events"))!.seq;
+/** The highest sequence number, of the given agents' events only when `agentIds` is given (a viewer's cursor must not reveal how much other workspaces write). */
+export const lastSeq = async (q: Q, agentIds?: string[]) => {
+  if (agentIds && !agentIds.length) return 0;
+  const only = agentIds ? ` WHERE agent_id IN (${agentIds.map(() => "?").join(", ")})` : "";
+  return (await q.get<{ seq: number }>(`SELECT COALESCE(MAX(seq), 0) AS seq FROM events${only}`, ...(agentIds ?? [])))!.seq;
+};
 
 // ---- agent ingestion -------------------------------------------------------------------------
 

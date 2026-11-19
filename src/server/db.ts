@@ -318,6 +318,34 @@ export const MIGRATIONS: string[] = [
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
 export const allowEventRemoval = (q: Q) => q.get("SELECT set_config('tend.maintenance', 'on', true)");
 
+/**
+ * The privileges the application's own database role needs, and no more (docs/database-roles.md). Run as the schema owner, once per database, after
+ * the migrations. The point is the audit log: its append-only trigger can be switched off for a transaction by anyone who can run set_config, so the
+ * log is only tamper-resistant against the application role if that role holds no UPDATE, DELETE or TRUNCATE on it. (The embedded demo's retention
+ * needs that privilege and so does not run under this role: a production database has no demo.) The role must be created NOSUPERUSER NOCREATEDB
+ * NOCREATEROLE NOBYPASSRLS; identifiers are quoted here, never interpolated unquoted.
+ */
+export function runtimeGrantsSql(role: string): string {
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(role)) throw new Error("role must be a lower-case identifier");
+  const r = `"${role}"`;
+  return [
+    `GRANT USAGE ON SCHEMA public TO ${r};`,
+    `REVOKE CREATE ON SCHEMA public FROM ${r};`,
+    `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${r};`,
+    `REVOKE UPDATE, DELETE, TRUNCATE ON events, auth_events, verification_runs FROM ${r};`,
+    `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON schema_migrations FROM ${r};`,
+    `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${r};`,
+  ].join("\n");
+}
+
+/** Fails unless every migration this code knows has been applied (and nothing later): the application role must not run on a schema it cannot vouch for. */
+export async function assertSchemaCurrent(db: DB) {
+  const rows = await db.all<{ version: number }>("SELECT version FROM schema_migrations");
+  const have = new Set(rows.map((r) => Number(r.version)));
+  const missing = MIGRATIONS.map((_, i) => i + 1).filter((v) => !have.has(v));
+  if (missing.length) throw new Error(`database schema is out of date (missing migrations ${missing.join(", ")}); run it with DATABASE_MIGRATE_URL or apply them as the schema owner`);
+}
+
 /** Applies pending migrations, one instance at a time. */
 export async function migrate(db: DB) {
   await db.tx(async (q) => {
@@ -454,6 +482,18 @@ async function open() {
     throw new HttpError(503, "database_not_configured", "No database is configured. Set DATABASE_URL to a Postgres connection string.");
   if (!url && process.env.NODE_ENV === "production" && !config.localHttp)
     console.error("[tend] WARNING: production build without DATABASE_URL: using the embedded single-process database in " + config.dataDir + ". Two instances would not share data and a container restart may lose it. Set DATABASE_URL.");
+  // Least privilege (optional): DATABASE_MIGRATE_URL is a role that may change the schema; DATABASE_URL then only needs to read and write rows.
+  // Migrations run on a separate short-lived connection with the first, the pool the application uses is the second, and it must find the schema
+  // already current: an outdated or unreadable schema stops the start instead of running with it. Without DATABASE_MIGRATE_URL both are one role, as before.
+  const migrateUrl = process.env.DATABASE_MIGRATE_URL ?? "";
+  if (migrateUrl) {
+    if (!url) throw new Error("DATABASE_MIGRATE_URL is set without DATABASE_URL");
+    const admin = await postgres(migrateUrl);
+    try { await migrate(admin); } finally { await admin.close().catch(() => {}); }
+    const runtime = await postgres(url);
+    try { await assertSchemaCurrent(runtime); } catch (e) { await runtime.close().catch(() => {}); throw e; }
+    return runtime;
+  }
   const db = url ? await postgres(url) : await pglite(path.join(config.dataDir, "pglite"));
   await migrate(db);
   return db;

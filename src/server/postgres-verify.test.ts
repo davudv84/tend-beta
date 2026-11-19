@@ -6,7 +6,7 @@ import { test } from "node:test";
 import pg from "pg";
 import { cancelAuthorization, claimToken, consumeAuthorization, requestAuthorization, spendApproved } from "./authz.ts";
 import { verifyAudit } from "./audit-chain.ts";
-import { migrate, postgres, type DB } from "./db.ts";
+import { allowEventRemoval, migrate, postgres, type DB } from "./db.ts";
 import { HttpError } from "./http.ts";
 import { agentByKey, decide, MAX_AGENTS_PER_WORKSPACE, registerAgent, revokeKey, setPolicy } from "./repo.ts";
 
@@ -96,4 +96,91 @@ test("PV-4 real pool: if the audit write fails, the authorization is not consume
     assert.match(await code(consumeAuthorization(t.db, a, view.id, { token: tok, ...PAY })), /^ERR:/);
     assert.equal((await t.db.get<{ status: string }>("SELECT status FROM authorizations WHERE id = ?", view.id))!.status, "approved");
   } finally { await t.close(); }
+});
+
+test("PV-5 least-privilege application role on real PostgreSQL: the flows work, the schema and the audit log cannot be changed, even with the maintenance flag", { skip }, async () => {
+  const { runtimeGrantsSql, assertSchemaCurrent } = await import("./db.ts");
+  const { spendApproved: spend, requestAuthorization: ask } = await import("./authz.ts");
+  const t = await tempDb();
+  const role = `tend_app_${randomBytes(4).toString("hex")}`;
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  let appDb: DB | undefined;
+  try {
+    // the schema owner's side: create the role (no special attributes) and grant it exactly runtimeGrantsSql
+    const owner = (await t.db.get<{ db: string }>("SELECT current_database() AS db"))!.db;
+    await admin.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${owner} TO ${role}`);
+    await t.db.exec(runtimeGrantsSql(role));
+    const u = new URL(URL_); u.pathname = `/${owner}`; u.username = role;
+    appDb = await postgres(u.toString());
+    await assertSchemaCurrent(appDb);
+    // the application works under it: register, ask, approve, spend once, audit chain verifies
+    const { agent, apiKey } = await registerAgent(appDb, { name: "least", model: "m", provider: "Custom" });
+    await setPolicy(appDb, agent.id, [{ tool: "wire", action: "send", effect: "approve" }], "enforce");
+    const a = (await agentByKey(appDb, apiKey))!;
+    const { view } = await ask(appDb, a, PAY, null);
+    await decide(appDb, view.id, "approved");
+    await spend(appDb, a, view.id, PAY);
+    assert.equal((await verifyAudit(appDb)).ok, true);
+    // what it must NOT be able to do
+    const denied = async (sql: string) => { try { await appDb!.tx(async (q) => { await q.exec("SELECT set_config('tend.maintenance', 'on', true)"); await q.exec(sql); }); return "ALLOWED"; } catch (e) { return (e as { code?: string }).code ?? String(e); } };
+    for (const sql of [
+      "DELETE FROM events", "UPDATE events SET data = '{}'", "TRUNCATE events", "DELETE FROM auth_events", "UPDATE auth_events SET type = 'x'", "DELETE FROM verification_runs",
+      "DROP TRIGGER events_append_only_rows ON events", "DROP TRIGGER events_chain ON events", "ALTER TABLE events DISABLE TRIGGER ALL", "ALTER TABLE agents ADD COLUMN x INT",
+      "CREATE TABLE evil (x INT)", "CREATE OR REPLACE FUNCTION events_append_only() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
+      "DELETE FROM schema_migrations", "INSERT INTO schema_migrations VALUES (999, 0)", "DROP TABLE agents",
+    ]) assert.equal(await denied(sql), "42501", `${sql} must be refused by privilege (42501), got ${await denied(sql)}`);
+    assert.equal((await t.db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM events"))!.n > 0, true, "the log is intact");
+    // contrast, to show what the privilege split buys: the schema owner's role CAN erase the log by raising the same flag
+    await t.db.tx(async (q) => { await allowEventRemoval(q); await q.run("DELETE FROM events WHERE type = 'agent.registered'"); });
+    assert.equal((await verifyAudit(t.db)).ok, true, "(and an owner-role deletion of the oldest events passes a bare chain walk: that is why the runtime role must not be the owner)");
+  } finally {
+    await appDb?.close().catch(() => {});
+    await t.close().catch(() => {});
+    await admin.query(`DROP ROLE IF EXISTS ${role}`).catch(() => {});
+    await admin.end();
+  }
+});
+
+test("PV-6 start-up with separate migration and runtime roles on real PostgreSQL fails closed until the runtime role is set up, and when the schema is behind", { skip }, async () => {
+  const { runtimeGrantsSql, getDb, MIGRATIONS } = await import("./db.ts");
+  const g = globalThis as { __tendDb?: Promise<unknown> };
+  const base = new pg.Client({ connectionString: URL_ });
+  await base.connect();
+  const name = `tend_split_${randomBytes(5).toString("hex")}`, role = `tend_run_${randomBytes(4).toString("hex")}`;
+  await base.query(`CREATE DATABASE ${name}`);
+  await base.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+  await base.query(`GRANT CONNECT ON DATABASE ${name} TO ${role}`);
+  const urlFor = (user?: string) => { const u = new URL(URL_); u.pathname = `/${name}`; if (user) u.username = user; return u.toString(); };
+  const saved = { a: process.env.DATABASE_URL, m: process.env.DATABASE_MIGRATE_URL, p: process.env.POSTGRES_URL, v: process.env.VERCEL };
+  const start = async () => { g.__tendDb = undefined; try { const db = await getDb(); return { db }; } catch (e) { return { error: (e as Error).message }; } };
+  let owner: DB | undefined;
+  try {
+    delete process.env.POSTGRES_URL; delete process.env.VERCEL;
+    process.env.DATABASE_URL = urlFor(role); process.env.DATABASE_MIGRATE_URL = urlFor();
+    // 1. the owner migrates; the runtime role has no privileges yet → it cannot vouch for the schema → no start
+    const first = await start();
+    assert.ok(first.error, "no usable runtime role: the start fails");
+    // 2. granted: the application starts, on the runtime role (it cannot alter the schema)
+    owner = await postgres(urlFor());
+    await owner.exec(runtimeGrantsSql(role));
+    const second = await start();
+    assert.ok(second.db, second.error);
+    assert.equal((await second.db!.get<{ u: string }>("SELECT current_user AS u"))!.u, role, "the pool the application uses is the runtime role, not the owner");
+    await second.db!.close();
+    // 3. a migration this code expects is missing → the runtime role refuses to run on it (and the migrate connection would re-apply it, so test without it)
+    await owner.run("DELETE FROM schema_migrations WHERE version = ?", MIGRATIONS.length);
+    delete process.env.DATABASE_MIGRATE_URL;
+    process.env.DATABASE_URL = urlFor(role);
+    const third = await start();
+    assert.ok(third.error, "runtime-only start on a schema that is missing a migration: the runtime role cannot migrate it, so it must not run");
+  } finally {
+    g.__tendDb = undefined;
+    for (const [k, v] of [["DATABASE_URL", saved.a], ["DATABASE_MIGRATE_URL", saved.m], ["POSTGRES_URL", saved.p], ["VERCEL", saved.v]] as const) v === undefined ? delete process.env[k] : (process.env[k] = v);
+    await owner?.close().catch(() => {});
+    await base.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`).catch(() => {});
+    await base.query(`DROP ROLE IF EXISTS ${role}`).catch(() => {});
+    await base.end();
+  }
 });
