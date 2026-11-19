@@ -200,3 +200,56 @@ Same branch, same rules (nothing pushed or deployed). New evidence below is agai
 | lint, `tsc`, production build, eslint-security, Semgrep ERROR, secretlint, `npm audit --omit=dev` | pass |
 
 Not run: GitHub Actions itself, OWASP ZAP, CodeQL, gitleaks, Snyk/OSV, Cursor, `--bare`, any real deployment.
+
+## 13. Round 3 (database isolation review, negative controls, independent-style review)
+
+### 13.1 The premise did not match the repository
+
+The brief described a PostgreSQL tenant-context and RLS implementation (`db/rls/002_context_grants.up.sql`, `TEND_CONTEXT_KEY`, `docs/database-isolation.md`, "233 defenses held", "23/23 PostgreSQL"). **None of it exists in this repository**: no such file, branch, stash or commit (`git log --all -S` for the key, the migration name and `ENABLE ROW LEVEL SECURITY` find nothing). Those reported results are **NOT VERIFIED** and were not reproduced. What exists is application-level tenant isolation on one pooled owner connection. I did not build RLS (a design, not a hardening step; sketched in `docs/database-roles.md`). The context-key, "global TEMPORARY revocation" and tenant-impersonation questions are not applicable to this code.
+
+### 13.2 Architecture and trust boundaries (what is actually here)
+
+Browser operator (cookie session) and agent (bearer key) → Next.js route handlers → `src/server/*` → one PostgreSQL/PGlite pool, connecting as one role that also migrates. Tenant boundary: a workspace id checked in each route (`agentInWorkspace`, `reviewInWorkspace`, `centralInWorkspace`) and in each listing. Cross-tenant-by-design owner-connection paths: expiry sweeps, push queue (`flushPush`), admin user list and audit verification, rate-limit tables. Enforcement boundaries: Claude Code PreToolUse hook (before the tool), MCP proxy (before forwarding), cooperative gate (in the agent), gateway (TEND runs the tool). The database trusts the application completely.
+
+### 13.3 Findings of this round
+
+| ID | Finding | Severity | Status | Evidence |
+|---|---|---|---|---|
+| R3-1 | `since()` read up to 500 events of **every** workspace, filtered them in the application, and returned a platform-wide sequence cursor: other tenants' rows crowded a viewer's batch out (a busy tenant could hide a quiet one's events from the live feed) and the cursor disclosed the platform's write rate. No content leaked. | Low (availability/side channel) | **Fixed** | `EV-22` fails without the fix (`B's cursor (1351) must not track the platform-wide sequence (1452)`) and passes with it; negative control M-11. |
+| R3-2 | The append-only trigger on `events`/`auth_events`/`verification_runs` is switched off by `set_config('tend.maintenance','on',true)`, which any session can run. So a role with `DELETE` can erase the audit log. Protection must come from privileges. | Medium (needs SQL execution in the app role; there is no known injection) | **Mitigated** (opt-in role) | `runtimeGrantsSql` + `docs/database-roles.md`; PV-5 on real PostgreSQL 16 shows the restricted role cannot DELETE/UPDATE/TRUNCATE the logs, DROP TRIGGER, ALTER/CREATE/DROP, or rewrite `schema_migrations`, while the application's flows work under it. Negative control: PV-5 fails when the revoke is removed. **Default deployments still connect as the owner and are exposed to this.** |
+| R3-3 | **Found by the separate review agent, then reproduced:** with R3-2's first grants the role could still erase a victim's history, because `events` and `verification_runs` are `ON DELETE CASCADE` children of `agents`, and a cascade runs with the owner's privileges (`DELETE FROM agents` with the flag raised). | Medium | **Fixed** | `PV-7` fails without the added `REVOKE DELETE … ON agents, users, workspaces`; also asserts the owner role can still do it (contrast). |
+| R3-4 | The hash-chain boundary row `meta.events.chain.v2_after` (which formula `verifyAudit` uses per row) was writable by the application role. | Low–Medium | **Fixed** | Migration 17 (additive trigger, no bypass); `PV-7`. |
+| R3-5 | Start-up always migrated with the runtime role (schema-changing rights in the serving process); no way to separate them. | Low | **Fixed (opt-in)** | `DATABASE_MIGRATE_URL`; the runtime pool must find every migration applied or the start fails. `PV-6` (real PostgreSQL), `db-startup.test.ts` (4 tests: unreachable database, Vercel without database, half-configured split, outdated schema; none can fall back to the embedded database). |
+| R3-6 | The tests did not show that the security checks themselves were load-bearing. | Process | **Addressed** | `redteam/mutation-controls.mjs`: 15 unit mutations and 2 route mutations; each removes one real check and the matching tests must fail. First run: **13/15 detected**; the two UNDETECTED were *equivalent mutants* (the same guarantee is enforced twice: expiry sweep + spend clause; status check + SQL guard). They were re-run as double mutations after adding `EV-23` (decisions are final): **detected**. Final: **15/15** unit, **2/2** routes (removing the workspace check in the reviews route or the agent-keys route makes the tenant matrix fail). Not run in CI (it rewrites sources). |
+| R3-7 | Flaky tests under load: `open-beta-e2e` waits 3 s for the verification mail and fails 3 checks when the machine is busy (seen once while other jobs ran; 41/41 twice on a quiet machine and in the final run). | Test robustness | **Not changed** | Not a security failure. |
+
+Reviewer findings **not** acted on: advisory-lock denial of service (documented; privileges cannot prevent it), PG ≤14 `PUBLIC CREATE` (documented minimum version), grants not covering later tables (documented), `assertSchemaCurrent` reads versions not privileges (comment corrected).
+
+### 13.4 Review by a separate agent
+
+A second model session, given no access to my conclusions, read the diff and the SQL paths (read-only). It found R3-3 (real) and the documentation overclaims above, and checked that the event-feed scoping, the grants and `open()` fail-closed behaviour were sound. **This is a second look by another AI session, not an external audit**, and it did not run tests or review every route.
+
+### 13.5 Tests actually executed in this round (clean checkout, Node 24.22)
+
+| Run | Result |
+|---|---|
+| `npm test` | **589 tests: 556 pass, 1 fail, 32 skipped.** The one failure is the `lsof` test (V-9, environmental); skips: 27 PostgreSQL tests that run separately, 5 macOS-only. |
+| Real PostgreSQL 16 (`postgres.test.ts` 20 + `postgres-verify.test.ts` 7) | **27/27** (includes PV-5, PV-6, PV-7) |
+| Tenant matrix (B's operator and agent key, platform admin, anonymous; 34 routes × 5 verbs × 5 object ids × bodies) | **9,108 requests, no data of A returned, nothing changed** |
+| `redteam/attacks.ts` / live suite + fuzz / production config / DAST / hook fail-closed / MCP proxy | 29 held / 231 held / 9 / 6 / 11 / 13 held, 0 broken |
+| Offline e2e | 26 + 11 + 8 + 30 + 41 + 38 = **154/154** |
+| Real Claude Code 2.1.327: hooks, coverage, managed | **27/27, 19/19, 15/15** (the 10-minute `--expiry` run was not repeated this round; last result 6/6 on the previous commit) |
+| Lint, `tsc`, production build, eslint-security, Semgrep ERROR, secretlint, `npm audit --omit=dev` | pass |
+| Mutation controls | 15/15 unit, 2/2 routes |
+
+### 13.6 Real agent actions: blocked before execution?
+
+For **Claude Code through the hooks**: yes, shown by what the tool left behind, not by a dashboard event (each test command writes a file; the file must not exist), with real Claude Code 2.1.327 and its real model, including when TEND is stopped, when the key is revoked, after expiry, and (managed install) against project `disableAllHooks`, `--setting-sources user`, `--settings`, bypass-permissions mode and another config directory. **Cursor** is not installed here: BLOCKED, untested. For the **MCP proxy** the example server's ledger proves the tool never ran. For the **built-in gateway** TEND itself runs only harmless demo tools. The scripted tests (gate tests, e2e with a fake model) prove protocol behaviour, not host behaviour. Still unprotected: `--bare` mode (untested), administrator rights, agents that do not call TEND.
+
+### 13.7 Production readiness blockers (unchanged in kind)
+
+No row-level security and no tenant context in the database; the default deployment connects as the owner (R3-2); no 2FA/SSO/roles; no external penetration test; GitHub Actions never run; OWASP ZAP/CodeQL/gitleaks not run; no production-equivalent deployment tested; `--bare` and Cursor untested.
+
+### 13.8 Recommended independent audit scope
+
+Tenant isolation design (RLS vs. per-tenant schemas) and every owner-connection path; the global write lock; the restricted-role grants on your actual PostgreSQL version and provider (Neon's pooler behaviour for `SET LOCAL`); the managed-hooks deployment on your fleet; the hosted service's proxy/TLS setup.
