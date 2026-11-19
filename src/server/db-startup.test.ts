@@ -20,6 +20,7 @@ test("an unreachable DATABASE_URL stops the start, is not cached as a success, a
   await withEnv({ DATABASE_URL: "postgres://nobody@127.0.0.1:1/none?sslmode=disable", POSTGRES_URL: undefined, DATABASE_MIGRATE_URL: undefined, TEND_DATA_DIR: dataDir, VERCEL: undefined }, async () => {
     const first = await rejects(getDb());
     assert.ok(first, "getDb rejects");
+    assert.match(first!.message + String((first as { code?: string }).code ?? ""), /ECONNREFUSED|connect|AggregateError/i, "because the database could not be reached, not for some unrelated reason");
     const second = await rejects(getDb());
     assert.ok(second, "and rejects again: a failed start is retried, not remembered as a database");
     assert.equal(existsSync(path.join(dataDir, "pglite")), false, "no embedded database was created in its place");
@@ -37,7 +38,8 @@ test("on Vercel, with no database configured, the start is refused (503), not se
 
 test("DATABASE_MIGRATE_URL without DATABASE_URL is refused", async () => {
   await withEnv({ DATABASE_URL: undefined, POSTGRES_URL: undefined, DATABASE_MIGRATE_URL: "postgres://x@127.0.0.1:1/x", VERCEL: undefined, TEND_DATA_DIR: mkdtempSync(path.join(tmpdir(), "tend-startup-")) }, async () => {
-    assert.ok(await rejects(getDb()));
+    const e = await rejects(getDb());
+    assert.match(String(e?.message), /DATABASE_MIGRATE_URL is set without DATABASE_URL/);
   });
 });
 

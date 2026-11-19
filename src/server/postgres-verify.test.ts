@@ -184,3 +184,39 @@ test("PV-6 start-up with separate migration and runtime roles on real PostgreSQL
     await base.end();
   }
 });
+
+test("PV-7 the application role cannot erase the audit log through a cascade from agents, nor rewrite the chain boundary", { skip }, async () => {
+  const { runtimeGrantsSql } = await import("./db.ts");
+  const t = await tempDb();
+  const role = `tend_casc_${randomBytes(4).toString("hex")}`;
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  let appDb: DB | undefined;
+  try {
+    const owner = (await t.db.get<{ db: string }>("SELECT current_database() AS db"))!.db;
+    await admin.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${owner} TO ${role}`);
+    await t.db.exec(runtimeGrantsSql(role));
+    const u = new URL(URL_); u.pathname = `/${owner}`; u.username = role;
+    appDb = await postgres(u.toString());
+    const { agent } = await registerAgent(appDb, { name: "victim", model: "m", provider: "Custom" });
+    const events = async () => (await t.db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE agent_id = ?", agent.id))!.n;
+    assert.ok((await events()) > 0);
+    const denied = async (sql: string) => { try { await appDb!.tx(async (q) => { await q.exec("SELECT set_config('tend.maintenance', 'on', true)"); await q.exec(sql); }); return "ALLOWED"; } catch (e) { return (e as { code?: string }).code ?? String(e); } };
+    assert.equal(await denied(`DELETE FROM agents WHERE id = '${agent.id}'`), "42501", "the cascade path is closed by privilege");
+    assert.equal(await denied("DELETE FROM users"), "42501");
+    assert.equal(await denied("DELETE FROM workspaces"), "42501");
+    assert.ok((await events()) > 0, "the victim's history is intact");
+    assert.equal(await denied("UPDATE meta SET value = '0' WHERE key = 'events.chain.v2_after'"), "42501", "chain boundary: refused");
+    assert.equal(await denied("DELETE FROM meta WHERE key = 'events.chain.v2_after'"), "42501");
+    assert.equal(await denied("UPDATE meta SET value = '1' WHERE key = 'demo.x'"), "OK".length ? "ALLOWED" : "", "other meta keys (demo state) stay writable");
+    // the owner is not protected by privilege: the same flag erases the history through the cascade (why the application must not run as the owner)
+    await t.db.tx(async (q) => { await allowEventRemoval(q); await q.run("DELETE FROM agents WHERE id = ?", agent.id); });
+    assert.equal(await events(), 0, "contrast: as the owner role the cascade erases the agent's events");
+  } finally {
+    await appDb?.close().catch(() => {});
+    await t.close().catch(() => {});
+    await admin.query(`DROP ROLE IF EXISTS ${role}`).catch(() => {});
+    await admin.end();
+  }
+});

@@ -313,6 +313,11 @@ export const MIGRATIONS: string[] = [
   // Optional expiry of an agent's API key (NULL = never, as before). Set when a key is issued; checked on every request and again inside each
   // authorization transaction, so an expired key stops what it had in flight like a revoked one.
   `ALTER TABLE agents ADD COLUMN key_expires_at BIGINT;`,
+  // The hash-chain boundary (which events use the seq-bound formula) is verification state: changing or deleting it would change how verifyAudit reads
+  // the log. Refused outright, with no maintenance bypass. A database owner can still drop the trigger, like every trigger here.
+  `CREATE FUNCTION meta_protect_chain() RETURNS trigger LANGUAGE plpgsql AS $fn$
+   BEGIN RAISE EXCEPTION 'this meta key is part of the audit chain and cannot be changed' USING ERRCODE = '42501'; END $fn$;
+   CREATE TRIGGER meta_protect_chain_row BEFORE UPDATE OR DELETE ON meta FOR EACH ROW WHEN (OLD.key = 'events.chain.v2_after') EXECUTE FUNCTION meta_protect_chain();`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -333,12 +338,15 @@ export function runtimeGrantsSql(role: string): string {
     `REVOKE CREATE ON SCHEMA public FROM ${r};`,
     `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${r};`,
     `REVOKE UPDATE, DELETE, TRUNCATE ON events, auth_events, verification_runs FROM ${r};`,
+    // events and verification_runs are ON DELETE CASCADE children of agents, and a cascade runs with the owner's privileges: DELETE on agents (with the
+    // maintenance flag raised) would erase their history without any privilege on them. users and workspaces are the parents of those parents.
+    `REVOKE DELETE, TRUNCATE ON agents, users, workspaces FROM ${r};`,
     `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON schema_migrations FROM ${r};`,
     `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${r};`,
   ].join("\n");
 }
 
-/** Fails unless every migration this code knows has been applied (and nothing later): the application role must not run on a schema it cannot vouch for. */
+/** Fails unless every migration this code knows has been applied (a newer schema is allowed: rolling deploys): the application role must not run on an older one. It checks versions, not privileges. */
 export async function assertSchemaCurrent(db: DB) {
   const rows = await db.all<{ version: number }>("SELECT version FROM schema_migrations");
   const have = new Set(rows.map((r) => Number(r.version)));
@@ -488,6 +496,7 @@ async function open() {
   const migrateUrl = process.env.DATABASE_MIGRATE_URL ?? "";
   if (migrateUrl) {
     if (!url) throw new Error("DATABASE_MIGRATE_URL is set without DATABASE_URL");
+    if (migrateUrl === url) console.error("[tend] WARNING: DATABASE_MIGRATE_URL equals DATABASE_URL, so the application still runs as the schema owner: this is not a role split.");
     const admin = await postgres(migrateUrl);
     try { await migrate(admin); } finally { await admin.close().catch(() => {}); }
     const runtime = await postgres(url);

@@ -22,7 +22,11 @@ node scripts/db-grants.mjs tend_app | psql "$OWNER_DATABASE_URL"
 ```
 
 `runtimeGrantsSql()` (`src/server/db.ts`) grants `SELECT, INSERT, UPDATE, DELETE` on all tables and `USAGE` on sequences, then revokes
-`UPDATE, DELETE, TRUNCATE` on the three log tables and all writes on `schema_migrations`, and revokes `CREATE` on the schema.
+`UPDATE, DELETE, TRUNCATE` on the three log tables, `DELETE, TRUNCATE` on `agents`, `users` and `workspaces`, all writes on `schema_migrations`, and
+`CREATE` on the schema. **`agents` matters:** `events` and `verification_runs` are `ON DELETE CASCADE` children of it, and a cascade runs with the
+owner's privileges, so a role that could delete an agent (with the maintenance flag raised) could erase that agent's whole history without any
+privilege on the log tables. An independent review of the first version of this grant found exactly that; PV-7 reproduces it (it fails when the
+revoke is removed) and checks the fix. Migration 17 also makes the hash-chain boundary row in `meta` (`events.chain.v2_after`) immutable by trigger.
 `src/server/postgres-verify.test.ts` (PV-5) runs the application's flows as such a role on real PostgreSQL and checks that DELETE/UPDATE/TRUNCATE
 of the logs (with the maintenance flag raised), `DROP TRIGGER`, `ALTER TABLE`, `CREATE TABLE` and rewriting `schema_migrations` all fail with
 `42501`. The same test shows the contrast: the owner role can erase events with the flag.
@@ -40,6 +44,19 @@ At start-up the owner migrates, then the runtime role must find every migration 
 request is served. Tested on real PostgreSQL (PV-6) and for the failure paths without a database (`src/server/db-startup.test.ts`: an unreachable
 `DATABASE_URL`, Vercel with no database, a half-configured split, an outdated schema). A start with a database URL never falls back to the
 embedded database.
+
+Limits of this, stated plainly:
+
+- **PostgreSQL 15 or newer.** Before 15, `PUBLIC` holds `CREATE` on schema `public`, so revoking it from one role does not stop that role creating
+  objects. On 14 or older also run `REVOKE CREATE ON SCHEMA public FROM PUBLIC` (it affects every role in the database).
+- **Grants cover existing tables only.** After a release that adds a table, re-run `scripts/db-grants.mjs`; until then the application fails on the
+  new table (the start-up check reads migration versions, not privileges), and a new *log* table would lack its revokes. Do not rely on
+  `ALTER DEFAULT PRIVILEGES` for this: it would grant the log tables' write privileges back.
+- **Denial of service is not prevented.** Any role that can run SQL can take the advisory locks every write takes (`pg_advisory_lock(7311)`) and
+  stall the whole service. Privileges cannot stop that.
+- The `meta` table stays writable by the role (the optional demo account keeps state there); only the chain-boundary row is protected.
+- A restricted role is only as good as its use: the application must connect as it (`DATABASE_URL`), the owner only through
+  `DATABASE_MIGRATE_URL`. If both URLs are the same, start-up logs a warning and nothing is split.
 
 Not covered: the demo's retention (`allowEventRemoval`) needs `DELETE` on `events` and does not run under the restricted role; a production
 database has no demo. A database *owner* can always drop the triggers; keep the audit checkpoint (`npm run tend -- audit-verify`) outside TEND.
