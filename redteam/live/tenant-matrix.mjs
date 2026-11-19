@@ -49,7 +49,9 @@ try {
 
   const walk = (d) => readdirSync(d).flatMap((f) => { const p = path.join(d, f); return statSync(p).isDirectory() ? walk(p) : [p]; });
   const routes = walk(path.join(root, "src/app/api")).filter((f) => f.endsWith("route.ts")).map((f) => "/api/" + path.relative(path.join(root, "src/app/api"), path.dirname(f)).split(path.sep).join("/")).filter((r) => r !== "/api/" && !r.startsWith("/api/admin") && !r.startsWith("/api/account/") && !r.includes("operator/session") && !r.includes("health"));
-  const whos = { "B operator": { cookie: B }, "B agent key": { key: regB.apiKey }, anonymous: {} };
+  const adminCookie = (await api("POST", "/api/operator/session", { body: { token: ADMIN } })).cookie;
+  // the platform admin signs in with the admin token: it works in the "default" workspace and approves accounts, it is not a key to every tenant
+  const whos = { "B operator": { cookie: B }, "B agent key": { key: regB.apiKey }, "platform admin": { cookie: adminCookie }, anonymous: {} };
   const bodies = [{}, { status: "approved" }, { action: "resume" }, { rules: [{ tool: "wire", action: "send", effect: "allow" }], enforcement: "off" }, { assign: [regA.agent.id] }, { token: "tend_az_" + "A".repeat(43), tool: "wire", action: "send", resource: "ACC-A2" }, { name: "hijack" }];
   let n = 0;
   for (const route of routes) for (const id of route.includes("[id]") ? ids : [null]) for (const [wn, w] of Object.entries(whos)) for (const m of ["GET", "POST", "DELETE", "PUT", "PATCH"]) for (const b of m === "GET" || m === "DELETE" ? [undefined] : bodies) {
@@ -62,11 +64,13 @@ try {
     if (id && r.status >= 200 && r.status < 300 && !["GET"].includes(m) && wn !== "B agent key") failures.push(`${wn} ${m} ${url}: succeeded (${r.status}) on tenant A's object`);
     if (id && r.status >= 200 && r.status < 300 && wn === "B agent key" && /\/(token|spend|consume|cancel)$/.test(url)) failures.push(`${wn} ${m} ${url}: B's agent key worked on A's authorization`);
   }
+  const users = await api("GET", "/api/admin/users", { cookie: adminCookie });
+  if (/scrypt\$|password_hash|tend_sk_|tend_az_/.test(users.text)) failures.push("admin user list exposes a password hash, key or token");
   // listings of B must never contain anything of A
   for (const p of ["/api/v1/state", "/api/v1/events?since=0", "/api/v1/notifications", "/api/v1/central-policies", "/api/operator/sessions", "/api/v1/integrations/status"]) { const r = await api("GET", p, { cookie: B }); const leak = secrets.find((s) => r.text.includes(s)); if (leak) failures.push(`B GET ${p} lists ${JSON.stringify(leak).slice(0, 40)}`); }
   const after = JSON.stringify({ pol: (await api("GET", `/api/v1/agents/${regA.agent.id}/policy`, { cookie: A })).body, st: (await api("GET", `/api/v1/authorizations/${pend.id}`, { key: regA.apiKey })).body?.status, cp: (await api("GET", "/api/v1/central-policies", { cookie: A })).body?.centralPolicies?.map((c) => [c.id, c.version]) });
   if (before !== after) failures.push("tenant A's policy, pending authorization or central policy CHANGED during the attack");
   const still = await api("POST", `/api/v1/authorizations/${appr.id}/spend`, { key: regA.apiKey, body: { tool: "wire", action: "send", resource: "ACC-A2" } });
   if (still.status !== 200) failures.push(`A's own approved authorization no longer spends (${still.status}): the attack disturbed it`);
-  record("TM-1", "tenancy", `tenant B (operator, agent key, anonymous) × ${routes.length} routes × 5 verbs × tenant A's 5 object ids × bodies (${n} requests): no data of A returned, nothing of A changed, no 5xx`, failures.length ? "BROKEN" : "HELD", failures.slice(0, 10).join("\n"));
+  record("TM-1", "tenancy", `tenant B (operator, agent key), the platform admin and anonymous × ${routes.length} routes × 5 verbs × tenant A's 5 object ids × bodies (${n} requests): no data of A returned, nothing of A changed, no 5xx`, failures.length ? "BROKEN" : "HELD", failures.slice(0, 10).join("\n"));
 } finally { await server.stop(); }
