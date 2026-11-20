@@ -73,7 +73,7 @@ jobs:
   postgres:
     name: Concurrency guarantees on real PostgreSQL
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -89,10 +89,24 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: PostgreSQL integration tests (replay, races, revocation, audit atomicity, agent cap)
+      - name: PostgreSQL integration tests (replay, races, revocation, audit atomicity, agent cap, row-level security)
         env:
           TEND_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-        run: node --no-warnings --test src/server/postgres.test.ts src/server/postgres-verify.test.ts
+        run: node --no-warnings --test src/server/postgres.test.ts src/server/postgres-verify.test.ts src/server/rls.test.ts
+      - name: Production build
+        run: npm run build
+      - name: End-to-end suites and tenant matrix on PostgreSQL with row-level security on (production default)
+        env:
+          TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          set -e
+          for s in e2e:authz e2e:gateway e2e:connect e2e:accounts e2e:open-beta e2e:onboarding; do npm run --silent "$s"; done
+          node --no-warnings redteam/live/tenant-matrix.mjs
+          node --no-warnings redteam/live/mcp-proxy.mjs
+      - name: Defence in depth - with a route's workspace check removed, row-level security must still hold the tenant matrix
+        env:
+          TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: node redteam/mutation-controls.mjs --routes
 
   enforcement:
     name: Production build and isolated enforcement tests

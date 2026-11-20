@@ -1,13 +1,64 @@
 # Database roles and what the database does (and does not) enforce
 
-## What is actually in this repository
+## Tenant isolation: two layers
 
-- **Tenant isolation is enforced by the application, not by the database.** Every route that takes an id checks it against the caller's
-  workspace first (`agentInWorkspace`, `reviewInWorkspace`, `centralInWorkspace` in `src/server/repo.ts`), and every listing is filtered by
-  workspace. There is **no PostgreSQL row-level security and no tenant context** in this code base. A missed check, or an SQL injection,
-  would expose every tenant. The tests that guard the checks are `redteam/live/tenant-matrix.mjs` (every route × every identity × every
-  object of another tenant) and the negative controls in `redteam/mutation-controls.mjs --routes` (removing a check must make the matrix fail).
-- Nothing here uses a `TEND_CONTEXT_KEY` or a tenant-scoped grant. If you have a branch that does, it is not this one.
+1. **The application** checks every id against the caller's workspace (`agentInWorkspace`, `reviewInWorkspace`, `centralInWorkspace` in
+   `src/server/repo.ts`) and filters every listing.
+2. **The database** (PostgreSQL, on by default in production: `TEND_DB_ISOLATION`) enforces it again with row-level security
+   (migration 18 in `src/server/db.ts`), so a missing check or an unfiltered query in the application cannot cross tenants.
+
+How the database layer works:
+
+- Every tenant table has a policy (`USING` and `WITH CHECK`): `workspaces`, `agents`, `central_policies`, `users`, `notifications` by their
+  workspace; `events`, `reviews`, `asks`, `authorizations`, `verification_runs` through their agent; `operator_sessions`, `auth_events`,
+  `user_tokens`, `onboarding`, `push_subscriptions`, `notification_prefs` through their user. `RLS_TABLES` in `db.ts` lists them.
+- The tenant comes from **authentication on the server** (`src/server/db-context.ts`): `requireOperator` binds the session's workspace,
+  `authAgent` the key's agent's workspace. A request starts with no tenant, which shows nothing tenant-scoped (fail closed). Binding a second,
+  different workspace in one request is refused.
+- Every transaction starts with `SET LOCAL ROLE <runtime role>` and `set_config('tend.workspace', …, true)`: transaction-scoped, so nothing
+  survives on a pooled connection (safe with PgBouncer transaction pooling, which Neon uses). A statement outside a transaction becomes a
+  transaction of its own.
+- The runtime role: when the application logs in as the schema owner (one `DATABASE_URL`, Vercel's Neon integration), a `NOLOGIN` role
+  (`TEND_DB_RUNTIME_ROLE`, default `tend_runtime`) is created with `runtimeGrantsSql`'s privileges and the login role is granted membership.
+  With `DATABASE_MIGRATE_URL` the restricted login is used as is.
+- Start-up self-test (`enableIsolation`): the effective role must not be a superuser, must not have `BYPASSRLS`, must own no table, and every
+  table in `RLS_TABLES` must have RLS on. Otherwise the server does not start. `TEND_DB_ISOLATION=off` is the only way to run without it, and
+  production logs a warning then.
+- The explicit cross-tenant paths run with `tend.system = on` and are all marked `asSystem` (`grep -rn asSystem src`):
+  - looking up a session or an agent key before anyone is known;
+  - sign-up, sign-in and password reset;
+  - the platform admin's routes;
+  - the push queue;
+  - moving a browser's push subscription to the account that subscribed it last.
+  The built-in demo's maintenance uses `asOwner` (no role switch).
+
+**What the database layer does NOT stop**, each shown by a test in `src/server/rls.test.ts`:
+
+- **Owner login (the default single-URL deployment):** SQL running in the application's session can `RESET ROLE` back to the owner (RLS-5).
+- **Any login:** such SQL can also `set_config('tend.system', 'on', true)` (RLS-6). A setting is not a privilege.
+- So RLS stops the application's **own mistakes**. It does not stop **SQL injection**, which parameterised queries and the restricted role's
+  privileges address. Closing this gap needs a signed, transaction-bound context that the policies verify through a `SECURITY DEFINER` function
+  keyed by a secret the runtime role cannot read. That is not implemented.
+
+**Not covered by RLS, on purpose:**
+
+- `rate_limits`: counters keyed by hashes and addresses.
+- `meta`: demo state; the audit-chain boundary row has its own trigger.
+- `schema_migrations`: read-only to the runtime role.
+- The embedded database (PGlite, local development and tests) runs as the owner, so RLS does not apply to it.
+
+**Evidence** (all on real PostgreSQL 16):
+
+- `src/server/rls.test.ts` RLS-1…6:
+  - self-test;
+  - cross-tenant reads and writes through code with no workspace check;
+  - fail closed;
+  - no pooled-connection contamination over 200 interleaved requests;
+  - negative control (RLS off on one table, then the leak appears and start-up refuses);
+  - the two gaps above.
+- The e2e suites with `TEND_E2E_DATABASE_URL`.
+- `node redteam/mutation-controls.mjs --routes` with `TEND_E2E_DATABASE_URL`: with the workspace check removed from the reviews route or the
+  agent-keys route, the 9,108-request tenant matrix still holds.
 
 ## The audit log and the application's database role
 
@@ -61,10 +112,9 @@ Limits of this, stated plainly:
 Not covered: the demo's retention (`allowEventRemoval`) needs `DELETE` on `events` and does not run under the restricted role; a production
 database has no demo. A database *owner* can always drop the triggers; keep the audit checkpoint (`npm run tend -- audit-verify`) outside TEND.
 
-## If you want database-enforced tenant isolation
+## Possible next steps for the database layer
 
-That is a design, not a setting: add `workspace_id` to every table that lacks it (`events`, `reviews`, `authorizations`, … are reached through
-`agents`), enable RLS with policies on a per-transaction `set_config('tend.workspace', …)` that the application sets only after authenticating, run
-the application as a role without `BYPASSRLS`, and give the few cross-tenant jobs (admin listing, push queue, audit verification) their own role.
-None of that exists here; it needs its own review, especially around connection pooling (`SET LOCAL` inside the transaction, never session
-`SET`) and the global advisory lock every write takes.
+- A signed, transaction-bound tenant context (see above), so injected SQL cannot pick a tenant.
+- A `workspace_id` column on the agent-linked tables, so policies don't need the `agents` subquery (performance on large logs).
+- Separate roles for the cross-tenant jobs instead of a setting.
+- Per-tenant advisory locks instead of one global write lock.
