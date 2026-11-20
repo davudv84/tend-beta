@@ -253,3 +253,152 @@ No row-level security and no tenant context in the database; the default deploym
 ### 13.8 Recommended independent audit scope
 
 Tenant isolation design (RLS vs. per-tenant schemas) and every owner-connection path; the global write lock; the restricted-role grants on your actual PostgreSQL version and provider (Neon's pooler behaviour for `SET LOCAL`); the managed-hooks deployment on your fleet; the hosted service's proxy/TLS setup.
+
+## 14. Round 4: database-enforced tenant isolation (row-level security)
+
+Commits `e848b71..e845057` (6 commits after `bfdcd7f`), 32 files. Nothing pushed or deployed. All evidence below is self-produced on this machine: PostgreSQL 16 locally, real Claude Code 2.1.327, and two read-only AI review sessions. **None of it is an external audit or penetration test.**
+
+### 14.1 Baseline at the start of this round
+
+- Tenant isolation was application-level only.
+- The default deployment ran every query as the schema owner.
+- The restricted role was opt-in.
+- Earlier claims of an RLS/"context key" implementation had no code behind them (section 13.1).
+
+### 14.2 Threat model (short)
+
+| Threat | Main control | Database control now | Residual |
+|---|---|---|---|
+| Tenant A reads or changes B's data through a bug in a route or a query (IDOR, missing filter) | workspace checks in routes | **RLS on 16 tables, fail closed** | none found (see 14.4) |
+| SQL injection in the application's session | parameterised queries everywhere (reviewed) | restricted role: no DDL, no log tampering | **the attacker can set the tenant settings** (RLS-6); with an owner login, can also `RESET ROLE` (RLS-5) |
+| Stolen agent key | revocation, optional expiry, per-workspace quotas | RLS confines it to its workspace | the key acts as the agent until revoked |
+| Malicious tool or agent | only paths that ask TEND are governed (hooks, MCP proxy, gateway) | — | unintegrated agents, `--bare`, administrator rights (14.6) |
+| Audit tampering | hash chain + checkpoint; append-only trigger | restricted role has no UPDATE/DELETE/TRUNCATE on logs, no cascade path, chain-boundary row immutable | the database owner can rewrite history; keep the checkpoint outside |
+| Database credential compromise | — | — | the owner credential defeats everything in the database; the restricted login (split) limits a leaked runtime credential |
+
+### 14.3 Implemented controls (file paths)
+
+**Policies** (`src/server/db.ts`, migration 18):
+- Row-level security on `workspaces`, `agents`, `central_policies`, `users`, `notifications`, `events`, `reviews`, `asks`, `authorizations`, `verification_runs`, `operator_sessions`, `auth_events`, `user_tokens`, `onboarding`, `push_subscriptions` and `notification_prefs`.
+- Each table has one `FOR ALL` policy with the same `USING` and `WITH CHECK`, so rows cannot be read across tenants, written across tenants, or moved between them.
+- Not covered by RLS, on purpose: `rate_limits`, `meta` (its chain row is protected by trigger) and `schema_migrations` (read-only to the runtime role).
+
+**Tenant context** (`src/server/db-context.ts`):
+- Every route and the two database-reading server pages start with an empty context.
+- `requireOperator` binds the session's workspace and `authAgent` binds the key's workspace, both from server-side rows.
+- Nothing tenant-scoped is visible before binding.
+- Binding a second, different workspace in one request is refused.
+- One process-wide store: Next.js puts pages and route handlers in separate module graphs. With a per-module store, the page could set a context the driver never saw; the e2e suite found this.
+
+**Transaction scope** (`postgres()` in `db.ts`):
+- Every transaction starts with `SET LOCAL ROLE <runtime role>` and `set_config(…, true)`.
+- A statement outside a transaction becomes one.
+- Nothing survives on a pooled connection, which is safe with PgBouncer transaction pooling (RLS-4).
+
+**Runtime role by default** (`enableIsolation`):
+- With an owner login, start-up creates the NOLOGIN role `tend_runtime` with least-privilege grants, under an advisory lock.
+- Every transaction switches to it. A restricted login (`DATABASE_MIGRATE_URL` split) is used as is.
+
+**Start-up self-test.** The server refuses to start ("fail closed") if any of these holds:
+- the effective role is a superuser or has `BYPASSRLS`;
+- it owns, or is a member of a role that owns, any table;
+- any `RLS_TABLES` table lacks RLS;
+- any tenant table carries a policy that is not ours.
+
+**On by default** in production on PostgreSQL (`TEND_DB_ISOLATION`). Off only explicitly, with a warning.
+
+**Explicit cross-tenant paths** (`grep -rn "asSystem\|asOwner" src`):
+- session and key lookup before authentication;
+- account sign-up, sign-in and reset;
+- the platform admin's routes (`requireAdmin`);
+- the push queue;
+- moving a push subscription, which now requires the same browser keys;
+- demo maintenance (`asOwner`).
+
+**Audit chain under RLS:** the chain trigger runs `SECURITY DEFINER` with a pinned `search_path` (migration 19), so it links to the global head.
+
+### 14.4 Vulnerabilities found in this round and fixed
+
+| ID | Finding | Found by | Severity | Status | Evidence |
+|---|---|---|---|---|---|
+| R4-1 | No database-enforced isolation; owner role at runtime by default | baseline | High (defence in depth) | **Fixed** (14.3) | RLS-1…8; route mutations M-R1/M-R2 below |
+| R4-2 | My first RLS version broke the global audit hash chain: the trigger saw only the inserting tenant's events | AI review #2 | High (integrity) | **Fixed** | RLS-7 failed before migration 19, passes after |
+| R4-3 | The self-test missed owner rights obtained through role membership, and permissive policies added later | AI review #2 | Medium | **Fixed** | RLS-8 (refuses a member-of-owner login and a `USING (true)` policy) |
+| R4-4 | Knowing a browser's push endpoint URL let another account take that browser's notifications (pre-existing) | AI review #2 | Low | **Fixed** | EV-24 |
+| R4-5 | The context store was duplicated across Next.js bundles; the Home page saw no rows | e2e on PostgreSQL | Functional (failed closed) | **Fixed** | e2e:onboarding 34/38 before, 38/38 after |
+| R4-6 | Demo reset returned 500 under the restricted role | tenant matrix on PostgreSQL | Functional | **Fixed** (409, or owner when available) | tenant matrix on PostgreSQL |
+| R4-7 | Concurrent cold starts could race on CREATE ROLE and GRANT | AI review #2 | Low | **Fixed** (advisory lock) | code; not load-tested |
+| R4-8 | Flaky e2e: 3 s mail wait; connect-e2e picked one of 9 fixed ports | test runs | Test | **Fixed** | full runs |
+| R4-9 | mutation-controls ignored a failing build | AI review #2 | Test | **Fixed** | code |
+
+### 14.5 Tests executed (exact results)
+
+| Command | Result |
+|---|---|
+| `npm test` (clean checkout, Node 24.22) | **598 tests: 557 pass, 1 fail, 40 skipped.** The fail is the `lsof` test, environmental (V-9). The skips are 35 PostgreSQL tests run separately below and 5 macOS-only. |
+| `TEND_TEST_DATABASE_URL=… node --test src/server/postgres.test.ts src/server/postgres-verify.test.ts src/server/rls.test.ts` | **35/35** (20 + 7 + 8) |
+| `TEND_E2E_DATABASE_URL=… npm run e2e:{authz,gateway,connect,accounts,open-beta,onboarding}`, RLS on | **154/154**. connect-e2e always uses the embedded database, so it is not an RLS result. |
+| Same, embedded database | 154/154 |
+| `TEND_E2E_DATABASE_URL=… node redteam/live/tenant-matrix.mjs` | 9,108 requests, HELD |
+| `TEND_E2E_DATABASE_URL=… node redteam/mutation-controls.mjs --routes` | **M-R1, M-R2 DETECTED-AND-HELD**: workspace check removed from the reviews and agent-keys routes, tenant matrix still holds through RLS. On the embedded database (no RLS) the same mutations are breaches. |
+| On PostgreSQL: run-all / dynamic scan / MCP proxy / hook fail-closed | 230 held / 6 / 13 / 11, 0 broken. run-all held 231 on the embedded database; the one-check difference was not investigated. |
+| Real Claude Code 2.1.327: hooks / coverage / managed (embedded); hooks on PostgreSQL with RLS | 27/27, 19/19, 15/15; **27/27 on PostgreSQL** |
+| `node redteam/mutation-controls.mjs` (unit) | see 14.9 |
+| Lint (1 warning, in a non-project skill file), `tsc`, production build, eslint-security, Semgrep ERROR rules, secretlint, `npm audit --omit=dev` | pass |
+
+### 14.6 Pre-execution blocking: evidence and its limits
+
+- **Claude Code (hooks):** the blocked command's output file never appears. Shown with real Claude Code against both the embedded database and PostgreSQL with RLS, with TEND stopped, after expiry (10-minute run, previous round) and with a revoked key.
+- **Managed install:** survives project `disableAllHooks`, `--setting-sources user`, a `--settings` file, bypass-permissions mode and another config directory.
+- **MCP proxy:** the example server's ledger has no line for a denied call.
+
+**Not protected:**
+- Claude Code `--bare` (untested; treat it as a bypass);
+- per-project hooks against `disableAllHooks` or `--setting-sources user` (reproduced);
+- Cursor (not installed: NOT VERIFIED);
+- any agent that does not call TEND;
+- anyone with administrator rights on the machine.
+
+### 14.7 Database isolation: guarantees and exceptions
+
+**Guaranteed** (tested on PostgreSQL 16 locally), with isolation on and the self-test passing: a request bound to workspace A cannot read, update, delete or insert rows of workspace B in the 16 tables, whatever query the application runs (RLS-2, M-R1/M-R2). A request with no tenant sees nothing tenant-scoped (RLS-3). Context never leaks between requests on pooled connections (RLS-4).
+
+**Exceptions:**
+1. The explicit `asSystem` and `asOwner` paths in 14.3.
+2. SQL injection can set `tend.system` or `tend.workspace` (RLS-6). With an owner login it can also `RESET ROLE` (RLS-5). A signed, transaction-bound context verified by a `SECURITY DEFINER` function would close this; **not implemented**.
+3. The embedded database (development) has no RLS.
+4. `rate_limits` and `meta` are global.
+5. Visitors of a public instance see the default workspace; hiding private agents there is still the application's filter.
+
+**NOT VERIFIED:**
+- Neon itself (PgBouncer transaction pooling, `CREATE ROLE` by `neondb_owner`). A non-superuser owner with CREATEROLE was emulated locally (RLS-8).
+- Vercel cold starts.
+- Performance of the `EXISTS` policies on large `events` tables.
+
+### 14.8 Authentication and access control
+
+- **Reviewed this round:** session lookup, agent keys and admin binding as part of the context work. No new findings beyond R4-4.
+- **Role model: not implemented.** Workspaces have exactly one account, so roles inside a workspace have nothing to act on yet. The design that fits:
+  - workspace memberships `(user, workspace, role ∈ owner | approver | viewer)`;
+  - `requireOperator(req, db, need)` checks the role;
+  - RLS stays per workspace.
+- **MFA/SSO: not implemented.** Use maintained libraries, not custom crypto: WebAuthn/passkeys via a maintained WebAuthn server library, and OIDC SSO via a certified OIDC client. Both are blockers for production with real customers.
+
+### 14.9 Negative controls
+
+Unit mutations on the final tree: see the appended line below. Route mutations: DETECTED on embedded (round 3), DETECTED-AND-HELD on PostgreSQL with RLS (this round).
+
+### 14.10 Production blockers
+
+1. Verify on the real stack: Neon pooled URL, role creation by the Neon owner, Vercel cold starts with `TEND_DB_ISOLATION` on. It refuses to start if isolation cannot be guaranteed, so do this on a preview deployment first, or set `TEND_DB_ISOLATION=off` and accept application-level isolation only.
+2. SQL-injection-resistant tenant context (signed context), or a restricted login (`DATABASE_MIGRATE_URL`) at minimum.
+3. MFA/SSO and a role model.
+4. GitHub Actions never run; CodeQL, OWASP ZAP and gitleaks never run (NOT VERIFIED: no Docker daemon, binary downloads blocked here).
+5. External penetration test.
+6. Cursor and `--bare` untested.
+
+### 14.11 Verdict
+
+**CONTROLLED BETA.** Database isolation is now real and tested locally, the enforcement paths that exist block before execution, and the remaining gaps are documented. It is not a PRODUCTION CANDIDATE: blockers 1–5 above, and none of this has been checked by an independent human.
+
+Result of `node redteam/mutation-controls.mjs` on commit e845057: **15/15 unit mutations detected** (M-01…M-15).
