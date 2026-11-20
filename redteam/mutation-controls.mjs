@@ -49,13 +49,17 @@ async function mutate(m, check) {
   let verdict;
   try { verdict = await check(); } finally { writeFileSync(file, original); }
   results.push([m.id, verdict, m.why]);
-  if (!verdict.startsWith("DETECTED")) undetected++;
+  if (!verdict.startsWith("DETECTED")) undetected++; // DETECTED-AND-HELD counts as passing
 }
 if (process.argv.includes("--routes")) {
   for (const m of routes) await mutate(m, async () => {
     spawnSync("npm", ["run", "build"], { cwd: root, encoding: "utf8", timeout: 400_000 });
     const r = spawnSync(process.execPath, ["--no-warnings", "redteam/live/tenant-matrix.mjs"], { cwd: root, encoding: "utf8", timeout: 400_000 });
-    return /\[BROKEN\]/.test(r.stdout) || r.status ? "DETECTED (tenant matrix fails)" : "UNDETECTED: the tenant matrix still passes";
+    const failed = /\[BROKEN\]/.test(r.stdout) || r.status;
+    // With TEND_E2E_DATABASE_URL the servers run on PostgreSQL with row-level security: then the database must hold even without the route's
+    // check (defence in depth), so the matrix must still PASS. On the embedded database (no RLS) it must FAIL.
+    if (process.env.TEND_E2E_DATABASE_URL) return failed ? "BREACH: with the route check removed, RLS did not hold" : "DETECTED-AND-HELD (route check removed; row-level security still kept tenants apart)";
+    return failed ? "DETECTED (tenant matrix fails)" : "UNDETECTED: the tenant matrix still passes";
   });
   spawnSync("npm", ["run", "build"], { cwd: root, encoding: "utf8", timeout: 400_000 }); // rebuild the real tree
 } else {

@@ -517,7 +517,7 @@ export async function postgres(url: string): Promise<DB> {
   const isolation = { on: false, role: "" };
   const preamble = () => {
     const c = contextSettings(); // validated identifiers, safe as literals
-    return `${isolation.role ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`;
+    return `${isolation.role && !c.owner ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`;
   };
   const tx: DB["tx"] = async (fn) => {
     const client = await pool.connect();

@@ -50,7 +50,7 @@ const BLANK = ["DATABASE_URL", "POSTGRES_URL", "VERCEL", "TEND_TRUSTED_PROXY", "
  * TEND_E2E_DATABASE_URL (a PostgreSQL superuser URL on THIS machine): every isolated server gets a fresh database there instead of the embedded
  * one, so the whole e2e suite runs against real PostgreSQL with row-level tenant isolation on (production default). Dropped when the server stops.
  */
-async function freshPostgres() {
+async function freshPostgres(dataDir) {
   const base = process.env.TEND_E2E_DATABASE_URL;
   if (!base) return undefined;
   const u = new URL(base);
@@ -58,14 +58,17 @@ async function freshPostgres() {
   const pg = (await import("pg")).default;
   const admin = new pg.Client({ connectionString: base });
   await admin.connect();
-  const name = `tend_e2e_${Math.random().toString(36).slice(2, 10)}`;
-  await admin.query(`CREATE DATABASE ${name}`);
+  // One database per data folder: a suite that restarts its server on the same folder ("the same database, restarted …") gets the same database.
+  // Kept after stop() for that reason; they live only on the disposable local test cluster.
+  const { createHash } = await import("node:crypto");
+  const name = `tend_e2e_${createHash("sha256").update(String(dataDir ?? Math.random())).digest("hex").slice(0, 16)}`;
+  if (!(await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [name])).rowCount) await admin.query(`CREATE DATABASE ${name}`);
   u.pathname = `/${name}`;
-  return { url: u.toString(), drop: async () => { await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`).catch(() => {}); await admin.end().catch(() => {}); } };
+  return { url: u.toString(), drop: async () => { await admin.end().catch(() => {}); } };
 }
 
 export async function startIsolatedServer({ root, env, database = "embedded", port: wantedPort, confine, keepDir = false }) {
-  const fresh = database === "embedded" ? await freshPostgres() : undefined;
+  const fresh = database === "embedded" ? await freshPostgres(env?.TEND_DATA_DIR) : undefined;
   if (fresh) { env = { ...env, DATABASE_URL: fresh.url }; database = "postgres"; }
   if (!existsSync(path.join(root, ".next/BUILD_ID"))) throw new Error("There is no production build yet. Run `npm run build` first.");
   const dir = mkdtempSync(path.join(tmpdir(), "tend-isolated-"));

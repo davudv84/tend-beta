@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { pageTitle } from "@/i18n/server";
 import { getDb } from "@/server/db";
+import { describeError } from "@/server/http";
 import { shouldOnboard } from "@/server/onboarding";
 import { currentSession } from "@/server/session";
 import { bindWorkspace, withRequestContext } from "@/server/db-context";
@@ -20,7 +21,8 @@ async function needsGuide() {
       bindWorkspace(s.workspace); // the database shows this page only the signed-in account's own workspace
       return shouldOnboard(db, s);
     });
-  } catch {
+  } catch (e) {
+    console.error("[tend] the setup-guide check failed:", describeError(e));
     return false; // the database is unreachable: Home itself says so
   }
 }

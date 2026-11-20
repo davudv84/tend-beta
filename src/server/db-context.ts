@@ -13,8 +13,11 @@
 // parameterised queries and the restricted role's privileges (docs/database-roles.md), not by this.
 import { AsyncLocalStorage } from "node:async_hooks";
 
-export interface DbContext { workspace?: string; system?: boolean }
-const als = new AsyncLocalStorage<DbContext>();
+export interface DbContext { workspace?: string; system?: boolean; owner?: boolean }
+// One store per process, shared by every bundle: Next.js builds server pages and route handlers into separate module graphs, while the database
+// handle is one per process (globalThis.__tendDb). A per-module store would let a page set a context the driver never sees.
+const g = globalThis as { __tendDbContext?: AsyncLocalStorage<DbContext> };
+const als = (g.__tendDbContext ??= new AsyncLocalStorage<DbContext>());
 const WORKSPACE = /^[A-Za-z0-9_.:-]{1,64}$/;
 
 export const dbContext = (): DbContext | undefined => als.getStore();
@@ -40,9 +43,16 @@ export function bindSystem() {
 /** Runs one reviewed cross-tenant operation. Whatever it binds stays inside it. */
 export const asSystem = <T>(fn: () => Promise<T>): Promise<T> => als.run({ ...(als.getStore() ?? {}), system: true }, fn);
 
+/**
+ * The built-in demo's own maintenance (simulated agents in the default workspace: seeding, retention, reset) runs with the login role's own
+ * rights, without the switch to the runtime role. Only possible when the application logs in as the schema owner; with a restricted login it
+ * fails (42501) and the demo simply does not prune or reset. Never used for anything a request can direct.
+ */
+export const asOwner = <T>(fn: () => Promise<T>): Promise<T> => als.run({ ...(als.getStore() ?? {}), system: true, owner: true }, fn);
+
 /** The settings a transaction runs with: values are validated here, so they can be written into SQL as literals. */
-export function contextSettings(): { workspace: string; system: "on" | "off" } {
+export function contextSettings(): { workspace: string; system: "on" | "off"; owner: boolean } {
   const c = als.getStore();
   const workspace = c?.workspace && WORKSPACE.test(c.workspace) ? c.workspace : "";
-  return { workspace, system: c?.system ? "on" : "off" };
+  return { workspace, system: c?.system ? "on" : "off", owner: !!c?.owner };
 }
