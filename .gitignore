@@ -28,3 +28,11 @@ facts.db-wal
 /.palace-stage/
 /teammate-files/
 /token-usage.json
+/projects/
+runs.json
+/agents/*/memory-archive-laptop.md
+/agents/*/memory-archive-cloud.md
+/agents/*/**/.sync-*.tmp
+/sync.git/
+/agents/*/codex-memory.md
+/agent-activity.json

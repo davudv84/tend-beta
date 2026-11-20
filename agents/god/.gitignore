@@ -4,3 +4,6 @@ inbox/
 outbox/
 .codex/
 .broker
+sleep-screen.ansi
+sleep-screen.json
+.cloud

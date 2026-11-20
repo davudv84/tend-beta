@@ -4,6 +4,41 @@ const http = require('http');
 const https = require('https');
 const net = require('net');
 const { URL } = require('url');
+// Under the listener's 256 KB frame limit (core/hookServer.ts MAX_HOOK_FRAME_BYTES), with room for the office token.
+const HOOK_FRAME_ROOM = 200 * 1024;
+const HOOK_FRAME_KEEP = ['ping', 'hive_launch_agent', 'hive_hook_token', 'hook_event_name', 'agent_id', 'session_id', 'transcript_path', 'context_window', 'rate_limits', 'cwd', 'tool_name', 'stop_hook_active', 'prompt', 'source', 'notification_type', 'message', 'model', 'agent_type', 'input', 'output', 'cache_read', 'cache_creation'];
+// UTF-8 bytes of the frame; counted by hand where a host gives no Buffer (an extension run in a bare context). A
+// payload that cannot be written as JSON counts 0: it is left as it is, and its sender drops it as before.
+function hookFrameBytes(p) {
+  let s;
+  try { s = JSON.stringify(p); } catch (e) { return 0; }
+  if (typeof s !== 'string') return 0;
+  if (typeof Buffer !== 'undefined') return Buffer.byteLength(s);
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c < 0xdc00) { n += 4; i++; }
+    else n += 3;
+  }
+  return n;
+}
+function fitFrame(p) {
+  if (!p || typeof p !== 'object') return p;
+  delete p.tool_response;
+  if (hookFrameBytes(p) <= HOOK_FRAME_ROOM) return p;
+  delete p.tool_input;
+  ['prompt', 'prompt_response', 'last_assistant_message', 'message'].forEach(function (k) {
+    if (typeof p[k] === 'string') p[k] = p[k].slice(-4096);
+  });
+  if (hookFrameBytes(p) <= HOOK_FRAME_ROOM) return p;
+  Object.keys(p).forEach(function (k) {
+    if (HOOK_FRAME_KEEP.indexOf(k) === -1) delete p[k];
+    else if (typeof p[k] === 'string') p[k] = p[k].slice(-4096);
+  });
+  return p;
+}
 
 const SOCK = process.env.HIVE_SOCK;
 const AGENT_ID = process.env.AGENT_ID || null;
@@ -23,8 +58,42 @@ function ctxSize(model) {
   return 200000;
 }
 
-// Fire-and-forget emit of a shim-shaped payload to the hive socket. Never throws.
+// THE RELAY WAY (Cloud Office M8, PR 27c2). Inside the laptop sandbox VM
+// there is no HIVE_SOCK: the host's socket never enters the VM. The worker
+// there listens on loopback and names itself in MD_WORKER_RELAY; the same
+// JSON that would be written to the socket is POSTed to
+// <MD_WORKER_RELAY>/hook/<AGENT_ID>, with no Authorization header (the worker
+// passes it to the app, which adds its own token and applies its checks), and
+// the reply body is what the socket would have answered. Only when HIVE_SOCK
+// is absent, and only to http on this machine: any other address is ignored,
+// so a changed variable cannot send a hook payload off the machine.
+function relayTarget(agentId) {
+  const base = process.env.MD_WORKER_RELAY;
+  if (!base || !agentId) return null;
+  try {
+    const u = new URL(base);
+    if (u.protocol !== 'http:' || (u.hostname !== '127.0.0.1' && u.hostname !== 'localhost')) return null;
+    let p = u.pathname;
+    while (p.length && p.charAt(p.length - 1) === '/') p = p.slice(0, -1);
+    return { host: u.hostname, port: u.port || 80, path: p + '/hook/' + encodeURIComponent(agentId) };
+  } catch (_) { return null; }
+}
+const RELAY = SOCK ? null : relayTarget(AGENT_ID);
+
+// Fire-and-forget emit of a shim-shaped payload to the hive socket, or to the
+// worker's relay when there is no socket. Never throws.
 function emit(payload) {
+  fitFrame(payload);
+  if (!SOCK && RELAY) {
+    try {
+      const body = JSON.stringify(payload);
+      const req = http.request({ host: RELAY.host, port: RELAY.port, path: RELAY.path, method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, function (res) { res.resume(); });
+      req.on('error', function () {});
+      req.setTimeout(5000, function () { req.destroy(); });
+      req.end(body);
+    } catch (e) {}
+    return;
+  }
   if (!SOCK) return;
   try {
     const c = net.createConnection(SOCK, function () { c.end(JSON.stringify(payload) + '\n'); });

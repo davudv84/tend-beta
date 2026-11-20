@@ -18,7 +18,7 @@ address is `god`.
 - `handoff.md`: one section per piece of work: `## <work id> | <title>`, a `_touched: <ISO time>_` line,
   then State, Next, Files, Open. Read it at the start of a session and after a clear. Update the section
   for the work you are on before you stop and whenever the app asks you to hand off. The app keeps the newest 12.
-- `memory-archive.md`: an index of what moved out (dates and headings). There are no summaries any more.
+- `memory-archive.md` (`memory-archive-laptop.md` or `memory-archive-cloud.md` once the office syncs twins; the other office's arrive as copies to read): an index of what moved out (dates and headings). There are no summaries any more.
 - `memory-archive-raw*.md`: what moved out of memory.md and handoff.md, word for word. Search them.
 - `inbox/`: your messages. The wake prints them in full and the app files them when your turn ends.
 - `inbox/.done/`: handled messages. Open or move an inbox file only when the wake gives its path.
@@ -47,9 +47,11 @@ The harness fills in `id`, `from`, `hops`, and timestamps.
 ## Rules of the road
 - Only `request`, `query`, and `propose` expect a reply. `inform`, `note` and `done` are terminal:
   don't reply to them, or two agents will loop forever. Never send a message that only acknowledges or thanks.
-- `note` is for information that needs no action. It does not wake the receiver (`inform` does); it
-  comes with their next wake, 30 minutes at most. A person's request, or their words you pass on, is
-  never a note. A temp's note is delivered as `inform`: a temp works on a person's errand.
+- `note` is for information that needs no action. It wakes an idle receiver at once, like `inform`; a
+  busy one reads it when its turn ends. A person's request, or their words you pass on, is never a note.
+  A note sent in a turn that began with a person's words (chat, Slack, an ASK ME answer) is delivered as
+  `inform`, and so is a temp's: a temp works on a person's errand.
+- Before you send, ask: will they do anything differently because of this? Yes: request or inform. No: note.
 - For anything ambiguous, cross-cutting, or needing sign-off, message `god` — the
   god agent clarifies answers for you so you rarely need the human directly.
 - There is NO separate human-approval queue. Human-in-the-loop is native to Claude
@@ -68,6 +70,13 @@ There are two shared surfaces, both in the hive root:
   assignee, priority, deps). Keep the task you're working reflected in its status.
   Leave `id` out; the harness assigns the ticket key (e.g. V53-299). Refer to cards by that key.
 
+## Compacting an agent
+`fleet.json` carries each agent's context fill as `contextPct`. To have the app compact an agent,
+yourself included, write ONE JSON file `compact-requests/<agent id>.json` in the hive root with
+`"agent"` (its id) and `"reason"`. The app types that agent's own compact at its next idle prompt;
+nothing is wiped. At most once per agent in 10 minutes. An accepted file moves to
+`compact-requests/.done/`, a refused one to `compact-requests/.failed/` with an `"error"`.
+
 ## Asking the human (the ASK ME card)
 When a card can only move with the human — a question to answer, or an action only they can do
 (create an account, approve a spend, hand over credentials, test on their device) — the god sets the
@@ -80,10 +89,17 @@ card `"status": "blocked"` and appends the ask to its `humanQA` array:
 `"from"` is the agent whose question it is: the ask shows on that agent's own tab. Leave it out for a
 floor wide question; that one shows on the orchestrator's tab.
 
+For a choice, the entry may also carry `"options": [{ "label": "...", "detail": "..." }]`
+(at most 8, `"detail"` optional), `"recommended": <option index, from 0>` and `"multi": true` when
+several may be picked; the harness shows them as choices, writes the answer as text in `"a"` and
+the picked indexes, from 0, in `"chosen"`.
+
 The harness shows the open ask on the ASK ME board and in the ASK ME tab WHATEVER the card's status
 (except done), so a forgotten status can no longer hide a question; a card waiting on the human still
 belongs in `blocked`. The human's reply lands in the same entry as `"a"` plus an inbox message to
-god. Every past entry stays on the card — that trail is the decision history.
+the agent the ask belongs to (`"from"`, else the card's assignee), which acts on it and unblocks the card.
+A floor wide ask, or one whose agent is no longer on the floor, goes to god. Every past entry stays on
+the card — that trail is the decision history.
 
 **Write the ask short, and in markdown.** The card renders it, so plain-text asterisks and backticks
 show up literally, and a card is not a terminal — an ask longer than a short paragraph plus its
@@ -123,7 +139,7 @@ You can start a temp yourself. Write ONE JSON file into `spawn-requests/<id>.jso
 ```json
 {
   "objective": "the job (required)",
-  "cwd": "/absolute/path/to/the/repo (required)",
+  "cwd": "/absolute/path/to/the/repo (required; your brief says where a new one goes)",
   "cloneOf": "agent id (optional; the temp is a copy of that agent)",
   "agentFile": "template id (optional; the temp is made from that saved agent file)",
   "name": "display name (optional)",
@@ -143,8 +159,7 @@ the memory index and its capabilities, and moves the request to `spawn-requests/
 or to `spawn-requests/.failed/` with a reason. `isolate` defaults to true, giving the temp its own git
 worktree. `slack` sends its replies and failures to that thread. `character` and `accent` set how it
 looks on the floor; naming it after a cast member already gets that avatar, and an unknown value falls
-back rather than failing. This is the only way you can start anyone: a hire manifest under
-`research/hires/` needs the human to confirm it in the UI.
+back rather than failing. A temp is for one job.
 
 **A clone.** `cloneOf` makes the temp a copy of that agent: its worktree is cut from that agent's current
 branch (uncommitted changes are not carried), it runs on that agent's engine with its skills and
@@ -193,8 +208,20 @@ Your skills are copied into `agents/<your-id>/.claude/skills/` when you start. R
 `/lastWeek`, `/last30Days`, `/lastQuarter` and more), which resolve any time window so you never
 compute dates by hand, and the integrations reached through the loopback broker. Every agent gets it:
 `MD_BROKER_URL` and `MD_BROKER_TOKEN` are in your environment, and `$AGENT_DIR/.broker` holds the
-current pair after an app restart. Without either, ask `god`. `GET $MD_BROKER_URL/i` with your token
+current pair after an app restart: load it into variables, never print it. Without either, ask `god`. `GET $MD_BROKER_URL/i` with your token
 answers `{"ids":[...]}`, the connection ids you may call as `$MD_BROKER_URL/i/<id>/<path>`; read it, never guess one.
+
+## Engines and models: `md-models`
+`md-models` lists every engine with its models, and which engines are installed and signed in here (this computer,
+or the Cloud Office you are in); `md-models --json` gives every model as JSON. Run it before you name a
+"provider" or a "model" in a hire request or a temp's spawn request, and pick an engine that is installed and signed in.
+
+## Usage limits: `md-limits`
+`md-limits` prints each engine's usage limits, only the windows it reports (Claude Code, Codex, Antigravity, OpenCode):
+percent used, when the window resets, and how old the reading is; `md-limits --json` gives the same as JSON.
+It reads what the app keeps, asks no engine and costs nothing. Run it before a big piece of work, before
+starting temps, and when a call fails on a rate limit. At 80% or more a window is NEAR LIMIT: tell `god`
+rather than start work that would stop half way. "no reading yet" is not zero.
 
 ## Semantic memory (optional — when `mempalace` is installed)
 When `MEMPALACE_PALACE_PATH` is set in your environment, the hive shares a

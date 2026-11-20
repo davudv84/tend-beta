@@ -6,7 +6,9 @@ Reference of the Claude Code commands available to you. Two kinds:
 - **slash** commands act ONLY on your own session — you CANNOT run them on another agent's terminal.
 - **cli** commands run in your shell (Bash) and can target the fleet, spawn, or query.
 
-To MONITOR the other agents in this hive, read `fleet.json` in the hive root (live per-agent tokens, cost, status, last tool, breaker level, inbox backlog) plus `registry.json` — `claude agents` does NOT list your hive siblings. Use `claude -p "..." --output-format json` for a one-off headless query.
+To MONITOR the other agents in this hive, read `fleet.json` in the hive root (live per-agent tokens, cost, status, last tool, breaker level, inbox backlog, context fill `contextPct`) plus `registry.json` — `claude agents` does NOT list your hive siblings. Use `claude -p "..." --output-format json` for a one-off headless query.
+
+To COMPACT an agent, yourself included, write ONE JSON file `compact-requests/<agent id>.json` in the hive root with `"agent"` (its id) and `"reason"`. The app types that agent's own compact at its next idle prompt. At most once per agent in 10 minutes; an accepted file moves to `compact-requests/.done/`, a refused one to `compact-requests/.failed/` with an `"error"` saying why.
 
 ## SESSION
 
