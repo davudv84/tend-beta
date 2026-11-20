@@ -480,3 +480,119 @@ certification.
 
 **CONTROLLED BETA** (unchanged). The database layer is stronger and two real high-severity weaknesses in my own previous round were found and
 fixed, but blockers 1–4 above keep this from being a PRODUCTION CANDIDATE.
+
+## 16. Round 6: enterprise security phase 3
+
+Branch `security/verification`, commits `94fb548`…`5ba164c` on top of `185fbcd` (local, **not pushed**). Everything ran in this container:
+PostgreSQL 16.15, Node 22, Chromium (Playwright 1.63), Claude Code 2.1.329. Labels: **VERIFIED** (tested here, evidence named),
+**IMPLEMENTED BUT UNVERIFIED**, **NOT IMPLEMENTED**, **BLOCKED**, **FAILED**. No independent human reviewed any of it; the review in 16.3
+is an AI review.
+
+### 16.1 Implemented controls
+
+| Control | Status | Evidence |
+|---|---|---|
+| Signed tenant context **bound to its transaction** (backend pid + start time; migration 23). The 60 s replay window is gone. | VERIFIED | RLS-10 (a capture replayed in the next transaction is refused; forged bindings refused); M-16 |
+| Production refuses a database login that can regain owner or privileged rights; requires `TEND_CONTEXT_KEY`; the runtime role may not create temp tables (`TEND_DB_STRICT`; `TEND_DB_ALLOW_OWNER_LOGIN=1` is the only, logged, exception) | VERIFIED | RLS-12 with distinct roles and a Neon-style non-superuser owner; M-18 |
+| Owner migrates and grants the restricted login at every start; `TEMPORARY` revoked from `PUBLIC` | VERIFIED | PV-6, RLS-12; every e2e server now runs as a restricted login |
+| Pooled connections cleaned after every transaction (`pg_advisory_unlock_all()`, `RESET ALL`; `BEGIN READ WRITE`) | VERIFIED | RLS-13 (injected session locks and settings gone; other tenants' writes not stalled); M-23 |
+| Self-test also refuses: log-table write rights (stray grant, `pg_write_all_data`), schema/context-function ownership, server-file roles | VERIFIED | RLS-13 |
+| Workspace roles owner/admin/operator/viewer, server-side on every operator route | VERIFIED | RBAC-1…6, `routes.test.ts` (every route declares its need), `rbac-matrix` 36/36 on PostgreSQL; M-19, M-20 |
+| Invitations as records of their own (migration 26) | VERIFIED | RBAC-2, RB-19/RB-20 |
+| Two-step sign-in (TOTP via otplib 13.6.0), encrypted secrets, replay refusal, recovery codes, lockout, admin reset, mails | VERIFIED locally | MFA-1…6 (RFC 6238 vectors; independent reference), `mfa-e2e` 9/9 in Chromium on PostgreSQL; M-21, M-22 |
+| SSO | NOT IMPLEMENTED | design only, `docs/authentication.md` |
+| Security events (redacted) and 9 alert rules, webhook delivery | VERIFIED locally | MON-1…4, `alerts-e2e` (one alert from 30 real failed sign-ins, no PII) |
+| Delivery to a real paging/chat service | NOT VERIFIED | — |
+| Production preflight (`scripts/check-production-config.mjs`, no values printed) | VERIFIED | PROD-1/2 |
+| CodeQL, gitleaks (history), ZAP baseline, Dependabot, least-privilege workflow permissions | IMPLEMENTED BUT UNVERIFIED | never run on GitHub; no Docker here |
+| Merge protection | BLOCKED | repository settings need an admin (steps in `docs/ci.md`) |
+
+### 16.2 Vulnerabilities found this round and fixed
+
+| ID | Finding | Found by | Severity | Status |
+|---|---|---|---|---|
+| R6-1 | 60 s replay window of the signed context (R5-1 residual) | carried over | Medium | Fixed: transaction binding (RLS-10) |
+| R6-2 | Single owner URL in production: RLS bypassable by `RESET ROLE` (RLS-5) | carried over | High | Fixed by default: refused unless explicitly accepted (RLS-12) |
+| R6-3 | DB-1: session-level advisory lock by injected SQL stalls every tenant's writes; session settings persist on pooled connections | AI review | Medium | Fixed (RLS-13, M-23) |
+| R6-4 | MFA-1: enabling two-step needed no password, so a stolen session could lock the owner out | AI review | Medium | Fixed: password required, mails, admin reset (MFA-6) |
+| R6-5 | INV-1: invitations created real accounts, so they could pre-claim or permanently block an address; 409 revealed accounts | AI review | Medium | Fixed: separate invitation records, neutral answers (RBAC-2) |
+| R6-6 | MFA-2: unlimited slow code guessing (20/hour forever) | AI review | Low | Fixed: locked after 10 wrong codes a day until password reset |
+| R6-7 | MON-1/2: denial alerts keyed on a constant; a flood could wipe counters; MFA rule above the budget | AI review | Low | Fixed: per session/agent, LRU eviction, threshold 3 |
+| R6-8 | DB-2: owner-login exception also silently dropped the key and TEMP requirements | AI review | Low | Fixed |
+| R6-9 | DB-3: self-test missed log-write rights, schema/function ownership, server-file roles | AI review | Low | Fixed (RLS-13) |
+| R6-10 | RBAC-1: viewers could mark all notifications read and push to all members; protection results needed only view | AI review | Low | Fixed: operator |
+| R6-11 | CI-1: ZAP job ignored warnings | AI review | Low | Fixed; image tag still floating (documented) |
+| R6-12 | My first per-account alert rule lumped unknown accounts together | own test | Low | Fixed before commit |
+| R6-13 | Test harness: run-all hung (server blocked writing to an undrained pipe once security logs grew) | final run | Test | Fixed: servers log to a file |
+| R6-14 | Two tests could build the real key when "mutating" it (1 in 64) | final run | Test | Fixed |
+
+### 16.3 Adversarial review
+
+A separate read-only agent reviewed `185fbcd..HEAD` (code read from git). It reported 9 findings from reading the code (5 medium, 4 low; none
+critical or high) and 2 plausible ones. All were fixed (R6-3…R6-11) and each has a regression test. Its "checked and found sound" list covers
+the transaction binding, the self-test semantics, RBAC route needs, MFA flows and the CI triggers. This is an AI review, **not** an
+independent penetration test.
+
+### 16.4 Verification on the final tree (`5ba164c`)
+
+| Command | Result |
+|---|---|
+| `npm test` | 577 tests: **576 pass, 1 FAILED**: the `lsof` port-ownership test (environmental; same before this round) |
+| PostgreSQL: `rls` + `postgres-verify` + `postgres` tests | **40/40** (RLS-1…13, PV-1…7) |
+| Mutation controls | DB **4/4** (M-16, M-17, M-18, M-23); roles/MFA **4/4** (M-19…M-22); M-01…M-15 last run in round 5 (16/16); route mutations not re-run this round |
+| e2e on PostgreSQL, **production default** (restricted login, signed): authz/gateway/connect/accounts/open-beta/onboarding | 26/11/8/30/41/38, all pass |
+| e2e on PostgreSQL, legacy owner login | all pass, except **gateway: 1 FAILED run** (a 401 during setup, cause unknown); passed in 2 re-runs. Reported as a flake, not explained |
+| Tenant matrix | **9,752 requests** (36 routes), HELD |
+| Role matrix / MFA browser e2e / alert delivery e2e | 36/36 / 9/9 / 3/3 |
+| run-all (embedded and PostgreSQL) | **231 held, 0 broken** after R6-13; before that fix, phase2 hung (FAILED) on both |
+| MCP proxy / hook fail-closed / dynamic scan | held / 11 held / held |
+| Backup-restore drill / key-rotation drill | 8/8 / 6/6 |
+| Real Claude Code 2.1.329: hooks on PostgreSQL / coverage / managed | **27/27 / 19/19 / 15/15** |
+| `tsc`, lint, `npm audit --omit=dev` | pass, pass, 0 vulnerabilities (12 moderate in dev-only tooling, unchanged) |
+| Performance (`rls-bench`, local) | 12k-row tenant query 19.5 ms (before: 19.2). Small signed transaction **0.42 ms vs 0.29 ms** before this round (binding round trip + session cleanup); at 8 concurrent 0.15 vs 0.10 ms. On a hosted database add about one network round trip per signed transaction (not measured) |
+
+### 16.5 Remaining vulnerabilities and limits
+
+- **High (operational):** nothing verified on Vercel or Neon. **The live deployment will refuse to start on its next deploy** until it has a
+  restricted login (`docs/deployment-checklist.md`) or the explicit `TEND_DB_ALLOW_OWNER_LOGIN=1`.
+- **Medium:** SQL injection under the restricted login still acts as the current tenant, with its privileges, inside its own transaction.
+  Parameterised queries are the only defence there.
+- **Medium:** the platform admin is one shared token, with no second factor. There is no SSO.
+- **Medium:** alert counters are per instance, so a distributed attack may stay under them.
+- **Low:** per-user rows inside a workspace are separated by the application, not by RLS. Members are managed through the API only.
+- **Low:** `REVOKE TEMPORARY … FROM PUBLIC` affects other applications that share the database.
+- **Low:** the second-factor lockout uses a fixed daily window (about 18 guesses at worst across midnight).
+- **Supply chain:** actions are pinned by tag, not commit SHA. The ZAP image tag floats.
+- **Unsupported integrations:**
+  - Claude Code `--bare`: untested, treat it as a bypass.
+  - Per-project hooks: bypassed by `disableAllHooks` or `--setting-sources user` (the managed install is not).
+  - Cursor: NOT VERIFIED (not installed).
+  - Any agent that does not call TEND.
+  - Local administrators.
+
+### 16.6 Production blockers
+
+1. An independent penetration test (scope: 13.8, plus RBAC and two-step sign-in).
+2. A preview on Vercel and Neon through `docs/deployment-checklist.md`, with the suites run against it.
+3. CI actually running green on GitHub, with merge protection on.
+4. SSO, and a second factor for the platform admin (or the admin token disabled in production).
+5. Alert delivery to a real paging service, and alerts across instances (log platform).
+6. Named owners and a rehearsed incident (`docs/operations.md`).
+
+### 16.7 Score
+
+**7 / 10, plausible range 6.5–7.5.** This is my own assessment, from AI-run tests on one machine, and it is **not** a certification.
+
+Up from 6:
+- The database layer now holds against SQL injection under the production default, tested with distinct roles.
+- Roles and two-step sign-in exist and are tested over HTTP and in a browser.
+- Monitoring exists.
+- An adversarial review's findings were fixed with regression tests.
+
+Not 8, because:
+- nothing ran on the real hosting stack;
+- CI and its scanners never ran;
+- there is no SSO, and the admin token has no second factor;
+- there is no human review.
+
+Verdict: **CONTROLLED BETA** (unchanged).
