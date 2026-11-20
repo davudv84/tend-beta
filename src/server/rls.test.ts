@@ -159,3 +159,54 @@ test("RLS-6 with a restricted LOGIN role (DATABASE_MIGRATE_URL split), RESET ROL
     assert.equal(raised!.n, 2, "KNOWN GAP: an attacker who can run SQL in the application's session can raise the system setting; RLS is not a defence against SQL injection here");
   } finally { await rt?.close().catch(() => {}); await w.close(); await admin.query(`DROP OWNED BY ${login}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${login}`).catch(() => {}); await admin.end(); }
 });
+
+test("RLS-7 the audit hash chain stays one global chain when tenants write interleaved under row-level security", { skip }, async () => {
+  const { verifyAudit } = await import("./audit-chain.ts");
+  const w = await world();
+  try {
+    for (let i = 0; i < 6; i++) {
+      for (const [ws, key] of [["wa", w.A.apiKey], ["wb", w.B.apiKey]] as const)
+        await asTenant(ws, async () => { const a = (await agentByKey(w.db, key))!; await ingestEvents(w.db, a, [{ type: "task.started", data: { taskId: `t${i}`, title: `${ws}-${i}` } }]); });
+    }
+    const r = await asSystem(() => verifyAudit(w.db));
+    assert.equal(r.ok, true, JSON.stringify(r));
+  } finally { await w.close(); }
+});
+
+test("RLS-8 start-up refuses a loose policy, a runtime role that is a member of the owner, and works for a non-superuser owner with CREATEROLE (the Neon-style setup)", { skip }, async () => {
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const name = `tend_rls8_${randomBytes(5).toString("hex")}`, owner = `tend_own_${randomBytes(4).toString("hex")}`, rt = `tend_rt8_${randomBytes(4).toString("hex")}`;
+  let db: DB | undefined;
+  try {
+    // a NON-superuser schema owner that may create roles, like a managed provider's default database owner
+    await admin.query(`CREATE ROLE ${owner} LOGIN NOSUPERUSER CREATEDB CREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE DATABASE ${name} OWNER ${owner}`);
+    const u = new URL(URL_); u.pathname = `/${name}`; u.username = owner;
+    db = await postgres(u.toString());
+    await migrate(db);
+    await enableIsolation(db, rt);
+    assert.equal(db.isolation?.on, true);
+    assert.equal((await withRequestContext(async () => { bindWorkspace("wa"); return db!.get<{ u: string }>("SELECT current_user AS u"); }))!.u, rt, "the non-superuser owner switches to the runtime role");
+    // a loose policy added later (as a careless migration would) is refused at the next start
+    await asOwnerQuery(db, `CREATE POLICY open_all ON agents USING (true)`);
+    db.isolation!.on = false;
+    await assert.rejects(enableIsolation(db, rt), /unexpected row-level security policies: agents\.open_all/);
+    await asOwnerQuery(db, `DROP POLICY open_all ON agents`);
+    // a separate runtime LOGIN that is a member of the owner (split deployment set up wrongly): owner rights flow to it, so start-up refuses
+    await admin.query(`CREATE ROLE ${rt}_l LOGIN NOSUPERUSER NOBYPASSRLS IN ROLE ${owner}`);
+    const ul = new URL(URL_); ul.pathname = `/${name}`; ul.username = `${rt}_l`;
+    const member = await postgres(ul.toString());
+    try { await assert.rejects(enableIsolation(member, rt), /owns tables, or is a member of a role that does/); } finally { await member.close(); }
+    await admin.query(`DROP ROLE ${rt}_l`);
+    db.isolation!.on = false;
+    await enableIsolation(db, rt);
+  } finally {
+    await db?.close().catch(() => {});
+    await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`).catch(() => {});
+    for (const r of [rt, owner]) { await admin.query(`DROP OWNED BY ${r}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${r}`).catch(() => {}); }
+    await admin.end();
+  }
+});
+/** A statement as the login role itself (no runtime-role switch): what a migration would do. */
+async function asOwnerQuery(db: DB, sql: string) { const { asOwner } = await import("./db-context.ts"); await asOwner(() => db.exec(sql)); }

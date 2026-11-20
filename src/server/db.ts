@@ -370,6 +370,10 @@ export const MIGRATIONS: string[] = [
    CREATE POLICY tenant ON push_subscriptions USING (tend_user_visible(user_id)) WITH CHECK (tend_user_visible(user_id));
    ALTER TABLE notification_prefs ENABLE ROW LEVEL SECURITY;
    CREATE POLICY tenant ON notification_prefs USING (tend_user_visible(user_id)) WITH CHECK (tend_user_visible(user_id));`,
+  // The hash chain links each event to the previous one in the WHOLE log. Under row-level security the inserting role sees only its tenant's
+  // events, so the trigger would link to the tenant's last event and break the global chain (found by review, test RLS-7). The trigger runs with
+  // its owner's rights (the owner is exempt from RLS) and a pinned search_path, so the lookup always reads the global head. It returns nothing.
+  `ALTER FUNCTION events_chain() SECURITY DEFINER SET search_path = pg_catalog, public;`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -414,26 +418,35 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
   if (db.kind !== "postgres" || !db.isolation) throw new Error("tenant isolation needs PostgreSQL");
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(role)) throw new Error("TEND_DB_RUNTIME_ROLE must be a lower-case identifier");
   const owner = (await db.get<{ owner: boolean }>("SELECT pg_get_userbyid(relowner) = current_user AS owner FROM pg_class WHERE oid = 'public.agents'::regclass"))?.owner;
-  if (owner) {
-    await db.exec(`DO $do$ BEGIN
+  if (owner) await db.tx(async (q) => {
+    // One instance at a time: concurrent cold starts would race on CREATE ROLE and on GRANT ("tuple concurrently updated").
+    await q.get("SELECT pg_advisory_xact_lock(?)", LOCK.MIGRATE);
+    await q.exec(`DO $do$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN
         CREATE ROLE "${role}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
       END IF;
     END $do$;`);
     // Membership lets this session switch to it (SET ROLE); owner-level rights stay with the login role, which the application never uses then.
-    await db.exec(`GRANT "${role}" TO CURRENT_USER`);
-    await db.exec(runtimeGrantsSql(role));
-    db.isolation.role = role;
-  }
+    await q.exec(`GRANT "${role}" TO CURRENT_USER`);
+    await q.exec(runtimeGrantsSql(role));
+  });
+  if (owner) db.isolation.role = role;
   db.isolation.on = true;
   // Self-test, as the application will run: the effective role and the tables, read inside an isolated transaction.
-  const t = await db.tx((q) => q.get<{ who: string; sup: boolean; bypass: boolean; owns: boolean; missing: string | null }>(
+  const t = await db.tx((q) => q.get<{ who: string; sup: boolean; bypass: boolean; owns: boolean; missing: string | null; loose: string | null }>(
     `SELECT current_user AS who, r.rolsuper AS sup, r.rolbypassrls AS bypass,
-            EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relowner = r.oid) AS owns,
-            (SELECT string_agg(t, ',') FROM unnest(?::text[]) AS t WHERE NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = ('public.' || t)::regclass AND c.relrowsecurity)) AS missing
-       FROM pg_roles r WHERE r.rolname = current_user`, [...RLS_TABLES]));
+            -- owner rights also come through membership (inherited or by SET ROLE): any of that exempts from RLS or lets SQL become the owner
+            EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p')
+                     AND pg_has_role(current_user, c.relowner, 'MEMBER')) AS owns,
+            (SELECT string_agg(t, ',') FROM unnest(?::text[]) AS t WHERE NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = ('public.' || t)::regclass AND c.relrowsecurity)) AS missing,
+            -- every policy on a tenant table must be one of ours: a permissive USING (true) added later would quietly open the table
+            (SELECT string_agg(DISTINCT p.tablename || '.' || p.policyname, ',') FROM pg_policies p
+              WHERE p.schemaname = 'public' AND p.tablename = ANY(?::text[])
+                AND NOT (coalesce(p.qual, '') ~ '^tend_(ws|agent|user)_visible\\(' AND coalesce(p.with_check, '') ~ '^tend_(ws|agent|user)_visible\\(')) AS loose
+       FROM pg_roles r WHERE r.rolname = current_user`, [...RLS_TABLES], [...RLS_TABLES]));
   const problem = !t ? "could not read the effective role" : t.sup ? `the effective role ${t.who} is a superuser` : t.bypass ? `the effective role ${t.who} has BYPASSRLS`
-    : t.owns ? `the effective role ${t.who} owns tables (owners are exempt from row-level security)` : t.missing ? `row-level security is off on: ${t.missing}` : "";
+    : t.owns ? `the effective role ${t.who} owns tables, or is a member of a role that does (owners are exempt from row-level security)` : t.missing ? `row-level security is off on: ${t.missing}`
+    : t.loose ? `unexpected row-level security policies: ${t.loose}` : "";
   if (problem) { db.isolation.on = false; throw new Error(`tenant isolation cannot be guaranteed: ${problem}. Fix the database roles (docs/database-roles.md) or set TEND_DB_ISOLATION=off explicitly.`); }
 }
 

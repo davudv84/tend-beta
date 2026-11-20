@@ -53,7 +53,8 @@ async function mutate(m, check) {
 }
 if (process.argv.includes("--routes")) {
   for (const m of routes) await mutate(m, async () => {
-    spawnSync("npm", ["run", "build"], { cwd: root, encoding: "utf8", timeout: 400_000 });
+    const b = spawnSync("npm", ["run", "build"], { cwd: root, encoding: "utf8", timeout: 400_000 });
+    if (b.status !== 0) return "INVALID: the mutated tree did not build (tested nothing)";
     const r = spawnSync(process.execPath, ["--no-warnings", "redteam/live/tenant-matrix.mjs"], { cwd: root, encoding: "utf8", timeout: 400_000 });
     const failed = /\[BROKEN\]/.test(r.stdout) || r.status;
     // With TEND_E2E_DATABASE_URL the servers run on PostgreSQL with row-level security: then the database must hold even without the route's

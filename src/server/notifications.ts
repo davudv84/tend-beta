@@ -183,8 +183,11 @@ export async function saveSubscription(q: Q, userId: string | null, body: unknow
   // another workspace, so this one step reads and moves the row across workspaces (asSystem): the caller proves the browser by presenting its
   // endpoint URL and keys, which only that browser's push service hands out. Nothing of the previous owner is returned.
   const moved = await asSystem(async () => {
-    if (!(await q.get("SELECT 1 FROM push_subscriptions WHERE endpoint_hash = ?", hash))) return false;
-    await q.run("UPDATE push_subscriptions SET user_id = ?, p256dh = ?, auth = ?, locale = ?, failures = 0 WHERE endpoint_hash = ?", userId, p256dh, auth, locale, hash);
+    const prior = await q.get<{ p256dh: string; auth: string }>("SELECT p256dh, auth FROM push_subscriptions WHERE endpoint_hash = ?", hash);
+    if (!prior) return false;
+    // The same browser subscription presents the same keys; knowing an endpoint URL alone must not move someone else's notifications.
+    if (prior.p256dh !== p256dh || prior.auth !== auth) throw new HttpError(409, "subscription_in_use", "This browser endpoint is registered with different keys. Turn notifications off and on again in the browser.");
+    await q.run("UPDATE push_subscriptions SET user_id = ?, locale = ?, failures = 0 WHERE endpoint_hash = ?", userId, locale, hash);
     return true;
   });
   if (moved) return;

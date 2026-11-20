@@ -389,3 +389,23 @@ test("EV-23 a decision is final: a rejected request cannot be approved later, an
     if (first === "rejected") assert.notEqual(await code(spendApproved(db, agent, view.id, PAY)), "OK");
   }
 });
+
+test("EV-24 knowing another account's browser push endpoint is not enough to take its notifications: the same subscription keys are required", async () => {
+  const { newVapidKeys } = await import("./push.ts");
+  const { saveSubscription } = await import("./notifications.ts");
+  const keys = newVapidKeys();
+  const saved = { a: process.env.TEND_VAPID_PUBLIC_KEY, b: process.env.TEND_VAPID_PRIVATE_KEY, c: process.env.TEND_VAPID_SUBJECT };
+  Object.assign(process.env, { TEND_VAPID_PUBLIC_KEY: keys.publicKey, TEND_VAPID_PRIVATE_KEY: keys.privateKey, TEND_VAPID_SUBJECT: "mailto:ops@example.com" });
+  try {
+    const db = await memoryDb();
+    await db.run("INSERT INTO workspaces (id, name, created_at) VALUES ('wv', 'V', 0), ('wm', 'M', 0)");
+    await db.run("INSERT INTO users (id, email, password_hash, workspace_id, created_at, password_changed_at) VALUES ('victim', 'v@example.com', 'x', 'wv', 0, 0), ('mallory', 'm@example.com', 'x', 'wm', 0, 0)");
+    const p256 = (seed: number) => Buffer.concat([Buffer.from([4]), Buffer.alloc(64, seed)]).toString("base64url");
+    const sub = (seed: number) => ({ endpoint: "https://fcm.googleapis.com/fcm/send/victim-browser", keys: { p256dh: p256(seed), auth: Buffer.alloc(16, seed).toString("base64url") } });
+    await saveSubscription(db, "victim", sub(1));
+    assert.equal(await code(saveSubscription(db, "mallory", sub(2))), "subscription_in_use", "same endpoint, other keys: refused");
+    assert.equal((await db.get<{ user_id: string }>("SELECT user_id FROM push_subscriptions"))!.user_id, "victim");
+    await saveSubscription(db, "mallory", sub(1)); // the same browser (same keys) switching accounts: allowed, as before
+    assert.equal((await db.get<{ user_id: string }>("SELECT user_id FROM push_subscriptions"))!.user_id, "mallory");
+  } finally { for (const [k, v] of [["TEND_VAPID_PUBLIC_KEY", saved.a], ["TEND_VAPID_PRIVATE_KEY", saved.b], ["TEND_VAPID_SUBJECT", saved.c]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+});
