@@ -6,7 +6,10 @@ import { test } from "node:test";
 import pg from "pg";
 import { cancelAuthorization, claimToken, consumeAuthorization, requestAuthorization, spendApproved } from "./authz.ts";
 import { verifyAudit } from "./audit-chain.ts";
-import { allowEventRemoval, migrate, postgres, type DB } from "./db.ts";
+import { allowEventRemoval, enableIsolation, migrate, postgres, type DB } from "./db.ts";
+import { bindWorkspace, withRequestContext } from "./db-context.ts";
+/** As the application runs since row-level security: inside a request bound to a workspace (here the default one). */
+const inDefault = <T>(fn: () => Promise<T>) => withRequestContext(async () => { bindWorkspace("default"); return fn(); });
 import { HttpError } from "./http.ts";
 import { agentByKey, decide, MAX_AGENTS_PER_WORKSPACE, registerAgent, revokeKey, setPolicy } from "./repo.ts";
 
@@ -114,17 +117,20 @@ test("PV-5 least-privilege application role on real PostgreSQL: the flows work, 
     await t.db.exec(runtimeGrantsSql(role));
     const u = new URL(URL_); u.pathname = `/${owner}`; u.username = role;
     appDb = await postgres(u.toString());
+    await enableIsolation(appDb); // as the application starts it: restricted login, tenant context from the request
     await assertSchemaCurrent(appDb);
-    // the application works under it: register, ask, approve, spend once, audit chain verifies
-    const { agent, apiKey } = await registerAgent(appDb, { name: "least", model: "m", provider: "Custom" });
-    await setPolicy(appDb, agent.id, [{ tool: "wire", action: "send", effect: "approve" }], "enforce");
-    const a = (await agentByKey(appDb, apiKey))!;
-    const { view } = await ask(appDb, a, PAY, null);
-    await decide(appDb, view.id, "approved");
-    await spend(appDb, a, view.id, PAY);
-    assert.equal((await verifyAudit(appDb)).ok, true);
+    // the application works under it (inside a tenant context, as since row-level security): register, ask, approve, spend once
+    await inDefault(async () => {
+      const { agent, apiKey } = await registerAgent(appDb!, { name: "least", model: "m", provider: "Custom" });
+      await setPolicy(appDb!, agent.id, [{ tool: "wire", action: "send", effect: "approve" }], "enforce");
+      const a = (await agentByKey(appDb!, apiKey))!;
+      const { view } = await ask(appDb!, a, PAY, null);
+      await decide(appDb!, view.id, "approved");
+      await spend(appDb!, a, view.id, PAY);
+    });
+    assert.equal((await verifyAudit(t.db)).ok, true, "the audit chain verifies (read by the owner: the whole log)");
     // what it must NOT be able to do
-    const denied = async (sql: string) => { try { await appDb!.tx(async (q) => { await q.exec("SELECT set_config('tend.maintenance', 'on', true)"); await q.exec(sql); }); return "ALLOWED"; } catch (e) { return (e as { code?: string }).code ?? String(e); } };
+    const denied = (sql: string) => inDefault(async () => { try { await appDb!.tx(async (q) => { await q.exec("SELECT set_config('tend.maintenance', 'on', true)"); await q.exec(sql); }); return "ALLOWED"; } catch (e) { return (e as { code?: string }).code ?? String(e); } });
     for (const sql of [
       "DELETE FROM events", "UPDATE events SET data = '{}'", "TRUNCATE events", "DELETE FROM auth_events", "UPDATE auth_events SET type = 'x'", "DELETE FROM verification_runs",
       "DROP TRIGGER events_append_only_rows ON events", "DROP TRIGGER events_chain ON events", "ALTER TABLE events DISABLE TRIGGER ALL", "ALTER TABLE agents ADD COLUMN x INT",
@@ -199,10 +205,11 @@ test("PV-7 the application role cannot erase the audit log through a cascade fro
     await t.db.exec(runtimeGrantsSql(role));
     const u = new URL(URL_); u.pathname = `/${owner}`; u.username = role;
     appDb = await postgres(u.toString());
-    const { agent } = await registerAgent(appDb, { name: "victim", model: "m", provider: "Custom" });
+    await enableIsolation(appDb); // as the application starts it: restricted login, tenant context from the request
+    const { agent } = await inDefault(() => registerAgent(appDb!, { name: "victim", model: "m", provider: "Custom" }));
     const events = async () => (await t.db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE agent_id = ?", agent.id))!.n;
     assert.ok((await events()) > 0);
-    const denied = async (sql: string) => { try { await appDb!.tx(async (q) => { await q.exec("SELECT set_config('tend.maintenance', 'on', true)"); await q.exec(sql); }); return "ALLOWED"; } catch (e) { return (e as { code?: string }).code ?? String(e); } };
+    const denied = (sql: string) => inDefault(async () => { try { await appDb!.tx(async (q) => { await q.exec("SELECT set_config('tend.maintenance', 'on', true)"); await q.exec(sql); }); return "ALLOWED"; } catch (e) { return (e as { code?: string }).code ?? String(e); } });
     assert.equal(await denied(`DELETE FROM agents WHERE id = '${agent.id}'`), "42501", "the cascade path is closed by privilege");
     assert.equal(await denied("DELETE FROM users"), "42501");
     assert.equal(await denied("DELETE FROM workspaces"), "42501");
