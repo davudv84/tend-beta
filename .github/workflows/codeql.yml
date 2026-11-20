@@ -32,6 +32,14 @@ jobs:
         with:
           category: "/language:javascript-typescript"
           output: ${{ runner.temp }}/codeql-sarif
+      - name: List the results in the log (rule, severity, file:line, message)
+        if: always()
+        run: |
+          for f in "$RUNNER_TEMP"/codeql-sarif/*.sarif; do
+            jq -r '.runs[] | (.tool.driver.rules // []) as $rules | .results[] | . as $r
+              | ($rules[] | select(.id == $r.ruleId) | .properties."security-severity" // "") as $sev
+              | "\($r.ruleId)\tsev=\($sev)\t\($r.locations[0].physicalLocation.artifactLocation.uri):\($r.locations[0].physicalLocation.region.startLine)\t\($r.message.text | gsub("\n"; " ") | .[0:160])"' "$f"
+          done
       # The same results as a short-lived artifact, so they can be reviewed without the code-scanning UI (they contain code locations only).
       - if: always()
         uses: actions/upload-artifact@v4
