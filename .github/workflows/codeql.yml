@@ -5,7 +5,7 @@ name: codeql
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "security/**"] # security branches run the full suite before any pull request
   schedule:
     - cron: "17 4 * * 1"
 
