@@ -644,7 +644,10 @@ export async function postgres(url: string): Promise<DB> {
   const preamble = () => {
     const c = contextSettings(); // validated identifiers, safe as literals
     const signed = contextSignature(c.workspace, c.system); // hex only
-    return `${isolation.role && !c.owner ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`
+    // search_path with pg_temp named LAST: otherwise the session's temporary schema is searched FIRST for tables and types, and a temp
+    // table left on a pooled connection by injected SQL (e.g. a fake `agents`) would shadow the real one in later requests (RLS-11).
+    // Session-level SET search_path by such SQL is overridden here, every transaction.
+    return `SET LOCAL search_path = public, pg_temp; ${isolation.role && !c.owner ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`
       + (signed ? `, set_config('tend.ctx_nonce', '${signed.nonce}', true), set_config('tend.ctx_kid', '${signed.kid}', true), set_config('tend.ctx_mac', '${signed.mac}', true)` : "");
   };
   const tx: DB["tx"] = async (fn) => {

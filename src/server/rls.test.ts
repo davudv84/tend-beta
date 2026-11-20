@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { test } from "node:test";
 import pg from "pg";
-import { decide, registerAgent, agentInWorkspace, setPolicy, agentByKey, ingestEvents } from "./repo.ts";
+import { decide, registerAgent, agentInWorkspace, setPolicy, agentByKey, ingestEvents, workspaceOf } from "./repo.ts";
 import { requestAuthorization, spendApproved } from "./authz.ts";
 import { asSystem, bindWorkspace, withRequestContext } from "./db-context.ts";
 import { contextSignature, enableIsolation, migrate, postgres, RLS_TABLES, runtimeGrantsSql, type DB } from "./db.ts";
@@ -291,6 +291,41 @@ test("RLS-10 a signed context captured from one transaction cannot be replayed a
     }
     const altered = { ...cap, nonce: cap.nonce.replace(/^\d+/, String(Date.now())) };
     assert.equal(await count(replay(altered)), 0, "rewriting the issue time breaks the MAC");
+    await owner.close();
+  } finally {
+    if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
+    await rt?.close().catch(() => {}); await w.close();
+    await admin.query(`DROP OWNED BY ${login}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${login}`).catch(() => {}); await admin.end();
+  }
+});
+
+test("RLS-11 SQL injected into one request cannot leave a temp table (or a session search_path) on a pooled connection that shadows a real table in later requests", { skip }, async () => {
+  const saved = process.env.TEND_CONTEXT_KEY;
+  process.env.TEND_CONTEXT_KEY = randomBytes(32).toString("base64url");
+  const w = await world();
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const login = `tend_tmp_${randomBytes(4).toString("hex")}`;
+  let rt: DB | undefined;
+  try {
+    const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
+    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
+    const ownerUrl = new URL(URL_); ownerUrl.pathname = `/${dbName}`;
+    const owner = await postgres(ownerUrl.toString());
+    await owner.exec(runtimeGrantsSql(login));
+    const u = new URL(URL_); u.pathname = `/${dbName}`; u.username = login;
+    rt = await postgres(u.toString());
+    await enableIsolation(rt, "unused_role_name");
+    // tenant A's injected SQL, repeated so that every pooled connection gets it: A's own agent row, moved to workspace B, in a temp `agents`
+    // (PUBLIC holds TEMP on a database by default, so the restricted role can create one), plus a session-level search_path change
+    for (let i = 0; i < 12; i++) await asTenant("wa", () => rt!.tx((q) => q.exec(
+      "CREATE TEMP TABLE IF NOT EXISTS agents AS SELECT * FROM public.agents WITH NO DATA; DELETE FROM pg_temp.agents; INSERT INTO pg_temp.agents SELECT * FROM public.agents; UPDATE pg_temp.agents SET workspace_id = 'wb'; SELECT set_config('search_path', 'pg_temp, public', false)")));
+    assert.equal(await asTenant("wa", () => rt!.tx(async (q) => (await q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM pg_temp.agents WHERE workspace_id = 'wb'"))!.n)) >= 1, true, "the forged temp table exists");
+    // later requests: agent A authenticates as the server does it (asSystem), on whichever pooled connection
+    const workspaces = new Set<string | undefined>();
+    for (let i = 0; i < 12; i++) workspaces.add(await withRequestContext(() => asSystem(async () => { const a = await agentByKey(rt!, w.A.apiKey); return a && workspaceOf(a); })));
+    assert.deepEqual([...workspaces], ["wa"], "agent A's key always resolves to its own workspace, never the forged one");
     await owner.close();
   } finally {
     if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
