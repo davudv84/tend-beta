@@ -402,3 +402,81 @@ Unit mutations on the final tree: see the appended line below. Route mutations: 
 **CONTROLLED BETA.** Database isolation is now real and tested locally, the enforcement paths that exist block before execution, and the remaining gaps are documented. It is not a PRODUCTION CANDIDATE: blockers 1–5 above, and none of this has been checked by an independent human.
 
 Result of `node redteam/mutation-controls.mjs` on commit e845057: **15/15 unit mutations detected** (M-01…M-15).
+
+## 15. Round 5: toward enterprise readiness (database hardening, operations, adversarial review)
+
+Branch `security/verification`, commits `420d2b2`…`67f11af` (local, not pushed). Everything below ran in this container on PostgreSQL 16 and
+Node 22 unless stated. **No independent human reviewed any of it.**
+
+### 15.1 Changes
+
+| Commit | Change | Evidence |
+|---|---|---|
+| 420d2b2 | **Signed tenant context** (migration 20): per-transaction nonce + MAC from an owner-only key (`TEND_CONTEXT_KEY`); policies trust the context only if `tend_ctx_valid()` (SECURITY DEFINER) verifies it; start-up refuses a key the database lacks | RLS-9 incl. negative control (no key installed → the forgery reads everything again) |
+| 2d8bef0 | Policies evaluated once per statement (initplans, migration 21) | `redteam/bench/rls-bench.mjs`: 12k–20k events, 242–601 ms → 17–25 ms; signing adds < 2 ms |
+| 79bd508 | `SECURITY.md`, `docs/operations.md` (responsibilities, secret rotation, backups, monitoring signals, vulnerability management), `docs/incident-response.md`; two drills | drills below |
+| 2088c45 | **R5-1 fixed:** the signed context expires (migration 22, 60 s window, issue time inside the MAC); start-up reports clock skew | RLS-10; mutation M-16 detected |
+| d518b40 | **R5-2 fixed:** every isolated transaction pins `search_path = public, pg_temp` | RLS-11; mutation M-17 detected |
+| 910b0d9 | CI: M-16/M-17 and both drills added to the PostgreSQL job | **not run on GitHub** |
+| 67f11af | Red-team suite fixes: R5-3, R5-4 | run-all 231/231 on both databases |
+
+### 15.2 Findings of this round (internal adversarial review, by me, of my own round-4/5 code)
+
+| ID | Finding | Severity | Status |
+|---|---|---|---|
+| R5-1 | A signed context was valid forever. SQL injected into a *system* transaction (session lookup, sign-in) could read `tend.ctx_nonce/kid/mac` and replay them in any later transaction to read every tenant. Reproduced: a context signed 10 minutes earlier read both tenants. | High (requires SQL injection and a restricted login, the exact case the signing exists for) | Fixed: replay now possible only within 60 s. **Residual, documented.** |
+| R5-2 | Under a restricted login with signing on, injected SQL in tenant A's request could `CREATE TEMP TABLE agents` (PUBLIC holds TEMP) with A's row moved to workspace B. Temp tables outlive the transaction on a pooled connection and `pg_temp` is searched first, so later **A's own agent key authenticated into workspace B**. Reproduced end to end. | High (same precondition) | Fixed: `SET LOCAL search_path = public, pg_temp` in every transaction preamble; RLS-11 fails without it |
+| R5-3 | Red-team check I-11 was flaky: the "mutated" key equalled the real key when it ended in `A` (1 in 64) | Test | Fixed |
+| R5-4 | The unexplained run-all 230 vs 231: W-30 recorded INFO on PostgreSQL because `/api/health` adds `tls` there (by design) | Test | Explained and fixed |
+
+Also reviewed with no finding: trigger functions (read no tables), `events_chain` (own `search_path`), context functions (functions are never
+resolved from `pg_temp`), named prepared statements (none), session-level `set_config`/`SET ROLE` by injected SQL (overridden per transaction).
+
+### 15.3 Tests executed on the final tree (exact results)
+
+| Command | Result |
+|---|---|
+| `npm test` | 557 pass, 1 fail (the `lsof` test V-9; fails identically with the changes stashed) |
+| PostgreSQL: `postgres.test.ts` + `postgres-verify.test.ts` + `rls.test.ts` | **38/38** (RLS-1…11) |
+| Mutation controls, unit (`TEND_TEST_DATABASE_URL` set) | **16/16 detected** (M-01…M-16, before d518b40); `--only=M-16,M-17` on the final tree: **2/2** |
+| e2e on PostgreSQL, RLS on, **signed context**: authz / gateway / accounts / open-beta / onboarding / connect | 26 / 11 / 30 / 41 / 38 / 8, all pass |
+| Tenant matrix (9,108 requests), MCP proxy, hook fail-closed, dynamic scan, on PostgreSQL + signing | HELD / 13 held / 11 held / 6 held, 0 broken |
+| `run-all` | **231 held, 0 broken** on PostgreSQL + signing and on the embedded database |
+| Real Claude Code 2.1.329: hooks on PostgreSQL + signing / coverage / managed install | **27/27 / 19/19 / 15/15** |
+| `scripts/ops/backup-restore-drill.mjs` | 8/8: dump 72 KB in 56 ms, restore 124 ms; restored log verifies against the pre-dump checkpoint; isolation starts with the same key; agent keys and approvals work on the copy; a deleted prefix on the copy is missed by a bare walk and caught by the checkpoint |
+| `scripts/ops/context-key-rotation-drill.mjs` | 6/6: two keys valid during rollout; old key fails closed once removed; an uninstalled key sees nothing |
+| `tsc`, eslint on changed files, production build | pass |
+
+**NOT VERIFIED:** GitHub Actions (never run); Neon (pooler, role creation, clock skew to the app servers); Vercel cold starts; provider
+point-in-time recovery; restore at production size; CodeQL, DAST (ZAP), git-history secret scan (none configured); Cursor; Claude Code `--bare`.
+
+### 15.4 Score
+
+**6 / 10 for enterprise readiness, plausible range 5–7.** This is my own assessment of my own work, made with AI-run tests only. It is not a
+certification.
+
+| Area | Score | Why |
+|---|---|---|
+| Database security | 7 | RLS on 16 tables, least privilege, signed and expiring context, search_path pinned, all with negative controls. But only local PostgreSQL. The default single-URL deployment logs in as the owner, where `RESET ROLE` escapes RLS (RLS-5) and signing does nothing. |
+| Agent enforcement | 7 | Blocks before execution in real Claude Code, also in managed mode. Still bypassable by agents that don't call TEND, by `--bare` (untested), and by local admins. |
+| Authentication | 4 | Passwords, sessions and expiring keys are tested. **No MFA, no SSO, no roles.** |
+| API security | 7 | Tenant matrix, fuzzing, rate limits, argument binding. No external test. |
+| Audit integrity | 7 | Append-only, hash chain, checkpoint (also across a restore). Checkpoints are kept by hand, with no external anchoring. |
+| Infrastructure | 5 | Secrets and rotation are documented and two drills pass. No built-in monitoring or alerting. Nothing verified on the real hosting. |
+| Security testing | 6 | Broad suites with mutation controls. CI has never run. No CodeQL or DAST. **No independent penetration test.** |
+| Operational readiness | 4 | Runbooks exist, but owners are blank, no exercise has been run and there is no on-call. |
+
+### 15.5 What stands between this and 9/10, in priority order
+
+1. **Independent human review:** an external penetration test of tenant isolation, authentication and the enforcement paths (scope in 13.8). No amount of AI testing replaces it.
+2. **MFA (WebAuthn/TOTP) and SSO (OIDC), plus workspace roles** (owner / approver / viewer). Use maintained libraries.
+3. **Production-equivalent validation:** a Vercel preview on Neon with `DATABASE_MIGRATE_URL` + restricted login + `TEND_CONTEXT_KEY`, then the e2e suites, the tenant matrix and both drills against it. Make the restricted login the documented default.
+4. **Run CI on GitHub and keep it green.** Add CodeQL, a ZAP baseline against the preview and a git-history secret scan.
+5. **Monitoring and alerting** on the signals in `docs/operations.md`, plus scheduled `audit-verify` against a checkpoint stored outside the database.
+6. **Operations:** name owners, run a tabletop incident and a restore on the hosted database, and publish a security contact.
+7. Cursor and `--bare` testing. Per-tenant advisory locks (today one role can stall writes for everyone).
+
+### 15.6 Verdict
+
+**CONTROLLED BETA** (unchanged). The database layer is stronger and two real high-severity weaknesses in my own previous round were found and
+fixed, but blockers 1–4 above keep this from being a PRODUCTION CANDIDATE.
