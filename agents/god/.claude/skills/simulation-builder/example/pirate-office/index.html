@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pirate office</title>
+<style>
+  :root { --sea: #0d2a3a; --wave: #154257; --deck: #5a3b22; --plank: #6b4729; --chest: #7a4f2a; --lid: #a8743f; --sail: #e9dfc6; --mast: #3b2716; --ink: #f3ead8; --dim: #b9ad95; }
+  :root[data-scheme="light"] { --sea: #8fc6dc; --wave: #a9d6e6; --deck: #b8875a; --plank: #c99a6c; --chest: #8a5a32; --lid: #b98549; --sail: #fffaf0; --mast: #5a3b22; --ink: #2a1d10; --dim: #6b5a45; }
+  html, body { margin: 0; height: 100%; background: var(--sea); color: var(--ink); font: 13px/1.3 system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #wait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); }
+  #wait[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="deck"></canvas>
+<div id="wait">Waiting for the crew…</div>
+<script>
+// EXAMPLE (the Simulation builder skill): the canvas office template made into a pirate ship. The sea, the deck in
+// planks, the sail with the board of cards, and each agent a pirate at a sea chest, the bandana coloured by status.
+// Everything shown comes from window.md.onData; the only thing it does is window.md.ask (open an agent).
+const canvas = document.getElementById('deck');
+const ctx = canvas.getContext('2d');
+let state = null;
+let spots = [];
+let frame = 0, last = 0, running = false;
+
+const STATUS_COLOUR = {
+  working: '#4cc38a', typing: '#4cc38a', thinking: '#7aa7ff', compacting: '#7aa7ff',
+  waiting: '#f2b84b', blocked: '#ef7d6b', looping: '#ef7d6b',
+  idle: '#8b93a1', success: '#4cc38a', ghost: '#5b6270',
+};
+const BUSY = new Set(['working', 'typing', 'thinking', 'compacting']);
+
+window.md.onData((s) => {
+  if (!s || s.v !== 1) return;   // a line version this simulation does not know: draw nothing rather than guess
+  state = s;
+  document.documentElement.dataset.scheme = s.look.scheme;
+  document.documentElement.dir = s.look.dir;
+  document.getElementById('wait').hidden = true;
+  draw();
+  play();
+});
+
+function size() {
+  const r = window.devicePixelRatio || 1;
+  canvas.width = Math.round(canvas.clientWidth * r);
+  canvas.height = Math.round(canvas.clientHeight * r);
+  ctx.setTransform(r, 0, 0, r, 0, 0);
+}
+window.addEventListener('resize', () => { size(); draw(); });
+size();
+
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+// Motion: the sea rolls and busy pirates bob, at 15 frames a second, never with reduced motion or Home hidden.
+function play() {
+  if (running || !state || state.look.reducedMotion || document.hidden) return;
+  running = true;
+  requestAnimationFrame(tick);
+}
+function tick(t) {
+  if (!state || state.look.reducedMotion || document.hidden) { running = false; return; }
+  if (t - last >= 66) { last = t; frame++; draw(); }
+  requestAnimationFrame(tick);
+}
+document.addEventListener('visibilitychange', play);
+
+function draw() {
+  if (!state) return;
+  const W = canvas.clientWidth, H = canvas.clientHeight, rtl = state.look.dir === 'rtl';
+  const still = state.look.reducedMotion;
+  // The sea, with rolling waves.
+  ctx.fillStyle = css('--sea');
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = css('--wave');
+  ctx.lineWidth = 2;
+  for (let y = 12; y < H; y += 28) {
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 8) {
+      const yy = y + Math.sin((x + (still ? 0 : frame * 4)) / 24) * 3;
+      if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
+  }
+  // The deck: a hull of planks, leaving the sea showing around it.
+  const dx = 12, dy = 40, dw = W - 24, dh = H - 52;
+  ctx.fillStyle = css('--deck');
+  ctx.fillRect(dx, dy, dw, dh);
+  ctx.fillStyle = css('--plank');
+  for (let y = dy; y < dy + dh; y += 18) ctx.fillRect(dx, y, dw, 2);
+  // The mast and its sail, with the board: how many cards are in progress and blocked.
+  ctx.fillStyle = css('--mast');
+  ctx.fillRect(rtl ? dx + 22 : dx + dw - 30, 0, 8, dy + 10);
+  ctx.fillStyle = css('--sail');
+  ctx.fillRect(0, 4, W, 30);
+  const doing = state.tasks.filter((t) => t.status === 'doing').length;
+  const blocked = state.tasks.filter((t) => t.status === 'blocked').length;
+  ctx.fillStyle = '#2a1d10';
+  ctx.font = '600 13px system-ui, sans-serif';
+  ctx.textAlign = rtl ? 'right' : 'left';
+  ctx.fillText(doing + ' in progress · ' + blocked + ' blocked · ' + state.asks.length + ' waiting for you', rtl ? W - 16 : 16, 24);
+  // The crew: the captain (the lead) first, then everyone else, each at a sea chest.
+  const agents = [...state.agents].sort((a, b) => (a.role === 'lead' ? -1 : b.role === 'lead' ? 1 : 0));
+  const cellW = 150, cellH = 120, top = dy + 44;
+  const cols = Math.max(1, Math.floor((dw - 16) / cellW));
+  spots = [];
+  agents.forEach((a, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const cx = rtl ? dx + dw - 8 - cellW * col - cellW / 2 : dx + 8 + cellW * col + cellW / 2;
+    const cy = top + cellH * row + 20;
+    // The sea chest.
+    ctx.fillStyle = css('--chest');
+    ctx.fillRect(cx - 34, cy + 14, 68, 24);
+    ctx.fillStyle = css('--lid');
+    ctx.fillRect(cx - 34, cy + 10, 68, 8);
+    ctx.fillStyle = '#d9b44a';
+    ctx.fillRect(cx - 4, cy + 18, 8, 8);
+    // The pirate: a body, a head, and a bandana in the status colour, bobbing while busy.
+    const bob = BUSY.has(a.status) && !still ? Math.round(Math.sin((frame + i * 3) / 2) * 2) : 0;
+    const colour = STATUS_COLOUR[a.status] || css('--dim');
+    ctx.globalAlpha = a.status === 'ghost' ? 0.45 : 1;
+    ctx.fillStyle = '#3a2a1e';
+    ctx.fillRect(cx - 11, cy - 6 + bob, 22, 20);
+    ctx.fillStyle = '#e0b48a';
+    ctx.beginPath(); ctx.arc(cx, cy - 16 + bob, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = colour;
+    ctx.fillRect(cx - 10, cy - 26 + bob, 20, 6);
+    ctx.fillStyle = '#1a1410';
+    ctx.fillRect(cx + 1, cy - 18 + bob, 6, 3);
+    ctx.globalAlpha = 1;
+    // The captain's hat.
+    if (a.role === 'lead') {
+      ctx.fillStyle = '#1a1410';
+      ctx.beginPath(); ctx.moveTo(cx - 16, cy - 26 + bob); ctx.lineTo(cx, cy - 40 + bob); ctx.lineTo(cx + 16, cy - 26 + bob); ctx.fill();
+    }
+    // An open question or held mail: a badge over the head.
+    const asks = state.asks.filter((q) => q.agent === a.token).length + (a.unread > 0 ? 1 : 0);
+    if (asks) {
+      ctx.fillStyle = '#ef7d6b';
+      ctx.beginPath(); ctx.arc(cx + 16, cy - 32 + bob, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.font = '700 10px system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('!', cx + 16, cy - 28 + bob);
+    }
+    // The name and what it is doing.
+    ctx.textAlign = 'center';
+    ctx.fillStyle = css('--ink');
+    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.fillText(a.name, cx, cy + 54, cellW - 12);
+    ctx.fillStyle = css('--dim');
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText(a.status + (a.tool ? ' · ' + a.tool : ''), cx, cy + 68, cellW - 12);
+    spots.push({ token: a.token, x: cx, y: cy, r: 40 });
+  });
+}
+
+canvas.addEventListener('click', (e) => {
+  const r = canvas.getBoundingClientRect();
+  const px = e.clientX - r.left, py = e.clientY - r.top;
+  const hit = spots.find((s) => Math.abs(px - s.x) <= s.r && Math.abs(py - s.y) <= s.r);
+  if (hit) window.md.ask({ kind: 'openAgent', agent: hit.token });
+});
+</script>
+</body>
+</html>

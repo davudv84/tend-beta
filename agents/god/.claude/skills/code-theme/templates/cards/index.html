@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cards</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><b id="title">The office</b><span id="totals"></span></header>
+<main>
+  <section><h2>Agents</h2><div id="agents" class="grid"></div></section>
+  <section><h2>Waiting for you</h2><div id="asks" class="list"></div></section>
+  <section><h2>Cards in progress</h2><div id="tasks" class="list"></div></section>
+</main>
+<p id="wait">Waiting for the office…</p>
+<script>
+// TEMPLATE: the office as HTML cards. One card per agent with its status, tool, card and context; the open
+// questions with their answers as buttons; the cards in progress. Every word from the line goes in with
+// textContent, never as HTML. Click an agent or a card to open it; click an answer to answer. See GUIDE.md.
+const $ = (id) => document.getElementById(id);
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function button(text, ask, cls) {
+  const b = el('button', cls || 'btn', text);
+  b.type = 'button';
+  b.addEventListener('click', () => window.md.ask(ask));
+  return b;
+}
+
+const tokens = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K' : String(n));
+
+window.md.onData((s) => {
+  if (!s || s.v !== 1) return;   // a line version this theme does not know: draw nothing rather than guess
+  document.documentElement.dataset.scheme = s.look.scheme;
+  document.documentElement.dataset.motion = s.look.reducedMotion ? 'still' : 'on';
+  document.documentElement.dir = s.look.dir;
+  document.documentElement.lang = s.look.lang;
+  $('wait').hidden = true;
+  $('totals').textContent = tokens(s.telemetry.rate) + ' tokens a minute · ' + tokens(s.telemetry.today.used) + ' today';
+
+  const names = new Map(s.agents.map((a) => [a.token, a.name]));
+
+  $('agents').replaceChildren(...s.agents.map((a) => {
+    const card = el('button', 'card');
+    card.type = 'button';
+    card.dataset.status = a.status;
+    card.addEventListener('click', () => window.md.ask({ kind: 'openAgent', agent: a.token }));
+    const top = el('div', 'top');
+    top.append(el('span', 'dot'), el('b', 'name', a.name), el('span', 'chip', a.status));
+    card.append(top);
+    card.append(el('div', 'what', a.taskTitle ? a.taskTitle : a.tool ? 'Using ' + a.tool : a.role === 'lead' ? 'Runs the office' : 'No card'));
+    const bar = el('div', 'bar');
+    const fill = el('span');
+    fill.style.width = (a.contextPercent ?? 0) + '%';
+    bar.append(fill);
+    card.append(bar);
+    card.append(el('div', 'meta', tokens(a.rate) + ' a minute' + (a.unread ? ' · ' + a.unread + ' unread' : '') + (a.onHold ? ' · held' : '')));
+    return card;
+  }));
+
+  $('asks').replaceChildren(...(s.asks.length ? s.asks.map((q) => {
+    const row = el('div', 'ask');
+    const who = names.get(q.agent) || 'An agent';
+    row.append(el('div', 'who', who));
+    if (q.kind === 'question') row.append(el('div', 'text', q.text));
+    else row.append(el('div', 'text', q.kind === 'box' ? q.count + ' messages wait in the box' : q.kind === 'held' ? q.count + ' messages are held' : 'A connection needs its key' + (q.text ? ': ' + q.text : '')));
+    const acts = el('div', 'acts');
+    // Answer and Decline only where the app takes them, and only from a click (GUIDE.md, window.md.ask).
+    if (q.canAnswer) {
+      q.options.forEach((o, i) => acts.append(button(o, { kind: 'answerAsk', ask: q.token, option: i }, 'btn pri')));
+      acts.append(button('Decline', { kind: 'declineAsk', ask: q.token, reason: 'Not now' }));
+    }
+    if (q.agent) acts.append(button('Open', { kind: 'openAgent', agent: q.agent }));
+    row.append(acts);
+    return row;
+  }) : [el('div', 'empty', 'Nothing waits for you.')]));
+
+  $('tasks').replaceChildren(...(s.tasks.length ? s.tasks.map((t) => {
+    const row = el('button', 'task');
+    row.type = 'button';
+    row.dataset.status = t.status;
+    row.addEventListener('click', () => window.md.ask({ kind: 'openTask', task: t.token }));
+    row.append(el('span', 'chip', t.status), el('span', 'title', t.title), el('span', 'who', names.get(t.agent) || ''));
+    return row;
+  }) : [el('div', 'empty', 'No card in progress.')]));
+});
+</script>
+</body>
+</html>

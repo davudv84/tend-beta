@@ -6,18 +6,36 @@ description: |
   a message type or a setting seems unfamiliar. Read only.
 ---
 
-# What changed in Munder Difflin 0.5.7
+# What changed in Munder Difflin 0.5.10
 
-Version: 0.5.7
+Version: 0.5.10
 
 This page is what changes how you work. The people facing list is the
 release notes; do not quote this page as those.
 
+## Windows git paths (fixed in 0.5.10)
+- **On Windows, git output names the real project folder again.** Before
+  0.5.10 a path from git could name the app's private copy
+  (`...\git-private\md-git-XXXXXX`) in place of the project. If you see
+  such a path, it is not your project: use the agent's own "cwd".
+
+## Project folders (new in 0.5.9)
+- **A new install has no project folder, and that never stops the
+  orchestrator.** A temp or a lasting agent may name any folder under
+  `<hive>/projects` as its "cwd": the app makes it when it is not there, as a
+  git repository of its own. On a computer with no project folder yet, one
+  that names no folder works in `<hive>/projects/<its id>`.
+- **The hive's own history leaves `projects/` out.** Commit a project's work
+  in that project's own repository.
+
 ## Messages, memory and clears
-- **`note`** is a message type for information that needs no action. It never
-  wakes the receiver; it is printed with their next wake. Never send a message
-  that only acknowledges or thanks. A person's request, or their words you pass
-  on, is never a note, and a temp's note is delivered as `inform`.
+- **`note`** is a message type for information that needs no action. Since
+  0.5.8 a note wakes an idle receiver at once; a busy one reads it when its
+  turn ends. Before you send, ask: will they do anything differently because
+  of this? Yes: request or inform. No: note. Never send a message that only
+  acknowledges or thanks. A person's request, or their words you pass on, is
+  never a note: a note you send in a turn that began with a person's words is
+  delivered as `inform`, and so is a temp's note.
 - **`work`** is an optional message field: the card, pull request or name of
   the piece of work. Without it the thread id is the work id.
 - **A wake prints each new message** (sender, type, work id, subject, body) and
@@ -35,6 +53,25 @@ release notes; do not quote this page as those.
 - **Search memory with `md-memory search "<query>"`**, only when a task needs
   it. There is no digest to run at the start of a task. If it says MemPalace is
   busy, carry on without it.
+
+## Compacts and answers
+- **Any agent can ask for its own compact** when its context fills: one JSON
+  file `compact-requests/<your id>.json` in the hive root with "agent" and
+  "reason". The app types your compact at your next idle prompt.
+- **An ASK ME answer goes to the agent that asked**, not always to the
+  orchestrator.
+
+## Lasting agents (the orchestrator)
+- **The orchestrator may add a lasting agent** from an agent file, through
+  `hire-requests/`, only while the human has turned that on. Its brief has
+  the details. Every add is listed in the human's Inbox.
+
+## Cloud Office
+- **You may be running in a Cloud Office**, on a machine in the cloud: your
+  paths start with `/data`. A Claude agent there runs its shell in a sandbox
+  it cannot leave, and cannot write the office's config, its secrets, the
+  hook files or another agent's settings. A write refused with "Operation not
+  permitted" is that sandbox: work inside your own folder and the project.
 
 ## Temps
 - **Any lasting agent may start a temp** for a side job: one JSON file in your

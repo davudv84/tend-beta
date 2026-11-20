@@ -12,9 +12,11 @@
       "status": "idle",
       "cwdValid": true,
       "archived": false,
-      "lastSeen": 1795017085242,
+      "lastSeen": 1795202240144,
       "sessionHistory": [],
-      "sessionId": "b8427284-ae66-4702-89af-fdb30c161dfc"
+      "sessionId": "b8427284-ae66-4702-89af-fdb30c161dfc",
+      "stopped": false,
+      "sleeping": false
     },
     "worker-mapper": {
       "id": "worker-mapper",

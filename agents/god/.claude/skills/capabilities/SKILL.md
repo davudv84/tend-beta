@@ -1,9 +1,10 @@
 ---
 name: capabilities
 description: |
-  Your capability catalog. Read it once at boot. Lists the date skills and the
-  external integrations (reached via the loopback broker) available to you as
-  an agent or a temp, and exactly how to call each. Read only. Consult it
+  Your capability catalog. Read it once at boot. Lists the date skills, the
+  external integrations (reached via the loopback broker), the usage limits and
+  the engines and models available to you as an agent or a temp, the
+  simulation builder, and exactly how to call each. Read only. Consult it
   whenever you are unsure what tools or integrations you have or how to invoke
   them.
 allowed-tools:
@@ -74,7 +75,10 @@ holds the credentials and performs the outbound call on your behalf. A service
 connection's key never reaches you, and only loopback callers are accepted, so
 integration access is brokered and auditable. The keys and secrets saved in
 Integrations, Keys and secrets are the one exception: you use them through
-`md-secret` (below), never by reading a file.
+`md-secret` (below), never by reading a file. A Cloud Office has no
+`md-secret`: each custom secret saved for the office is already in your
+environment, as a variable of its name, from your start; one saved after your
+start reaches you at your next start.
 
 **Every agent receives the broker.** `MD_BROKER_URL` and `MD_BROKER_TOKEN` are
 set in your environment, agent or temp. Call an integration as
@@ -82,10 +86,19 @@ set in your environment, agent or temp. Call an integration as
 The port changes every time the app starts, so a lasting session can outlive
 its env: if the call is refused, read the current `url` and `token` from the
 JSON file `$AGENT_DIR/.broker` (yours only, rewritten on every broker start)
-and use those. Never copy that token anywhere else. An integration enabled
+and use those. In a Cloud Office or a Sandbox Office `MD_BROKER_TOKEN` is not
+in your environment at all: read `token` from that file before each call.
+In a Cloud Office a Claude Code shell has a network of its own, so a direct
+call to 127.0.0.1 does not reach the broker: send it through the sandbox's
+proxy, as `curl --noproxy '' --proxy "$HTTP_PROXY" ...`. Use curl there:
+node's `fetch` never sends 127.0.0.1 through the proxy, and a Cloud Office has no `md-secret` or
+`md-share` (its broker serves integrations only).
+Load it without printing it, since what a command prints stays in your
+transcript: `MD_BROKER_TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' "$AGENT_DIR/.broker")`,
+and the same with `url`. Never `cat` or open that file. Never copy that token anywhere else. An integration enabled
 after you started reaches you with no restart. The human adds or fixes a
-connection in **Integrations > Apps your agents use** (Add integration for a new
-one); Slack and inbound webhooks are in the same list. The auth choices there are None, Bearer
+connection in **Integrations > Apps and services** (a new one is a row in that
+list); Slack and inbound webhooks are in the same list. The auth choices there are None, Bearer
 token, Custom header, Header with a prefix, Query parameter and HTTP basic (a
 User field plus the key, for services such as Razorpay, Twilio or Atlassian);
 point the human at the matching one rather than a hand built header value.
@@ -93,6 +106,88 @@ What is enabled depends on the office's configuration, so discover what is
 live at run time rather than assuming. The broker pattern is stable even
 as specific integrations are added; treat the list below as the current surface,
 not a fixed contract.
+
+### What you can reach, how to call it, and what a refusal means (0.5.8)
+
+**List what is live.** Your start brief has a LIVE INTEGRATIONS line: what you
+could reach when you started. It changes while you run (the person switches
+things on and off), so ask the broker when it matters:
+
+    curl -s -H "Authorization: Bearer $MD_BROKER_TOKEN" "$MD_BROKER_URL/integrations"
+
+It answers `{"integrations":[...]}`: one entry for each integration you may
+reach now, only those switched on. Each has `id`, `name`, `kind` (`api`,
+`connected-account` or `webhook`) and `allows` (one sentence: what you may do
+with it). An API or a connected account also has `call` (the address to use),
+`base` (the service address your path goes under), and sometimes `onlyCalls`
+(the only calls it passes) and `docs` (the service's API reference). It never
+holds a key, a token or a secret. `GET $MD_BROKER_URL/i` gives the ids alone.
+In a Cloud Office both work the same through the office's own broker, with
+the token from `$AGENT_DIR/.broker` and the proxy flags above; an office lists
+no webhook, since webhooks are this computer's.
+
+**Call an API** (kind `api`). The person saved a key for a service. Call
+`$MD_BROKER_URL/i/<id>/<path>`, where `<path>` is what comes after `base`, with
+any method, headers and body the service takes. The broker adds the key. What
+that key may do is the service's decision.
+
+**Call a connected account** (kind `connected-account`). The person signed in
+to an account in Integrations: Gmail, Google Calendar, Google Drive,
+Notion, GitHub, Linear, Jira or Slack. Call it the same way,
+`$MD_BROKER_URL/i/<id>/<path>`, with the path under `base` (for Gmail `base` is
+`https://gmail.googleapis.com`, so a path is `gmail/v1/users/me/messages/send`).
+The broker reaches only that provider's own address. An entry with `onlyCalls`
+passes those calls and refuses every other one. Gmail is send only today: it
+passes `POST gmail/v1/users/me/messages/send` and
+`POST upload/gmail/v1/users/me/messages/send`, and it cannot read, search or
+list mail. To let agents read mail, the person connects Gmail in the engine
+itself: the Gmail connector in claude.ai for Claude Code, or the Gmail plugin
+in Codex. If your task needs to read mail and your engine has neither, tell
+god. Every other connected account acts as the person, within the access they
+granted at sign in. Sending mail or posting as the person is an outside
+action: do it only when your task asks for it.
+
+**A webhook** (kind `webhook`) brings work in; there is nothing to call. Each
+request to its address reaches the agent it names (or the default webhook
+agent, or god) as a hive message from `webhook` with the subject
+`[webhook] <title>`, and a kanban card `webhook-...` is made for it. Some
+webhooks hold each message until the person approves it. The message says how
+to finish: do the work, then set that card's status and result, because the
+outside caller reads the card's status from its address.
+
+**Ask for a webhook.** You may add one yourself: write a `webhook.add` request
+into `$AGENT_DIR/connections/requests/` as `$HIVE_ROOT/connections/README.md`
+says (its name, who it goes to, its standing prompt). The result file names its
+id, address and secret. The secret is for the outside service only: never put
+it in a message, a card or a log. If the address is empty, this computer has no
+public address yet; tell god. Pasting the address into the outside service
+(GitHub, Linear, Telegram, a form) is the person's to do: message god with the
+address and what it is for. An API key or a connected account is always the
+person's to add: message god with what you need and why, for example "connect
+Gmail in Integrations so I can send the weekly report".
+
+**When the broker refuses.** Every refusal is JSON with `code` (below) and
+`error` (a sentence). Do not retry a refusal that needs the person; message god once,
+naming the integration id, the code and what you were trying to do.
+
+| Status and code | What it means | What you do |
+| --- | --- | --- |
+| 401 `unauthorized` | Your token is old: the app or the office restarted. | Read `url` and `token` from `$AGENT_DIR/.broker` again and retry once. |
+| 403 `forbidden`, "integration not in this ... capability" | Not granted to you. | List `/integrations`. If you need it, ask god. |
+| 403 `forbidden`, "integration is disabled" | The person switched it off. | Tell god; do not retry. |
+| 404 `not_found` | No integration has that id. | Use an id from `/integrations`. |
+| 400 `bad_request` | The path left the service (`..`, a full address). | Give only the path under `base`. |
+| 403 `forbidden`, "connected for sending only" | That call is not one the connection passes. | Make only the calls in `onlyCalls`. To read mail, see Gmail above. |
+| 403 `forbidden`, "can only reach its own provider" | The path pointed somewhere else. | Give only the path under `base`. |
+| 503 `no_secret` | Not set up: no key is saved for it. | Tell god: the person saves the key in Integrations. |
+| 503 `secret_unreadable` or `secret_store_unreadable` | A saved key cannot be read here. | Tell god: the person saves it again. |
+| 503 `no_connection`, `connections_not_set_up` or `connections_unavailable` | The connected account is not set up here. | Tell god. |
+| 424 `connections_sign_in` or `reconnect_needed` | The person has to sign in or connect again. | Tell god: the person does it in Integrations. |
+| 402 `entitlement_inactive` | Connections come with Pro. | Tell god; do not retry. |
+| 403 `connection_off` | The person switched this connection off for here. | Tell god: the person turns it on in Integrations. |
+| 429 `rate_limited` | Too many calls. | Wait a minute, retry once. |
+| 502 `bad_gateway` or 503 `upstream_unavailable` | The service did not answer. | Retry once later; then tell god. |
+| 413 `payload_too_large` | The body is too big. | Send less. |
 
 Concrete capabilities you may have right now (check availability before relying
 on one):
@@ -134,12 +229,73 @@ they follow the same shape: a brokered, credential-free call discoverable at run
 time. Pair them with the temporal skills above — resolve the date window first,
 then pass those concrete ISO bounds to the integration query.
 
-## 4. Boundaries
+## 4. Usage limits — `md-limits`
 
+`md-limits` prints each engine's usage limits: Claude Code, Codex,
+Antigravity (per model group) and OpenCode: the percent used of each window
+the engine reports, when it resets, and how old the reading is.
+`md-limits --json` gives the same as JSON. It works the same in a Cloud Office.
+
+- It reads what the app already keeps. It asks no engine, uses no key and costs
+  nothing, so run it whenever the answer matters.
+- Run it before a big piece of work, before starting temps, and when a call
+  fails on a rate limit.
+- A window at 80% or more says NEAR LIMIT: tell `god` instead of starting work
+  that would stop half way. The orchestrator gives it to an agent on another
+  engine or waits for the reset.
+- "no reading yet" means no Claude agent has replied since the app started. It
+  is not zero. "not available" means the engine reports no limits (OpenCode, or
+  Codex signed in with an API key).
+
+## 5. Engines and models — `md-models`
+
+`md-models` lists every engine this app can start an agent on, with its
+models, and says which engines are installed and signed in where you run:
+this computer, or the Cloud Office you are in. `md-models --json` gives the
+same as JSON, every model included.
+
+- Run it before you name an engine or a model anywhere: above all a hire
+  request (`hire-requests/`) or a temp's spawn request (`spawn-requests/`).
+- `"provider"` is the id in quotes (`"claude"`, `"codex"`); `"model"` is one
+  of that engine's model ids. Leave `"model"` out for the engine's default.
+- Pick an engine that is installed and signed in. One that is signed out
+  needs the human to sign it in first; one not installed cannot start.
+- "sign in not known" means the engine has no status the app can read; it
+  may well work. It is never a reason to guess a different engine.
+- It shows no key, token or account, and costs nothing to run.
+
+## 6. Boundaries
+
+- **Contacting the user is opt in.** Use email, Slack direct messages, Telegram
+  or another external channel only when the user explicitly chose that channel
+  in onboarding or asked you to use it. A connected integration, saved key,
+  account email or known address is not consent. Otherwise keep updates and
+  questions in the app. Reply to incoming requests in their originating channel
+  and thread; this does not authorize unrelated messages, another channel or
+  recurring updates. Pass these limits to agents you delegate to.
 - Temporal skills are **read-only** helpers — they never write or reach the
   network. The broker mediates all external calls; you hold no service keys,
-  and a saved key or secret is used through `md-secret run`, never printed.
+  and a saved key or secret is used through `md-secret run` (in a Cloud
+  Office, from your environment), never printed.
 - Do **not** push or tag to any remote. Commit locally; **god** is the sole
   integrator. Pause only for high-severity actions (remote push, paid/infra
   changes, deleting something you didn't create) — otherwise work autonomously.
 - Finish by reporting to god (`"act":"done"`) with a real, substantive summary.
+
+## 7. Simulations — `simulation-builder`
+
+A simulation is how the office looks on Home (the app's older word is theme).
+When anyone asks you for one ("make me a pirate office simulation", a new
+theme, a new look for the office), use the **simulation-builder** skill. It is
+in your skills, on by default, on this computer and in a Cloud Office.
+
+- It covers both kinds: an office simulation (a map with its own art, cast
+  and lines; the default) and a code simulation (a web page that draws the
+  office). Its BUILD.md takes one sentence to a simulation as good as the
+  shipped ones; its other guides are the `office-theme` and `code-theme`
+  skills beside it.
+- It opens the app's workbench for the person with one file in
+  `simulation-requests/`, or you build the simulation yourself and hand the
+  folder in through the same folder. Either way the app checks it as Save
+  does, and you get an answer: added, or the reason it was not.
+- It never switches the person's office to it: Save, Use and Delete are theirs.

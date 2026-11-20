@@ -39,7 +39,7 @@ SCHEDULED MISSIONS (Automations > Schedules): a message sent to an agent on a ti
   {"id":"r7","op":"mission.add","mission":{"label":"Board update","to":"<agent id>","body":"Run your board update.","intervalMs":43200000}}
       mission fields: label (required), body (required, what the agent is told),
       to (required: an agent id, "temp", or "temp:<agent id>"), intervalMs (at least 900000 = 15 minutes, at most 7 days)
-      or weekly {"days":[1,2,3,4,5],"minute":540} (0 = Sunday; minute of the day, 540 = 09:00),
+      or weekly {"days":[1,2,3,4,5],"minute":540,"zone":"Asia/Kolkata"} (0 = Sunday; minute of the day, 540 = 09:00; zone is the person's IANA time zone, without it the time is this machine's clock, UTC in a Cloud Office),
       enabled (bool, default true)
       result: missionId
   {"id":"r8","op":"mission.edit","missionId":"m_...","mission":{"enabled":false}}

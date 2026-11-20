@@ -1,0 +1,52 @@
+#!/bin/sh
+# md-browser: the Munder Difflin Browser (Munder Difflin, M30-352). agent-browser on the app's own window and
+# profile, never your Chrome. Written by the app at every agent start.
+for a in "$@"; do
+  case "$a" in
+    --profile|--profile=*|--auto-connect|--auto-connect=*|--cdp|--cdp=*|--provider|--provider=*|-p|-p=*|--executable-path|--executable-path=*|--session|--session=*|--session-name|--session-name=*|--namespace|--namespace=*|--config|--config=*|--engine|--engine=*|--no-pin-tab|--no-pin-tab=*|--extension|--extension=*|--args|--args=*) echo "md-browser: ${a%%=*} is not available: the Munder Difflin Browser keeps its own window, profile and session." >&2; exit 2 ;;
+  esac
+done
+skip=0
+for a in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  case "$a" in
+    --restore|--restore-save|--restore-check-url|--restore-check-text|--restore-check-fn|--init-script|--enable|--state|--proxy|--proxy-bypass|--user-agent|--device|--ca-cert|--color-scheme|--download-path|--max-output|--allowed-domains|--action-policy|--confirm-actions|--screenshot-dir) skip=1; continue ;;
+    -*) continue ;;
+    profiles|connect|install|upgrade) echo "md-browser: \"$a\" is not available: the app installs and opens the Munder Difflin Browser." >&2; exit 2 ;;
+  esac
+  break
+done
+broker_url="$MD_BROKER_URL"; broker_token="$MD_BROKER_TOKEN"
+if [ -n "$AGENT_DIR" ] && [ -f "$AGENT_DIR/.broker" ]; then
+  broker_url=$(sed -n 's/.*"url":"\([^"]*\)".*/\1/p' "$AGENT_DIR/.broker")
+  broker_token=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' "$AGENT_DIR/.broker")
+fi
+if [ -z "$broker_url" ] || [ -z "$broker_token" ]; then
+  echo "md-browser: the app is not reachable from this terminal, so the Munder Difflin Browser cannot open. Ask god." >&2; exit 3
+fi
+tries=0
+while :; do
+  answer=$(curl -sS --noproxy '*' -m 30 -X POST -H "Authorization: Bearer $broker_token" "$broker_url/browser" 2>/dev/null)
+  cdp=$(printf '%s' "$answer" | sed -n 's/.*"cdp":"\([^"]*\)".*/\1/p')
+  [ -n "$cdp" ] && break
+  state=$(printf '%s' "$answer" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')
+  words=$(printf '%s' "$answer" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+  if [ "$state" != "installing" ] && [ "$state" != "opening" ]; then
+    echo "md-browser: ${words:-the Munder Difflin Browser did not open.}" >&2; exit 3
+  fi
+  [ "$tries" = 0 ] && echo "md-browser: ${words:-installing the Munder Difflin Browser (first use, a few minutes)...}" >&2
+  tries=$((tries + 1))
+  [ "$tries" -gt 450 ] && { echo "md-browser: the Munder Difflin Browser took too long to install. Try again." >&2; exit 3; }
+  sleep 2
+done
+export AGENT_BROWSER_CDP="$cdp"
+export AGENT_BROWSER_SESSION="md-${AGENT_ID:-agent}"
+export AGENT_BROWSER_PIN_TAB=1
+export AGENT_BROWSER_CONTENT_BOUNDARIES=1
+export AGENT_BROWSER_NO_VERSION_CHECK=1
+export AGENT_BROWSER_SOCKET_DIR='/private/var/folders/lk/0bzqfb4j2195nxfz1vywyn340000gn/T/md-browser'
+# The system may clear a temporary folder while an agent runs: made again, this user's only.
+(umask 077; mkdir -p "$AGENT_BROWSER_SOCKET_DIR")
+export AGENT_BROWSER_CONFIG='/Users/davudvejzovic/Library/Application Support/munder-difflin/browser/agent-browser.json'
+unset AGENT_BROWSER_PROFILE AGENT_BROWSER_AUTO_CONNECT AGENT_BROWSER_PROVIDER AGENT_BROWSER_EXECUTABLE_PATH AGENT_BROWSER_ARGS AGENT_BROWSER_EXTENSIONS
+exec '/Users/davudvejzovic/Library/Application Support/munder-difflin/browser/agent-browser-0.41.2/agent-browser' "$@"
