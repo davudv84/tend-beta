@@ -1,0 +1,10 @@
+# Reviewed gitleaks findings that are not secrets. One exact fingerprint (commit:file:rule:line) per entry, with the reason; any other finding,
+# including a new one in the same file, still fails the secret-history workflow. Reviewed 2026-11-20.
+# RFC 6238 test vector key ("12345678901234567890" in Base32), published in the RFC itself
+061ceb6d9136bf5e0528e32e4cac56ca92d2e640:src/server/mfa.test.ts:generic-api-key:43
+# Made-up high-entropy admin token used only to test that a strong token is accepted; never a real deployment's token
+a69277c0b5098bbc9285984cc5d06a5ba9bec0ab:src/server/config-hardening.test.ts:generic-api-key:22
+# "API_KEY=abc123def456": a fake value the test checks is masked before leaving the machine
+67699dfbb16c2c310b0ef72b3b588319ff30669c:examples/hooks/tend-hooks.test.mjs:generic-api-key:153
+# "key: r2.body.apiKey": code reading a variable, not a value
+5db327158a8d63986e00125433192acfe69ef9cc:scripts/authz-e2e.mjs:generic-api-key:104
