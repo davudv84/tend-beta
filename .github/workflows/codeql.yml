@@ -1,0 +1,32 @@
+name: codeql
+
+# Static analysis of the TypeScript/JavaScript code with GitHub's CodeQL (security-extended queries). Findings appear under Security → Code
+# scanning; make "CodeQL" a required check on protected branches (docs/ci.md).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # upload results; nothing else
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

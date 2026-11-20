@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # no token left in .git/config for later steps
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -60,6 +62,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # no token left in .git/config for later steps
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -69,6 +73,8 @@ jobs:
         run: npm run build
       - name: npm test
         run: npm test
+      - name: Negative controls for roles and two-step sign-in (each removed check must be caught)
+        run: node redteam/mutation-controls.mjs --only=M-19,M-20,M-21,M-22
 
   postgres:
     name: Concurrency guarantees on real PostgreSQL
@@ -84,6 +90,8 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # no token left in .git/config for later steps
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -120,6 +128,15 @@ jobs:
           unset TEND_E2E_OWNER_LOGIN
           node --no-warnings redteam/live/tenant-matrix.mjs
           node --no-warnings redteam/live/mcp-proxy.mjs
+          node --no-warnings redteam/live/rbac-matrix.mjs
+          node --no-warnings scripts/alerts-e2e.mjs
+      - name: Two-step sign-in in a real browser (Chromium) on PostgreSQL
+        env:
+          TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+          node --no-warnings scripts/mfa-e2e.mjs
       - name: Defence in depth - with a route's workspace check removed, row-level security must still hold the tenant matrix
         env:
           TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
@@ -131,6 +148,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # no token left in .git/config for later steps
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc

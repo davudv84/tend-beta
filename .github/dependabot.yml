@@ -1,9 +1,12 @@
 version: 2
 updates:
-  - package-ecosystem: npm
-    directory: /
-    schedule: { interval: weekly }
-    open-pull-requests-limit: 10
+  # Keeps GitHub Actions current; review each bump (and pin to commit SHAs once the repository adopts that, docs/ci.md).
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly }
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

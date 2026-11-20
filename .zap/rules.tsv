@@ -1,0 +1,1 @@
+# ZAP baseline rule overrides: <id>\t<IGNORE|INFO|WARN|FAIL>\t<reason>. Keep empty unless a finding is reviewed and accepted.
