@@ -96,7 +96,7 @@ jobs:
       - name: Negative controls for the database layer (context freshness, search_path pinning must be caught when removed)
         env:
           TEND_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-        run: node redteam/mutation-controls.mjs --only=M-16,M-17
+        run: node redteam/mutation-controls.mjs --only=M-16,M-17,M-18
       - name: Operations drills (backup and restore with audit-checkpoint verification, context-key rotation)
         env:
           DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
@@ -112,11 +112,12 @@ jobs:
           TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: |
           set -e
-          # once unsigned, once with a signed tenant context (TEND_CONTEXT_KEY), a throwaway key per run
-          for key in "" "$(openssl rand -hex 32)"; do
-            export TEND_E2E_CONTEXT_KEY="$key"
+          # production default (owner migrates, restricted login serves, signed context), then the legacy single-owner-URL setup
+          for mode in "" "1"; do
+            export TEND_E2E_OWNER_LOGIN="$mode"
             for s in e2e:authz e2e:gateway e2e:connect e2e:accounts e2e:open-beta e2e:onboarding; do npm run --silent "$s"; done
           done
+          unset TEND_E2E_OWNER_LOGIN
           node --no-warnings redteam/live/tenant-matrix.mjs
           node --no-warnings redteam/live/mcp-proxy.mjs
       - name: Defence in depth - with a route's workspace check removed, row-level security must still hold the tenant matrix

@@ -164,16 +164,20 @@ test("PV-6 start-up with separate migration and runtime roles on real PostgreSQL
   let owner: DB | undefined;
   try {
     delete process.env.POSTGRES_URL; delete process.env.VERCEL;
-    process.env.DATABASE_URL = urlFor(role); process.env.DATABASE_MIGRATE_URL = urlFor();
-    // 1. the owner migrates; the runtime role has no privileges yet → it cannot vouch for the schema → no start
+    // 1. runtime login only, nothing migrated or granted: it cannot vouch for the schema → no start
+    process.env.DATABASE_URL = urlFor(role); delete process.env.DATABASE_MIGRATE_URL;
     const first = await start();
     assert.ok(first.error, "no usable runtime role: the start fails");
-    // 2. granted: the application starts, on the runtime role (it cannot alter the schema)
-    owner = await postgres(urlFor());
-    await owner.exec(runtimeGrantsSql(role));
+    // 2. with the owner for migrations: it migrates AND grants the runtime login its privileges (every start), and revokes TEMP from PUBLIC
+    process.env.DATABASE_MIGRATE_URL = urlFor();
     const second = await start();
     assert.ok(second.db, second.error);
     assert.equal((await second.db!.get<{ u: string }>("SELECT current_user AS u"))!.u, role, "the pool the application uses is the runtime role, not the owner");
+    owner = await postgres(urlFor());
+    const privs = (await owner.get<Record<string, boolean>>(`SELECT has_table_privilege('${role}', 'agents', 'SELECT') AS sel, has_table_privilege('${role}', 'events', 'DELETE') AS del,
+      has_table_privilege('${role}', 'tend_context_keys', 'SELECT') AS keys, has_database_privilege('${role}', current_database(), 'TEMPORARY') AS tmp`))!;
+    assert.deepEqual(privs, { sel: true, del: false, keys: false, tmp: false }, "grants as runtimeGrantsSql says, no key access, no temporary tables");
+    assert.equal(runtimeGrantsSql(role).includes("REVOKE ALL ON tend_context_keys"), true);
     await second.db!.close();
     // 3. a migration this code expects is missing → the runtime role refuses to run on it (and the migrate connection would re-apply it, so test without it)
     await owner.run("DELETE FROM schema_migrations WHERE version = ?", MIGRATIONS.length);

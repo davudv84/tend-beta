@@ -33,8 +33,9 @@ const unit = [
   { id: "M-15", why: "the production default becomes public again", file: "src/server/config.ts", find: '    return process.env.NODE_ENV === "production" ? false : !this.adminToken;', to: "    return !this.adminToken;", tests: ["src/server/config-hardening.test.ts"] },
   // needs real PostgreSQL (TEND_TEST_DATABASE_URL); without it the row-level security tests are skipped, so the mutation is not run
   ...(process.env.TEND_TEST_DATABASE_URL ? [
-    { id: "M-16", why: "a signed tenant context no longer expires (captured settings can be replayed in any later transaction)", file: "src/server/db.ts", find: "     IF abs(issued - floor(extract(epoch FROM now()) * 1000)) > ${CTX_WINDOW_MS} THEN RETURN false; END IF;\n", to: "", tests: ["src/server/rls.test.ts"] },
-    { id: "M-17", why: "transactions no longer pin search_path, so a temp table left by injected SQL shadows a real table in later requests", file: "src/server/db.ts", find: "return `SET LOCAL search_path = public, pg_temp; ", to: "return `", tests: ["src/server/rls.test.ts"] },
+    { id: "M-16", why: "a signed tenant context is no longer bound to its transaction (captured settings can be replayed in later transactions)", file: "src/server/db.ts", find: "     IF nonce <> ${TX_BINDING} THEN RETURN false; END IF;\n", to: "", tests: ["src/server/rls.test.ts"] },
+    { id: "M-17", why: "transactions no longer pin search_path, so a temp table left by injected SQL shadows a real table in later requests", file: "src/server/db.ts", find: "=> `SET LOCAL search_path = public, pg_temp; ${isolation.role", to: "=> `${isolation.role", tests: ["src/server/rls.test.ts"] },
+    { id: "M-18", why: "production no longer refuses a database login that can regain owner rights", file: "src/server/db.ts", find: "    : strict && t.loginEscalates && !config.dbAllowOwnerLogin ?", to: "    : false as boolean ?", tests: ["src/server/rls.test.ts"] },
   ] : []),
 ];
 const routes = [

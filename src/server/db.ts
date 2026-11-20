@@ -32,8 +32,10 @@ export interface DB extends Q {
 
 /** Advisory lock keys. Lock order is always DEMO before EVENTS, so they can't deadlock. */
 const LOCK = { MIGRATE: 7310, EVENTS: 7311, DEMO: 7312 } as const;
-/** How far a signed context's issue time may be from its transaction's start (migration 22; changing it needs a new migration). */
+/** How far a signed context's issue time may be from its transaction's start (migration 22; superseded by migration 23's binding). */
 export const CTX_WINDOW_MS = 60_000;
+/** What names one transaction: the backend's pid and the transaction's start time in microseconds. tend_ctx_valid() (migration 23) compares the signed nonce with it. */
+export const TX_BINDING = "pg_backend_pid()::text || '.' || (extract(epoch FROM now()) * 1000000)::bigint::text";
 export { LOCK };
 
 /** `?` → `$1, $2, …`. Tend's SQL never contains a literal question mark. */
@@ -456,6 +458,24 @@ export const MIGRATIONS: string[] = [
      IF k IS NULL THEN RETURN false; END IF;
      RETURN mac = encode(sha256(k || sha256(convert_to(ws || '|' || sys || '|' || nonce, 'UTF8'))), 'hex');
    END $fn$;`,
+  // The signed context is bound to its transaction: the nonce must be this backend's pid and this transaction's start time (TX_BINDING), which
+  // the server read from the database before signing. A context read out of one transaction fails in every other one, at once: no window.
+  // (Two transactions on one backend cannot start in the same microsecond: each runs BEGIN..COMMIT in between.)
+  `CREATE OR REPLACE FUNCTION tend_ctx_valid() RETURNS BOOLEAN LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $fn$
+   DECLARE
+     k BYTEA;
+     ws TEXT := coalesce(current_setting('tend.workspace', true), '');
+     sys TEXT := coalesce(current_setting('tend.system', true), '');
+     nonce TEXT := coalesce(current_setting('tend.ctx_nonce', true), '');
+     mac TEXT := coalesce(current_setting('tend.ctx_mac', true), '');
+     key_id TEXT := coalesce(current_setting('tend.ctx_kid', true), '');
+   BEGIN
+     IF NOT EXISTS (SELECT 1 FROM public.tend_context_keys) THEN RETURN true; END IF;
+     IF nonce <> ${TX_BINDING} THEN RETURN false; END IF;
+     SELECT secret INTO k FROM public.tend_context_keys WHERE kid = key_id;
+     IF k IS NULL THEN RETURN false; END IF;
+     RETURN mac = encode(sha256(k || sha256(convert_to(ws || '|' || sys || '|' || nonce, 'UTF8'))), 'hex');
+   END $fn$;`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -492,8 +512,8 @@ export function contextKey(): { kid: string; secret: Buffer } | undefined {
   const secret = Buffer.from(raw, "utf8");
   return { kid: createHash("sha256").update(secret).digest("hex").slice(0, 16), secret };
 }
-/** sha256(key || sha256(workspace | system | nonce)), as tend_ctx_valid() recomputes it. A fresh nonce per transaction: "<now, ms>.<random hex>". */
-export function contextSignature(workspace: string, system: string, nonce = `${Date.now()}.${randomBytes(16).toString("hex")}`) {
+/** sha256(key || sha256(workspace | system | nonce)), as tend_ctx_valid() recomputes it. The nonce is the transaction's binding (TX_BINDING). */
+export function contextSignature(workspace: string, system: string, nonce: string) {
   const k = contextKey();
   if (!k) return undefined;
   const inner = createHash("sha256").update(`${workspace}|${system}|${nonce}`, "utf8").digest();
@@ -538,8 +558,15 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
   if (config.contextKey && config.contextKey.length < 32) throw new Error("TEND_CONTEXT_KEY must be at least 32 characters of random data");
   db.isolation.on = true;
   // Self-test, as the application will run: the effective role and the tables, read inside an isolated transaction.
-  const t = await db.tx((q) => q.get<{ who: string; sup: boolean; bypass: boolean; owns: boolean; missing: string | null; loose: string | null }>(
-    `SELECT current_user AS who, r.rolsuper AS sup, r.rolbypassrls AS bypass,
+  const t = await db.tx((q) => q.get<{ who: string; login: string; sup: boolean; bypass: boolean; createrole: boolean; privileged: boolean; temp: boolean; loginEscalates: boolean; owns: boolean; missing: string | null; loose: string | null }>(
+    `SELECT current_user AS who, session_user AS login, r.rolsuper AS sup, r.rolbypassrls AS bypass, r.rolcreaterole AS createrole,
+            -- role attributes are not inherited, but a member can SET ROLE to the role: membership in a privileged role is that privilege
+            EXISTS (SELECT 1 FROM pg_roles p WHERE p.oid <> r.oid AND (p.rolsuper OR p.rolbypassrls OR p.rolcreaterole) AND pg_has_role(current_user, p.oid, 'MEMBER')) AS privileged,
+            has_database_privilege(current_user, current_database(), 'TEMPORARY') AS temp,
+            -- the LOGIN, not only the effective role: SQL in the session can RESET ROLE to it (owner login, RLS-5)
+            (SELECT s.rolsuper OR s.rolbypassrls OR s.rolcreaterole FROM pg_roles s WHERE s.rolname = session_user)
+              OR EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p') AND pg_has_role(session_user, c.relowner, 'MEMBER'))
+              OR EXISTS (SELECT 1 FROM pg_roles p WHERE p.rolname <> session_user AND (p.rolsuper OR p.rolbypassrls OR p.rolcreaterole) AND pg_has_role(session_user, p.oid, 'MEMBER')) AS "loginEscalates",
             -- owner rights also come through membership (inherited or by SET ROLE): any of that exempts from RLS or lets SQL become the owner
             EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p')
                      AND pg_has_role(current_user, c.relowner, 'MEMBER')) AS owns,
@@ -549,17 +576,21 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
               WHERE p.schemaname = 'public' AND p.tablename = ANY(?::text[])
                 AND NOT (coalesce(p.qual, '') ~ '^\\(\\( SELECT tend_ctx_system\\(\\) AS tend_ctx_system\\) OR ' AND coalesce(p.with_check, '') = coalesce(p.qual, ''))) AS loose
        FROM pg_roles r WHERE r.rolname = current_user`, [...RLS_TABLES], [...RLS_TABLES]));
+  const strict = config.dbStrict;
   const problem = !t ? "could not read the effective role" : t.sup ? `the effective role ${t.who} is a superuser` : t.bypass ? `the effective role ${t.who} has BYPASSRLS`
-    : t.owns ? `the effective role ${t.who} owns tables, or is a member of a role that does (owners are exempt from row-level security)` : t.missing ? `row-level security is off on: ${t.missing}`
-    : t.loose ? `unexpected row-level security policies: ${t.loose}` : "";
+    : t.owns ? `the effective role ${t.who} owns tables, or is a member of a role that does (owners are exempt from row-level security)`
+    : t.createrole ? `the effective role ${t.who} has CREATEROLE (it could grant itself other roles)` : t.privileged ? `the effective role ${t.who} is a member of a superuser, BYPASSRLS or CREATEROLE role`
+    : t.missing ? `row-level security is off on: ${t.missing}`
+    : t.loose ? `unexpected row-level security policies: ${t.loose}`
+    : strict && t.loginEscalates && !config.dbAllowOwnerLogin ? `the database login ${t.login} owns the tables or can become a privileged role, so SQL injection could RESET ROLE past row-level security. In production use a restricted login (DATABASE_URL) and the owner only for migrations (DATABASE_MIGRATE_URL); see docs/database-roles.md. TEND_DB_ALLOW_OWNER_LOGIN=1 accepts the risk explicitly`
+    : strict && !config.contextKey && !config.dbAllowOwnerLogin ? "TEND_CONTEXT_KEY is not set: in production the tenant context must be signed"
+    : strict && t.temp && !config.dbAllowOwnerLogin ? `the runtime role ${t.who} can create temporary tables (run REVOKE TEMPORARY ON DATABASE <db> FROM PUBLIC as the owner; DATABASE_MIGRATE_URL start-up does it)` : "";
   // A context key installed in the database means every context must be signed with one of its keys: this server's key must be one of them,
   // or every request would see nothing. Checked through the same function the policies use.
-  // A signed context also carries its issue time (migration 22), so the server's clock must agree with the database's.
-  const signed = problem ? undefined : await db.tx((q) => q.get<{ ok: boolean; t: string }>("SELECT tend_ctx_valid() AS ok, floor(extract(epoch FROM now()) * 1000)::text AS t"));
-  const skew = signed ? Math.abs(Date.now() - Number(signed.t)) : 0;
-  const keyProblem = problem || !signed || signed.ok ? ""
-    : config.contextKey && skew > CTX_WINDOW_MS / 2 ? `this server's clock is ${Math.round(skew / 1000)} s away from the database's, so its signed context is refused as stale; fix the clock (NTP)`
-    : "the database holds context keys and this server's TEND_CONTEXT_KEY is not one of them (or is unset)";
+  const signed = problem ? undefined : await db.tx((q) => q.get<{ ok: boolean }>("SELECT tend_ctx_valid() AS ok"));
+  const keyProblem = problem || !signed || signed.ok ? "" : "the database holds context keys and this server's TEND_CONTEXT_KEY is not one of them (or is unset)";
+  if (!problem && !keyProblem && strict && t?.loginEscalates && config.dbAllowOwnerLogin)
+    console.error(`[tend] WARNING: TEND_DB_ALLOW_OWNER_LOGIN=1: the database login ${t.login} can regain owner rights, so row-level security does not stop SQL injection (docs/database-roles.md).`);
   if (problem || keyProblem) { db.isolation.on = false; throw new Error(`tenant isolation cannot be guaranteed: ${problem || keyProblem}. Fix the database roles (docs/database-roles.md) or set TEND_DB_ISOLATION=off explicitly.`); }
 }
 
@@ -641,19 +672,27 @@ export async function postgres(url: string): Promise<DB> {
   // Tenant isolation (enableIsolation): each transaction starts as the runtime role with the request's tenant context, all with SET LOCAL, so it ends
   // with the transaction: nothing survives on the pooled connection (and PgBouncer's transaction pooling, which Neon uses, stays safe).
   const isolation = { on: false, role: "" };
-  const preamble = () => {
-    const c = contextSettings(); // validated identifiers, safe as literals
-    const signed = contextSignature(c.workspace, c.system); // hex only
-    // search_path with pg_temp named LAST: otherwise the session's temporary schema is searched FIRST for tables and types, and a temp
-    // table left on a pooled connection by injected SQL (e.g. a fake `agents`) would shadow the real one in later requests (RLS-11).
-    // Session-level SET search_path by such SQL is overridden here, every transaction.
-    return `SET LOCAL search_path = public, pg_temp; ${isolation.role && !c.owner ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`
-      + (signed ? `, set_config('tend.ctx_nonce', '${signed.nonce}', true), set_config('tend.ctx_kid', '${signed.kid}', true), set_config('tend.ctx_mac', '${signed.mac}', true)` : "");
-  };
+  // search_path with pg_temp named LAST: otherwise the session's temporary schema is searched FIRST for tables and types, and a temp
+  // table left on a pooled connection by injected SQL (e.g. a fake `agents`) would shadow the real one in later requests (RLS-11).
+  // Session-level SET search_path by such SQL is overridden here, every transaction.
+  const setup = (c: ReturnType<typeof contextSettings>) => `SET LOCAL search_path = public, pg_temp; ${isolation.role && !c.owner ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}`;
+  const settings = (c: ReturnType<typeof contextSettings>, signed?: { nonce: string; kid: string; mac: string }) => // validated identifiers and hex/digits only: safe as literals
+    `SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`
+    + (signed ? `, set_config('tend.ctx_nonce', '${signed.nonce}', true), set_config('tend.ctx_kid', '${signed.kid}', true), set_config('tend.ctx_mac', '${signed.mac}', true)` : "");
   const tx: DB["tx"] = async (fn) => {
     const client = await pool.connect();
     try {
-      await client.query(`BEGIN; SET LOCAL statement_timeout = ${limit}; SET LOCAL idle_in_transaction_session_timeout = ${limit * 2}${isolation.on ? `; ${preamble()}` : ""}`);
+      const start = `BEGIN; SET LOCAL statement_timeout = ${limit}; SET LOCAL idle_in_transaction_session_timeout = ${limit * 2}`;
+      const c = isolation.on ? contextSettings() : undefined;
+      if (!c) await client.query(start);
+      else if (!contextKey()) await client.query(`${start}; ${setup(c)}${settings(c)}`);
+      else {
+        // Signed context bound to THIS transaction (migration 23): the database names the transaction (backend pid and start time, which
+        // tend_ctx_valid() reads again), the server signs that. Settings read out of one transaction are worthless in any other. One extra round trip.
+        const r = await client.query(`${start}; ${setup(c)}SELECT ${TX_BINDING} AS b`) as unknown as { rows: { b: string }[] }[];
+        const binding = r[r.length - 1].rows[0].b;
+        await client.query(settings(c, contextSignature(c.workspace, c.system, binding)));
+      }
       const out = await fn(queries(client, (sql) => client.query(sql)));
       await client.query("COMMIT");
       return out;
@@ -731,9 +770,20 @@ async function open() {
   if (migrateUrl) {
     if (!url) throw new Error("DATABASE_MIGRATE_URL is set without DATABASE_URL");
     if (migrateUrl === url) console.error("[tend] WARNING: DATABASE_MIGRATE_URL equals DATABASE_URL, so the application still runs as the schema owner: this is not a role split.");
-    const admin = await postgres(migrateUrl);
-    try { await migrate(admin); await installContextKey(admin); } finally { await admin.close().catch(() => {}); }
     const runtime = await postgres(url);
+    const admin = await postgres(migrateUrl);
+    try {
+      await migrate(admin);
+      await installContextKey(admin);
+      // The runtime login's privileges, renewed at every start so a release that adds a table never runs without them (or with a log table
+      // that lacks its revokes). Temporary tables are revoked from PUBLIC: nothing in TEND uses them, and injected SQL could leave one behind.
+      const login = (await runtime.get<{ u: string; separate: boolean }>("SELECT current_user AS u, NOT pg_has_role(current_user, (SELECT relowner FROM pg_class WHERE oid = 'public.agents'::regclass), 'MEMBER') AS separate"))!;
+      if (login.separate && /^[a-z_][a-z0-9_]{0,62}$/.test(login.u)) await admin.tx(async (q) => {
+        await q.get("SELECT pg_advisory_xact_lock(?)", LOCK.MIGRATE);
+        await q.exec(runtimeGrantsSql(login.u));
+        await q.exec(`DO $do$ BEGIN EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database()); EXECUTE format('GRANT TEMPORARY ON DATABASE %I TO %I', current_database(), current_user); END $do$;`);
+      });
+    } catch (e) { await runtime.close().catch(() => {}); throw e; } finally { await admin.close().catch(() => {}); }
     try {
       await assertSchemaCurrent(runtime);
       if (config.dbIsolation) await enableIsolation(runtime);

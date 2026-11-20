@@ -19,6 +19,10 @@ for (const signed of [false, true]) {
   await enableIsolation(db, role);
   const t = async (label, sql, ...p) => { const t0 = performance.now(); let r; for (let i = 0; i < 5; i++) r = await withRequestContext(async () => { bindWorkspace("wa"); return db.all(sql, ...p); }); return `${label} ${((performance.now() - t0) / 5).toFixed(1)}ms rows=${r.length}`; };
   console.log(signed ? "SIGNED  " : "UNSIGNED", await t("own 12000 recent", "SELECT * FROM events WHERE agent_id IN (?) ORDER BY seq DESC LIMIT 12000", a.agent.id), "|", await t("unfiltered scan", "SELECT seq FROM events"));
+  // per-transaction overhead: many small tenant-scoped transactions (what an API request does), sequential and 8 at a time
+  const small = async (n, par) => { const t0 = performance.now(); await Promise.all(Array.from({ length: par }, async () => { for (let i = 0; i < n / par; i++) await withRequestContext(async () => { bindWorkspace("wa"); return db.get("SELECT id FROM agents LIMIT 1"); }); })); return ((performance.now() - t0) / n).toFixed(3); };
+  await small(200, 1);
+  console.log(signed ? "SIGNED  " : "UNSIGNED", `small tx: ${await small(2000, 1)} ms each sequential, ${await small(2000, 8)} ms each at 8 concurrent`);
   await db.close(); await admin.query(`DROP DATABASE ${name} WITH (FORCE)`); await admin.query(`DROP ROLE IF EXISTS ${role}`);
 }
 await admin.end();

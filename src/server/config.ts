@@ -201,6 +201,21 @@ export const config = {
     if (v === "on" || v === "1") return true;
     return process.env.NODE_ENV === "production";
   },
+  /**
+   * Production database requirements (on by default in production, TEND_DB_STRICT=0 turns them off for local experiments): the login itself
+   * cannot become the schema owner or any privileged role, the tenant context is signed (TEND_CONTEXT_KEY), and the runtime role cannot create
+   * temporary tables. Checked by actual privileges at start-up (enableIsolation); a failure stops the start.
+   */
+  get dbStrict() {
+    const v = (process.env.TEND_DB_STRICT ?? "").toLowerCase();
+    if (v === "0" || v === "off") return false;
+    if (v === "1" || v === "on") return true;
+    return process.env.NODE_ENV === "production" && this.dbIsolation;
+  },
+  /** Explicit, logged exception to dbStrict for deployments that still log in as the schema owner (one DATABASE_URL). RLS is then bypassable by SQL injection. */
+  get dbAllowOwnerLogin() {
+    return process.env.TEND_DB_ALLOW_OWNER_LOGIN === "1";
+  },
   /** The NOLOGIN role every transaction switches to when the application connects as the schema owner (TEND_DB_RUNTIME_ROLE, default tend_runtime). */
   get dbRuntimeRole() {
     return process.env.TEND_DB_RUNTIME_ROLE || "tend_runtime";

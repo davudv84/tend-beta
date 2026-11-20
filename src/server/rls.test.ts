@@ -257,7 +257,7 @@ test("RLS-9 signed tenant context (TEND_CONTEXT_KEY) with a restricted login: SQ
   }
 });
 
-test("RLS-10 a signed context captured from one transaction cannot be replayed after its freshness window (nonce carries the issue time)", { skip }, async () => {
+test("RLS-10 a signed context captured from one transaction cannot be replayed in any other transaction (bound to backend pid and transaction start)", { skip }, async () => {
   const saved = process.env.TEND_CONTEXT_KEY;
   process.env.TEND_CONTEXT_KEY = randomBytes(32).toString("base64url");
   const w = await world();
@@ -280,17 +280,19 @@ test("RLS-10 a signed context captured from one transaction cannot be replayed a
       "SELECT current_setting('tend.ctx_nonce', true) AS nonce, current_setting('tend.ctx_kid', true) AS kid, current_setting('tend.ctx_mac', true) AS mac")))))!;
     const replay = (c: { nonce: string; kid: string; mac: string }) => `SELECT set_config('tend.workspace', '', true), set_config('tend.system', 'on', true), set_config('tend.ctx_nonce', '${c.nonce}', true), set_config('tend.ctx_kid', '${c.kid}', true), set_config('tend.ctx_mac', '${c.mac}', true)`;
     const count = (sql: string) => asTenant("wa", () => rt!.tx(async (q) => { if (sql) await q.exec(sql); return (await q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"))!.n; }));
-    assert.match(cap.nonce, /^\d{13}\.[0-9a-f]{32}$/, "the nonce carries the time it was issued");
-    // residual, stated in docs/database-roles.md: replayed within the window, a captured system context still works
-    assert.equal(await count(replay(cap)), 2, "fresh capture replayed at once: still valid (the window is the bound)");
-    // what a capture from 10 minutes ago looks like (signed with the real key, issue time in the past) and one claiming to be from the future
-    for (const offset of [-10 * 60_000, -2 * 60_000, 10 * 60_000]) {
-      const nonce = `${Date.now() + offset}.${randomBytes(16).toString("hex")}`;
-      const old = contextSignature("", "on", nonce)!;
-      assert.equal(await count(replay(old)), 0, `a context issued ${offset / 1000} s from now is refused`);
+    assert.match(cap.nonce, /^\d+\.\d{16}$/, "the nonce names the transaction: backend pid and start time in microseconds");
+    // replayed in the very next transaction (same pool, maybe the same backend): refused at once, there is no window any more
+    for (let i = 0; i < 8; i++) assert.equal(await count(replay(cap)), 0, "a captured context replayed in a later transaction is refused");
+    // signed with the real key for a made-up binding (this backend's pid, a time near now): still refused, the time must be the transaction's own
+    for (const offset of [-1, 1, -60_000_000, 60_000_000]) {
+      const [pid, us] = cap.nonce.split(".");
+      const nonce = `${pid}.${BigInt(us) + BigInt(offset)}`;
+      assert.equal(await count(replay(contextSignature("", "on", nonce)!)), 0, `a context bound to another start time (${offset} µs) is refused`);
     }
-    const altered = { ...cap, nonce: cap.nonce.replace(/^\d+/, String(Date.now())) };
-    assert.equal(await count(replay(altered)), 0, "rewriting the issue time breaks the MAC");
+    const altered = { ...cap, nonce: cap.nonce.replace(/^\d+/, "1") };
+    assert.equal(await count(replay(altered)), 0, "rewriting the pid breaks the MAC");
+    // and the server's own, properly bound context keeps working
+    assert.equal(await count(""), 1);
     await owner.close();
   } finally {
     if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
@@ -331,5 +333,80 @@ test("RLS-11 SQL injected into one request cannot leave a temp table (or a sessi
     if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
     await rt?.close().catch(() => {}); await w.close();
     await admin.query(`DROP OWNED BY ${login}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${login}`).catch(() => {}); await admin.end();
+  }
+});
+
+test("RLS-12 production start-up rules with distinct roles (Neon-style owner): owner login refused, restricted login + signed context required, privileged memberships refused; injected SQL under the restricted login gets nothing", { skip }, async () => {
+  const { getDb } = await import("./db.ts");
+  const g = globalThis as { __tendDb?: Promise<unknown> };
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const id = randomBytes(4).toString("hex");
+  const name = `tend_prod_${id}`, owner = `tend_own_${id}`, login = `tend_app_${id}`, bypass = `tend_byp_${id}`, rt = `tend_nl_${id}`;
+  const urlFor = (user: string) => { const u = new URL(URL_); u.pathname = `/${name}`; u.username = user; return u.toString(); };
+  const keys = ["DATABASE_URL", "DATABASE_MIGRATE_URL", "POSTGRES_URL", "VERCEL", "TEND_DB_STRICT", "TEND_DB_ISOLATION", "TEND_DB_ALLOW_OWNER_LOGIN", "TEND_CONTEXT_KEY", "TEND_DB_RUNTIME_ROLE"] as const;
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const start = async () => { g.__tendDb = undefined; try { return { db: (await getDb()) as DB }; } catch (e) { return { error: (e as Error).message }; } };
+  const started: DB[] = [];
+  try {
+    await admin.query(`CREATE ROLE ${owner} LOGIN NOSUPERUSER CREATEDB CREATEROLE NOBYPASSRLS`); // like neondb_owner
+    await admin.query(`CREATE DATABASE ${name} OWNER ${owner}`);
+    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${name} TO ${login}`);
+    for (const k of keys) delete process.env[k];
+    process.env.TEND_DB_STRICT = "1"; process.env.TEND_DB_ISOLATION = "on"; process.env.TEND_DB_RUNTIME_ROLE = rt;
+    // 1. one URL, the owner: refused in production; accepted only with the explicit, logged exception
+    process.env.DATABASE_URL = urlFor(owner);
+    const s1 = await start();
+    assert.match(s1.error ?? "", /login tend_own_\w+ owns the tables or can become a privileged role/, "owner login refused");
+    process.env.TEND_DB_ALLOW_OWNER_LOGIN = "1";
+    const s1b = await start();
+    assert.ok(s1b.db, s1b.error); started.push(s1b.db!);
+    delete process.env.TEND_DB_ALLOW_OWNER_LOGIN;
+    // 2. restricted login + owner for migrations, but no context key: refused
+    process.env.DATABASE_URL = urlFor(login); process.env.DATABASE_MIGRATE_URL = urlFor(owner);
+    assert.match((await start()).error ?? "", /TEND_CONTEXT_KEY is not set/);
+    // 3. with a key: starts, as the restricted login
+    process.env.TEND_CONTEXT_KEY = randomBytes(32).toString("base64url");
+    const s3 = await start();
+    assert.ok(s3.db, s3.error); started.push(s3.db!);
+    const db = s3.db!;
+    const ownerDb = await postgres(urlFor(owner)); started.push(ownerDb);
+    await ownerDb.run("INSERT INTO workspaces (id, name, created_at) VALUES ('wa', 'A', 0), ('wb', 'B', 0) ON CONFLICT DO NOTHING");
+    await registerAgent(ownerDb, { name: "alpha", model: "m", provider: "Custom" }, "u", "wa");
+    await registerAgent(ownerDb, { name: "bravo", model: "m", provider: "Custom" }, "u", "wb");
+    const count = (sql: string) => asTenant("wa", () => db.tx(async (q) => { if (sql) await q.exec(sql); return (await q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"))!.n; }));
+    const err = async (sql: string) => { try { await asTenant("wa", () => db.tx((q) => q.exec(sql))); return "ALLOWED"; } catch (e) { return (e as { code?: string }).code ?? (e as Error).message; } };
+    assert.equal(await count(""), 1, "own tenant only");
+    // injected SQL, everything it could try to get out of its tenant
+    assert.equal(await count("RESET ROLE; SELECT set_config('tend.system', 'on', true)"), 0, "no role to go back to, and an unsigned system flag shows nothing");
+    assert.equal(await count("SELECT set_config('tend.workspace', 'wb', true)"), 0);
+    assert.equal(await err(`SET ROLE ${owner}`), "42501", "cannot become the owner");
+    assert.equal(await err("CREATE TEMP TABLE agents (id text)"), "42501", "cannot create temporary tables");
+    assert.equal(await err("SELECT * FROM tend_context_keys"), "42501", "cannot read the signing keys");
+    assert.equal(await err("ALTER TABLE agents DISABLE ROW LEVEL SECURITY"), "42501", "cannot switch RLS off");
+    assert.equal(await err("CREATE FUNCTION public.x() RETURNS int LANGUAGE sql AS 'SELECT 1'"), "42501", "cannot create objects");
+    // session-level state left behind on pooled connections does not reach the next request
+    for (let i = 0; i < 8; i++) await asTenant("wa", () => db.tx((q) => q.exec("SELECT set_config('tend.workspace', 'wb', false), set_config('tend.system', 'on', false), set_config('search_path', 'pg_temp, public', false)")));
+    for (let i = 0; i < 8; i++) assert.equal(await count(""), 1, "the next request is still exactly tenant A");
+    assert.equal(await asTenant("wb", () => db.tx(async (q) => (await q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"))!.n)), 1, "and tenant B exactly B");
+    // 4. the runtime login made a member of a BYPASSRLS role (or given CREATEROLE): refused
+    await admin.query(`CREATE ROLE ${bypass} NOLOGIN BYPASSRLS`);
+    await admin.query(`GRANT ${bypass} TO ${login}`);
+    assert.match((await start()).error ?? "", /member of a superuser, BYPASSRLS or CREATEROLE role/);
+    await admin.query(`REVOKE ${bypass} FROM ${login}`);
+    await admin.query(`ALTER ROLE ${login} CREATEROLE`);
+    assert.match((await start()).error ?? "", /has CREATEROLE/);
+    await admin.query(`ALTER ROLE ${login} NOCREATEROLE`);
+    // 5. the runtime login made a member of the owner: refused (even without TEND_DB_STRICT, RLS-8)
+    await admin.query(`GRANT ${owner} TO ${login}`);
+    assert.match((await start()).error ?? "", /owns tables, or is a member of a role that does/);
+  } finally {
+    g.__tendDb = undefined;
+    for (const d of started) await d.close().catch(() => {});
+    for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`).catch(() => {});
+    for (const r of [login, bypass, rt, owner]) await admin.query(`DROP ROLE IF EXISTS ${r}`).catch(() => {});
+    await admin.end();
   }
 });

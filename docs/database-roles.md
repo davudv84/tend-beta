@@ -1,5 +1,19 @@
 # Database roles and what the database does (and does not) enforce
 
+## Production default: three database identities (TEND_DB_STRICT)
+
+| Identity | Used for | Must not |
+| --- | --- | --- |
+| Owner (`DATABASE_MIGRATE_URL`; on Neon `neondb_owner`) | migrations, the context keys, granting the runtime login, at start-up only, on a short-lived connection | be the pool the application uses |
+| Restricted login (`DATABASE_URL`, e.g. `tend_app`) | every request | own a table, be a member of the owner or of any superuser/BYPASSRLS/CREATEROLE role, have CREATEROLE, create temporary tables, read `tend_context_keys` |
+| Signing key (`TEND_CONTEXT_KEY`) | signing each transaction's tenant | be readable by the restricted login (it lives in the owner-only table and in the deployment's secret store) |
+
+In production the start-up self-test checks all of that by actual privileges (`enableIsolation`) and refuses to start otherwise
+(RLS-12, with distinct roles and a Neon-style non-superuser owner; mutation M-18). At each start the owner connection re-applies
+`runtimeGrantsSql` to the restricted login and revokes `TEMPORARY` on the database from `PUBLIC` (TEND uses no temporary tables).
+`TEND_DB_ALLOW_OWNER_LOGIN=1` lets a single owner URL start anyway, with a warning at every start: then RLS stops application mistakes but
+not SQL injection (RLS-5).
+
 ## Tenant isolation: two layers
 
 1. **The application** checks every id against the caller's workspace (`agentInWorkspace`, `reviewInWorkspace`, `centralInWorkspace` in
@@ -36,9 +50,11 @@ How the database layer works:
 **Signed tenant context** (migration 20, `TEND_CONTEXT_KEY`): the server also sets a fresh nonce and a MAC,
 `sha256(key || sha256(workspace | system | nonce))`, per transaction. The policies trust `tend.workspace` and `tend.system` only when
 `tend_ctx_valid()`, a `SECURITY DEFINER` function, recomputes that MAC with a key from `tend_context_keys`, a table only the owner can read.
-The nonce is `<issue time, ms>.<random>`; since migration 22 a context is valid only in a transaction that starts within 60 s of
-its issue time, so settings read out of one transaction cannot be replayed later (RLS-10; before the fix a captured system context worked
-forever). Start-up refuses a key the database does not hold, and a server clock more than 30 s away from the database's. With no key installed the check is off (development, older deployments). Rotation:
+Since migration 23 the context is **bound to its transaction**: the server first asks the database for the backend's pid and the
+transaction's start time (microseconds), signs those, and `tend_ctx_valid()` checks them again. Settings read out of one transaction fail in
+every other one, immediately (RLS-10; migration 22 had a 60 s window, and before it a captured system context worked forever). Cost: one
+extra round trip per signed transaction (locally 0.29 → 0.30 ms per small transaction; on a hosted database about one network round trip).
+Start-up refuses a key the database does not hold. With no key installed the check is off (development, older deployments). Rotation:
 `docs/operations.md`. Migration 21 rewrote the policies so the context is checked once per statement (an initplan) rather than once per row:
 on 12,000 to 20,000 events, tenant queries went from 242 to 601 ms down to 17 to 25 ms (`redteam/bench/rls-bench.mjs`).
 
@@ -47,8 +63,7 @@ on 12,000 to 20,000 events, tenant queries went from 242 to 601 ms down to 17 to
 - **Restricted login** (`DATABASE_MIGRATE_URL` for the owner, `DATABASE_URL` for a role that is not the owner) **with a context key**:
   injected SQL that sets `tend.system = on` or another tenant's `tend.workspace` sees nothing, because it cannot compute the MAC
   (RLS-9, with a negative control: without a key installed the same SQL reads everything). It still acts as the current tenant of *its
-  own* transaction, with the runtime role's privileges. Settings it reads out of a transaction (a system one, if the injection is in a
-  sign-in or session lookup) can be replayed in other transactions for up to 60 s.
+  own* transaction, with the runtime role's privileges. Settings it reads out of a transaction cannot be used in any other transaction.
   Every transaction also pins `search_path` to `public, pg_temp`: otherwise a temporary table such SQL leaves on a pooled connection
   (any role may create one) is searched before the real table in later requests. Before the fix, a temp `agents` table made a tenant's own
   agent key authenticate into another workspace (RLS-11).

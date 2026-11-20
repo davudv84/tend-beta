@@ -37,7 +37,7 @@ export const freePort = () => new Promise((resolve, reject) => {
 });
 
 /** Every setting TEND reads, set explicitly so no env file or inherited variable can change them. */
-const BLANK = ["DATABASE_URL", "POSTGRES_URL", "VERCEL", "TEND_TRUSTED_PROXY", "TEND_GATEWAY_NOTES_DIR", "TEND_GATEWAY_PAYMENTS_KEY"];
+const BLANK = ["DATABASE_URL", "DATABASE_MIGRATE_URL", "TEND_CONTEXT_KEY", "TEND_DB_ALLOW_OWNER_LOGIN", "TEND_DB_STRICT", "POSTGRES_URL", "VERCEL", "TEND_TRUSTED_PROXY", "TEND_GATEWAY_NOTES_DIR", "TEND_GATEWAY_PAYMENTS_KEY"];
 
 /**
  * @param root   repository root (needs a production build)
@@ -64,12 +64,23 @@ async function freshPostgres(dataDir) {
   const name = `tend_e2e_${createHash("sha256").update(String(dataDir ?? Math.random())).digest("hex").slice(0, 16)}`;
   if (!(await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [name])).rowCount) await admin.query(`CREATE DATABASE ${name}`);
   u.pathname = `/${name}`;
-  return { url: u.toString(), drop: async () => { await admin.end().catch(() => {}); } };
+  // As production runs by default (docs/database-roles.md): the owner (here the superuser) only migrates, the application logs in as a
+  // restricted login of its own, and the tenant context is signed. TEND_E2E_OWNER_LOGIN=1 runs the legacy single-owner-URL setup instead.
+  if (process.env.TEND_E2E_OWNER_LOGIN === "1") return { env: { DATABASE_URL: u.toString(), TEND_DB_ALLOW_OWNER_LOGIN: "1" }, drop: async () => { await admin.end().catch(() => {}); } };
+  const login = `${name}_app`;
+  if (!(await admin.query("SELECT 1 FROM pg_roles WHERE rolname = $1", [login])).rowCount) await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+  await admin.query(`GRANT CONNECT ON DATABASE ${name} TO ${login}`);
+  const app = new URL(u); app.username = login; app.password = "";
+  const { randomBytes } = await import("node:crypto");
+  return {
+    env: { DATABASE_URL: app.toString(), DATABASE_MIGRATE_URL: u.toString(), TEND_CONTEXT_KEY: process.env.TEND_E2E_CONTEXT_KEY || randomBytes(32).toString("base64url") },
+    drop: async () => { await admin.end().catch(() => {}); },
+  };
 }
 
 export async function startIsolatedServer({ root, env, database = "embedded", port: wantedPort, confine, keepDir = false }) {
   const fresh = database === "embedded" ? await freshPostgres(env?.TEND_DATA_DIR) : undefined;
-  if (fresh) { env = { ...env, DATABASE_URL: fresh.url, ...(process.env.TEND_E2E_CONTEXT_KEY && { TEND_CONTEXT_KEY: process.env.TEND_E2E_CONTEXT_KEY }) }; database = "postgres"; }
+  if (fresh) { env = { ...env, ...fresh.env }; database = "postgres"; }
   if (!existsSync(path.join(root, ".next/BUILD_ID"))) throw new Error("There is no production build yet. Run `npm run build` first.");
   const dir = mkdtempSync(path.join(tmpdir(), "tend-isolated-"));
   for (const name of [".next", "node_modules", "package.json", "next.config.ts", "public"]) if (existsSync(path.join(root, name))) symlinkSync(path.join(root, name), path.join(dir, name));
