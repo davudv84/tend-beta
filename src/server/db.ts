@@ -408,6 +408,31 @@ export const MIGRATIONS: string[] = [
      SELECT tend_ctx_valid() AND (current_setting('tend.system', true) = 'on'
        OR EXISTS (SELECT 1 FROM users u WHERE u.id = uid AND u.workspace_id = NULLIF(current_setting('tend.workspace', true), '')))
    $fn$;`,
+  // The same policies, evaluated once per statement instead of once per row: the verified context is read through scalar subqueries (initplans)
+  // and the tenant's agents/users through an uncorrelated subquery (one hashed lookup), instead of a correlated EXISTS and a signature check
+  // for every row (measured: redteam/bench/rls-bench.mjs). Same meaning: system context, or the row belongs to the verified workspace.
+  `CREATE FUNCTION tend_ctx_workspace() RETURNS TEXT LANGUAGE sql STABLE AS $fn$
+     SELECT CASE WHEN tend_ctx_valid() THEN NULLIF(current_setting('tend.workspace', true), '') END
+   $fn$;
+   CREATE FUNCTION tend_ctx_system() RETURNS BOOLEAN LANGUAGE sql STABLE AS $fn$
+     SELECT coalesce(tend_ctx_valid() AND current_setting('tend.system', true) = 'on', false)
+   $fn$;
+   DROP POLICY tenant ON workspaces; CREATE POLICY tenant ON workspaces USING ((SELECT tend_ctx_system()) OR id = (SELECT tend_ctx_workspace())) WITH CHECK ((SELECT tend_ctx_system()) OR id = (SELECT tend_ctx_workspace()));
+   DROP POLICY tenant ON agents; CREATE POLICY tenant ON agents USING ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace())) WITH CHECK ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace()));
+   DROP POLICY tenant ON central_policies; CREATE POLICY tenant ON central_policies USING ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace())) WITH CHECK ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace()));
+   DROP POLICY tenant ON users; CREATE POLICY tenant ON users USING ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace())) WITH CHECK ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace()));
+   DROP POLICY tenant ON notifications; CREATE POLICY tenant ON notifications USING ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace())) WITH CHECK ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace()));
+   DROP POLICY tenant ON events; CREATE POLICY tenant ON events USING ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON reviews; CREATE POLICY tenant ON reviews USING ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON asks; CREATE POLICY tenant ON asks USING ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON authorizations; CREATE POLICY tenant ON authorizations USING ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON verification_runs; CREATE POLICY tenant ON verification_runs USING ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR agent_id IN (SELECT a.id FROM agents a WHERE a.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON operator_sessions; CREATE POLICY tenant ON operator_sessions USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON auth_events; CREATE POLICY tenant ON auth_events USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON user_tokens; CREATE POLICY tenant ON user_tokens USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON onboarding; CREATE POLICY tenant ON onboarding USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON push_subscriptions; CREATE POLICY tenant ON push_subscriptions USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));
+   DROP POLICY tenant ON notification_prefs; CREATE POLICY tenant ON notification_prefs USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -499,7 +524,7 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
             -- every policy on a tenant table must be one of ours: a permissive USING (true) added later would quietly open the table
             (SELECT string_agg(DISTINCT p.tablename || '.' || p.policyname, ',') FROM pg_policies p
               WHERE p.schemaname = 'public' AND p.tablename = ANY(?::text[])
-                AND NOT (coalesce(p.qual, '') ~ '^tend_(ws|agent|user)_visible\\(' AND coalesce(p.with_check, '') ~ '^tend_(ws|agent|user)_visible\\(')) AS loose
+                AND NOT (coalesce(p.qual, '') ~ '^\\(\\( SELECT tend_ctx_system\\(\\) AS tend_ctx_system\\) OR ' AND coalesce(p.with_check, '') = coalesce(p.qual, ''))) AS loose
        FROM pg_roles r WHERE r.rolname = current_user`, [...RLS_TABLES], [...RLS_TABLES]));
   const problem = !t ? "could not read the effective role" : t.sup ? `the effective role ${t.who} is a superuser` : t.bypass ? `the effective role ${t.who} has BYPASSRLS`
     : t.owns ? `the effective role ${t.who} owns tables, or is a member of a role that does (owners are exempt from row-level security)` : t.missing ? `row-level security is off on: ${t.missing}`
