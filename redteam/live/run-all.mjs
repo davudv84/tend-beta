@@ -23,7 +23,7 @@ const run = (file) => {
   console.log(`\n=== ${file}`);
   const r = spawnSync(process.execPath, ["--no-warnings", path.join(here, file)], { env, encoding: "utf8", cwd: root, timeout: 600_000 });
   const out = (r.stdout ?? "") + (r.stderr ?? "");
-  process.stdout.write(out.split("\n").filter((l) => /^\[(BROKEN|INCONCLUSIVE)/.test(l) || /Error|error:/.test(l)).slice(0, 40).join("\n") + "\n");
+  process.stdout.write(out.split("\n").filter((l) => (process.env.RT_VERBOSE && /^\[HELD/.test(l)) || /^\[(BROKEN|INCONCLUSIVE)/.test(l) || /Error|error:/.test(l)).slice(0, process.env.RT_VERBOSE ? Infinity : 40).join("\n") + "\n");
   held += (out.match(/^\[HELD/gm) ?? []).length;
   const b = (out.match(/^\[(BROKEN|INCONCLUSIVE)/gm) ?? []).length;
   broken += b + (r.status ? 1 : 0);

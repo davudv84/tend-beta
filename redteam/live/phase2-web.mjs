@@ -28,7 +28,7 @@ for (const p of ["/.env", "/.env.local", "/.git/config", "/package.json", "/next
   const r = await call("GET", p); const leaked = r.status === 200 && /TEND_ADMIN_TOKEN|DATABASE_URL|tend_sk_|\[core\]|import /.test(r.text.slice(0, 5000));
   H(!leaked, `W-2${p.length}`, "exposure", `GET ${p} leaks nothing sensitive`, `${r.status}`);
 }
-const health = await call("GET", "/api/health?x=1"); record("W-30", "info-leak", "/api/health discloses only ok/schema/storage", Object.keys(health.body ?? {}).sort().join() === "ok,schema,storage" ? "HELD" : "INFO", health.text);
+const health = await call("GET", "/api/health?x=1"); record("W-30", "info-leak", "/api/health discloses only ok/schema/storage (and, on PostgreSQL, the TLS mode)", ["ok,schema,storage", "ok,schema,storage,tls"].includes(Object.keys(health.body ?? {}).sort().join()) ? "HELD" : "INFO", health.text);
 // ---- rate limits / brute force / enumeration
 const v = await makeAccount(`rt-victim-${Date.now().toString(36)}@example.com`);
 const t0 = []; let blockedAt = null;

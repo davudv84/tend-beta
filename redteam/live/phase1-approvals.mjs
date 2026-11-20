@@ -117,7 +117,7 @@ H(!notifB.text.includes(payA.id), "X-12", "tenancy", "tenant B notifications hav
 // ---- identity: spoofing headers, forged keys, key revocation
 const sp = await call("GET", "/api/v1/agent/inbox", { key: payA.key, headers: { "x-tend-agent-id": payB.id, "x-agent-id": payB.id, "x-tenant-id": "default", "x-workspace": "default", "x-forwarded-for": "1.2.3.4" } });
 H(sp.status === 200 && (sp.body?.agent?.id ?? sp.body?.agentId ?? payA.id) !== payB.id && !sp.text.includes(payB.id), "I-01", "impersonation", "identity headers (x-agent-id / x-tenant-id) ignored; key decides", short(sp));
-for (const [i, k] of ["tend_sk_" + "A".repeat(32), payA.key.slice(0, -1) + "A", payA.key.toUpperCase(), payA.key + "x", "tend_sk_", "Bearer " + payA.key, payA.key.slice(0, 20)].entries()) {
+for (const [i, k] of ["tend_sk_" + "A".repeat(32), payA.key.slice(0, -1) + (payA.key.endsWith("A") ? "B" : "A"), payA.key.toUpperCase(), payA.key + "x", "tend_sk_", "Bearer " + payA.key, payA.key.slice(0, 20)].entries()) {
   const r = await call("GET", "/api/v1/agent/inbox", { headers: { authorization: `Bearer ${k}` } });
   H(r.status === 401 || r.status === 429, `I-1${i}`, "agent-key", `forged/mutated key #${i} rejected`, short(r));
 }
