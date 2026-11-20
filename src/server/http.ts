@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 import { currentSession, type Session } from "./session.ts";
-import { bindSystem, bindWorkspace, withRequestContext } from "./db-context.ts";
+import { bindSystem, bindWorkspace, dbContext, withRequestContext } from "./db-context.ts";
+import { securityEvent } from "./security-events.ts";
 import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { spend } from "./limits.ts";
@@ -63,7 +64,14 @@ export function route<C>(fn: (req: Request, ctx: C) => Promise<Response> | Respo
       return res;
     } catch (e) {
       await deliverQueued();
-      if (e instanceof HttpError) return json({ error: e.code, message: e.message, ...e.extra }, e.status, e.status === 429 ? { "retry-after": String(e.extra?.retryAfter ?? 10) } : {});
+      const path = new URL(req.url).pathname;
+      if (e instanceof HttpError) {
+        // Refused operator requests: missing rights, or another tenant's id (answered as "not found"). Visitors without a session are not counted.
+        if ((e.status === 403 && e.code !== "operator_required" && e.code !== "read_only_account") || (e.status === 404 && e.code.endsWith("_not_found") && path.startsWith("/api/v1/")))
+          securityEvent("authz.denied", { code: e.code, route: path.replace(/\/[a-z]+_[A-Za-z0-9]+/g, "/:id"), client: clientIp(req), session: dbContext()?.workspace ? "bound" : undefined, workspace: dbContext()?.workspace });
+        return json({ error: e.code, message: e.message, ...e.extra }, e.status, e.status === 429 ? { "retry-after": String(e.extra?.retryAfter ?? 10) } : {});
+      }
+      if (/^\/api\/v1\/(authoriz|gateway|agent\/)/.test(path)) securityEvent("enforcement.error", { route: path.replace(/\/[a-z]+_[A-Za-z0-9]+/g, "/:id") });
       console.error("[tend] unhandled error", describeError(e));
       return json({ error: "internal_error", message: "Something went wrong on the server." }, 500);
     }

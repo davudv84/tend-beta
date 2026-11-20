@@ -19,7 +19,8 @@ import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { cookie, type Viewer } from "./auth.ts";
 import { spend } from "./limits.ts";
-import { asSystem, bindWorkspace } from "./db-context.ts";
+import { asSystem, bindWorkspace, dbContext } from "./db-context.ts";
+import { securityEvent } from "./security-events.ts";
 import { isRole, type Role } from "./rbac.ts";
 
 export const SESSION_TTL = 12 * 60 * 60 * 1000;
@@ -78,6 +79,10 @@ const NEVER_DROPPED = new Set<AuthEventType>(["mfa.enabled", "mfa.disabled", "me
  */
 export async function audit(q: Q, type: AuthEventType, o: { sessionId?: string; client?: string; reason?: string; userId?: string; now?: number } = {}) {
   const now = o.now ?? Date.now();
+  // Monitoring sees every event, also those past the table's budget below (redacted, counted per instance: security-events.ts).
+  const fields = { account: o.userId, session: o.sessionId, client: o.client, reason: o.reason, workspace: dbContext()?.workspace };
+  securityEvent(type, fields, now);
+  if (type === "signin.failed" && o.reason === "mfa_invalid") securityEvent("mfa.failed", fields, now);
   if (!NEVER_DROPPED.has(type)) {
     // Rejected agent keys have a budget of their own: a flood of wrong keys must not crowd sign-in failures out of the log, or the reverse.
     const key = type === "agentkey.rejected" ? "authlog:noise:agentkey" : "authlog:noise";

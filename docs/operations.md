@@ -86,7 +86,7 @@ to that point. Without a kept checkpoint a database owner can rewrite and re-cha
 
 ## Monitoring
 
-TEND has no built-in alerting. Forward logs to the provider's log drain and alert on these:
+TEND emits redacted security events and raises alerts to `TEND_ALERT_WEBHOOK_URL` (`docs/monitoring.md`). Also forward logs to the provider's log drain and alert on these:
 
 | Signal | Where | Meaning |
 | --- | --- | --- |
@@ -99,7 +99,7 @@ TEND has no built-in alerting. Forward logs to the provider's log drain and aler
 | `audit-verify` not ok | scheduled job | The log was changed. Treat as an incident. |
 | `GET /api/health` not `ok`, or `schema` lower than expected | uptime check | Down, or an old schema. |
 
-**Not implemented:** metrics, alert routing, anomaly detection, a SIEM integration. These are operator-side today.
+**Not implemented:** metrics, persistent alerts, anomaly detection, a SIEM integration. Alert counters are per server instance.
 
 ## Vulnerability management
 

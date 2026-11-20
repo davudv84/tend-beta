@@ -776,6 +776,7 @@ const g = globalThis as { __tendDb?: Promise<DB> };
 export function getDb(): Promise<DB> {
   return (g.__tendDb ??= open().catch((e) => {
     g.__tendDb = undefined;
+    if (/tenant isolation cannot be guaranteed/.test((e as Error).message)) void import("./security-events.ts").then((m) => m.securityEvent("isolation.failed", { reason: (e as Error).message.slice(0, 120) }));
     throw e;
   }));
 }

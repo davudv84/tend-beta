@@ -162,6 +162,12 @@ export const config = {
     const https = process.env.NODE_ENV === "production" && !this.localHttp;
     return (https ? /^https:\/\/[^\s/]+$/ : /^https?:\/\/[^\s/]+$/).test(v) ? v : "";
   },
+  /** Where security alerts are POSTed (src/server/security-events.ts). HTTPS required on a production server that is not local-only; otherwise ignored. */
+  get alertWebhookUrl() {
+    const v = process.env.TEND_ALERT_WEBHOOK_URL ?? "";
+    const https = process.env.NODE_ENV === "production" && !this.localHttp;
+    try { const u = new URL(v); return (u.protocol === "https:" || (!https && u.protocol === "http:")) ? u.toString() : ""; } catch { return ""; }
+  },
   /** Who is told by mail that a new account waits for approval (optional). */
   get adminEmail() {
     return process.env.TEND_ADMIN_EMAIL ?? "";

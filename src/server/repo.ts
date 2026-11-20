@@ -14,6 +14,8 @@ import { notifyFor } from "./notifications.ts";
 import { parsePolicy, policyProblem } from "./policy.ts";
 import { config } from "./config.ts";
 import { DEFAULT_WORKSPACE } from "./session.ts";
+import { securityEvent } from "./security-events.ts";
+import { dbContext } from "./db-context.ts";
 
 /** Postgres BIGINT columns hold whole milliseconds. */
 const ms = (t: number) => Math.round(t);
@@ -115,6 +117,8 @@ interface EventRow { seq: number; id: string; agent_id: string; type: EventType;
 export const toWire = (r: EventRow): WireEvent => ({ seq: r.seq, id: r.id, agentId: r.agent_id, type: r.type, at: r.at, actor: r.actor, data: JSON.parse(r.data) });
 
 type NewEvent = { agentId: string; type: EventType; actor: Actor; data?: object; at?: number; id?: string; idempotencyKey?: string };
+/** Security-relevant configuration changes, also sent to monitoring (security-events.ts). */
+const MONITORED = new Set(["key.revoked", "key.rotated", "policy.updated", "policy.central_updated", "policy.central_assigned", "policy.central_unassigned"]);
 const eventId = () => `ev_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 
 /** Appends one event. Must run inside a transaction (it takes the event-order lock). */
@@ -125,6 +129,7 @@ export async function insertEvent(q: Q, e: NewEvent): Promise<WireEvent> {
   const r = await q.get<{ seq: number }>("INSERT INTO events (id, agent_id, type, at, actor, data, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING seq",
     id, e.agentId, e.type, at, e.actor, JSON.stringify(e.data ?? {}), e.idempotencyKey ?? null);
   const wire: WireEvent = { seq: r!.seq, id, agentId: e.agentId, type: e.type, at, actor: e.actor, data: (e.data ?? {}) as Record<string, unknown> };
+  if (MONITORED.has(e.type)) securityEvent(e.type, { agent: e.agentId, actor: e.actor, workspace: dbContext()?.workspace });
   // Every event passes here, so this is the one place notifications come from: same transaction, nothing to forget on another path.
   await notifyFor(q, wire);
   return wire;

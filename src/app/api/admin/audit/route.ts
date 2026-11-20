@@ -1,6 +1,7 @@
 import { verifyAudit, type Checkpoint } from "@/server/audit-chain";
 import { getDb } from "@/server/db";
 import { json, requireAdmin, route } from "@/server/http";
+import { securityEvent } from "@/server/security-events";
 
 /**
  * Checks the whole event log's hash chain. The admin only: the chain spans every workspace. Optional query params
@@ -15,5 +16,7 @@ export const GET = route(async (req) => {
   const hex = (k: string) => (/^[0-9a-f]{64}$/.test(p.get(k) ?? "") ? p.get(k)! : undefined);
   const expected: Checkpoint = { firstSeq: num("firstSeq"), firstHash: hex("firstHash"), head: hex("head"), headSeq: num("headSeq") };
   const any = Object.values(expected).some((v) => v !== undefined);
-  return json(await verifyAudit(db, 2_000, any ? expected : undefined));
+  const result = await verifyAudit(db, 2_000, any ? expected : undefined);
+  securityEvent(result.ok ? "audit.ok" : "audit.failed", { reason: result.ok ? undefined : String((result as { reason?: string }).reason ?? "").slice(0, 120), pinned: any });
+  return json(result);
 });
