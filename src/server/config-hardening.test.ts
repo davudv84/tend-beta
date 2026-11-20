@@ -4,8 +4,8 @@ import { config } from "./config.ts";
 
 const withEnv = (env: Record<string, string | undefined>, fn: () => void) => {
   const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
-  for (const [k, v] of Object.entries(env)) v === undefined ? delete process.env[k] : (process.env[k] = v);
-  try { fn(); } finally { for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v); }
+  for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; };
+  try { fn(); } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }; }
 };
 
 test("TEND_APP_URL: a production server only puts https links into mails; development and local-only servers may use http", () => {

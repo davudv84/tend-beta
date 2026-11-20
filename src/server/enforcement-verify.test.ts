@@ -108,7 +108,7 @@ test("EV-7 racing approve, reject, cancel and spend: consumed only if a person a
     const final = (await status(db, view.id))!;
     assert.ok(spends <= 1, `round ${round}: spent ${spends}x`);
     const decided = (await db.get<{ status: string }>("SELECT status FROM reviews WHERE id = ?", view.id))!.status;
-    if (spends === 1) assert.equal(final, "consumed"), assert.equal(decided, "approved", "consumed requires an approval");
+    if (spends === 1) { assert.equal(final, "consumed"); assert.equal(decided, "approved", "consumed requires an approval"); }
     if (final === "consumed") assert.equal(spends, 1);
     assert.ok(["consumed", "rejected", "cancelled", "approved", "pending"].includes(final));
   }

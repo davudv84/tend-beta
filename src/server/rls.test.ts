@@ -1,0 +1,161 @@
+// Database-enforced tenant isolation on REAL PostgreSQL (row-level security, migration 18, src/server/db-context.ts). Skipped unless
+// TEND_TEST_DATABASE_URL points at a PostgreSQL superuser on this machine (npm run test:postgres). Each test gets its own database and its own
+// runtime role, both removed afterwards. The point of these tests: tenant data stays apart EVEN WHEN the application's own checks are bypassed.
+import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
+import { test } from "node:test";
+import pg from "pg";
+import { decide, registerAgent, agentInWorkspace, setPolicy, agentByKey, ingestEvents } from "./repo.ts";
+import { requestAuthorization, spendApproved } from "./authz.ts";
+import { asSystem, bindWorkspace, withRequestContext } from "./db-context.ts";
+import { enableIsolation, migrate, postgres, RLS_TABLES, runtimeGrantsSql, type DB } from "./db.ts";
+import { HttpError } from "./http.ts";
+
+const URL_ = process.env.TEND_TEST_DATABASE_URL ?? "";
+const skip = URL_ ? false : "set TEND_TEST_DATABASE_URL (or run `npm run test:postgres`) to test against real PostgreSQL";
+const PAY = { tool: "wire", action: "send", resource: "ACC-1", detail: "EUR 5.00 to X" };
+const asTenant = <T>(ws: string, fn: () => Promise<T>) => withRequestContext(async () => { bindWorkspace(ws); return fn(); });
+const noContext = <T>(fn: () => Promise<T>) => withRequestContext(fn);
+const code = async (p: Promise<unknown>) => { try { await p; return "OK"; } catch (e) { return e instanceof HttpError ? e.code : ((e as { code?: string }).code ?? (e as Error).message.slice(0, 80)); } };
+
+async function world() {
+  const host = new URL(URL_).hostname;
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host)) throw new Error("TEND_TEST_DATABASE_URL must point at this machine");
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const name = `tend_rls_${randomBytes(5).toString("hex")}`, role = `tend_rt_${randomBytes(4).toString("hex")}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const u = new URL(URL_); u.pathname = `/${name}`;
+  const db = await postgres(u.toString());
+  await migrate(db);
+  await Promise.all(Array.from({ length: 6 }, () => db.get("SELECT pg_sleep(0.05)")));
+  // two tenants with one of everything, created as the owner (before isolation is on)
+  await db.run("INSERT INTO workspaces (id, name, created_at) VALUES ('wa', 'A', 0), ('wb', 'B', 0)");
+  const A = await registerAgent(db, { name: "alpha", model: "m", provider: "Custom" }, "u", "wa");
+  const B = await registerAgent(db, { name: "bravo", model: "m", provider: "Custom" }, "u", "wb");
+  for (const x of [A, B]) await setPolicy(db, x.agent.id, [{ tool: "wire", action: "send", effect: "approve" }], "enforce");
+  const bAgent = (await agentByKey(db, B.apiKey))!;
+  const bAuth = (await requestAuthorization(db, bAgent, PAY, null)).view.id;
+  await db.run("INSERT INTO users (id, email, password_hash, workspace_id, created_at, password_changed_at) VALUES ('ua', 'a@example.com', 'x', 'wa', 0, 0), ('ub', 'b@example.com', 'x', 'wb', 0, 0)");
+  await db.run("INSERT INTO notifications (id, workspace_id, kind, dedup_key, created_at, updated_at, push) VALUES ('na', 'wa', 'test', 'k', 0, 0, 'none'), ('nb', 'wb', 'test', 'k', 0, 0, 'none')");
+  await db.run("INSERT INTO central_policies (id, name, policy, version, created_at, updated_at, workspace_id) VALUES ('cpb', 'B', '[]', 1, 0, 0, 'wb')");
+  await enableIsolation(db, role);
+  return {
+    db, A, B, bAuth, role,
+    close: async () => { await db.close(); await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`); await admin.query(`DROP ROLE IF EXISTS ${role}`).catch(() => {}); await admin.end(); },
+  };
+}
+
+test("RLS-1 start-up: isolation is on, every transaction runs as a role that is not a superuser, has no BYPASSRLS and owns nothing", { skip }, async () => {
+  const w = await world();
+  try {
+    assert.equal(w.db.isolation?.on, true);
+    const me = await asTenant("wa", () => w.db.get<{ u: string; sup: string; bypass: boolean }>("SELECT current_user AS u, current_setting('is_superuser') AS sup, (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass"));
+    assert.deepEqual([me!.u, me!.sup, me!.bypass], [w.role, "off", false]);
+    for (const t of RLS_TABLES) assert.equal((await w.db.get<{ on: boolean }>(`SELECT relrowsecurity AS on FROM pg_class WHERE oid = 'public.${t}'::regclass`))?.on, true, t);
+  } finally { await w.close(); }
+});
+
+test("RLS-2 a tenant sees and changes only its own rows, even through code with NO workspace check (the application's checks bypassed)", { skip }, async () => {
+  const w = await world();
+  try {
+    await asTenant("wa", async () => {
+      // raw reads, as a buggy query without a workspace filter would make them
+      for (const [sql, label] of [["SELECT id FROM agents", "agents"], ["SELECT id FROM workspaces", "workspaces"], ["SELECT agent_id FROM events", "events"], ["SELECT id FROM authorizations", "authorizations"],
+        ["SELECT id FROM reviews", "reviews"], ["SELECT id FROM users", "users"], ["SELECT id FROM notifications", "notifications"], ["SELECT id FROM central_policies", "central policies"]] as const) {
+        const rows = JSON.stringify(await w.db.all(sql));
+        assert.ok(!rows.includes(w.B.agent.id) && !rows.includes("wb") && !rows.includes(w.bAuth) && !rows.includes("ub") && !rows.includes("nb") && !rows.includes("cpb"), `${label}: ${rows.slice(0, 200)}`);
+      }
+      assert.equal(await w.db.get("SELECT * FROM agents WHERE id = ?", w.B.agent.id), undefined);
+      // writes aimed at B's rows touch nothing
+      assert.equal(await w.db.run("UPDATE authorizations SET status = 'approved', approved_until = 9e15 WHERE id = ?", w.bAuth), 0);
+      assert.equal(await w.db.run("UPDATE agents SET policy = '[]', status = 'paused' WHERE id = ?", w.B.agent.id), 0);
+      assert.equal(await w.db.run("DELETE FROM notifications WHERE id = 'nb'"), 0);
+      // writes that would CREATE rows in B are refused by WITH CHECK
+      assert.equal(await code(w.db.run("INSERT INTO events (id, agent_id, type, at, actor, data) VALUES ('ev_x', ?, 'task.started', 1, 'agent', '{}')", w.B.agent.id)), "42501");
+      assert.equal(await code(w.db.run("INSERT INTO agents (id, profile, origin, created_at, workspace_id) VALUES ('evil', '{}', 'connected', 0, 'wb')")), "42501");
+      assert.equal(await code(w.db.run("UPDATE agents SET workspace_id = 'wb' WHERE id = ?", w.A.agent.id)), "42501", "a row cannot be moved into another tenant");
+      // service functions called WITHOUT the route's workspace check: B's review is simply not there
+      assert.equal(await code(decide(w.db, w.bAuth, "approved")), "review_not_found");
+      assert.equal(await code(agentInWorkspace(w.db, "wb", w.B.agent.id)), "agent_not_found", "even asking for B's workspace by name finds nothing");
+    });
+    // and B's request is untouched
+    const b = await asSystem(() => w.db.get<{ status: string }>("SELECT status FROM authorizations WHERE id = ?", w.bAuth));
+    assert.equal(b?.status, "pending");
+  } finally { await w.close(); }
+});
+
+test("RLS-3 no context, or an unauthenticated request, sees nothing tenant-scoped (fail closed); the admin's explicit system scope sees all", { skip }, async () => {
+  const w = await world();
+  try {
+    assert.equal((await w.db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"))!.n, 0, "no request context at all");
+    assert.equal((await noContext(() => w.db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM events")))!.n, 0, "a request before authentication");
+    assert.equal(await noContext(() => w.db.run("UPDATE authorizations SET status = 'approved'")), 0);
+    assert.equal((await asSystem(() => w.db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents")))!.n, 2);
+  } finally { await w.close(); }
+});
+
+test("RLS-4 no cross-request contamination on the pool: 200 interleaved requests of two tenants each see only their own; nothing outlives its transaction", { skip }, async () => {
+  const w = await world();
+  try {
+    const out = await Promise.all(Array.from({ length: 200 }, (_, i) => { const ws = i % 2 ? "wa" : "wb"; return asTenant(ws, async () => ({ ws, ids: (await w.db.all<{ workspace_id: string }>("SELECT workspace_id FROM agents")).map((r) => r.workspace_id) })); }));
+    for (const r of out) assert.deepEqual([...new Set(r.ids)], [r.ws]);
+    // after all that, a statement with no context on the same pooled connections sees nothing: SET LOCAL ended with each transaction
+    const leftovers = await Promise.all(Array.from({ length: 12 }, () => w.db.get<{ n: number; ws: string }>("SELECT COUNT(*)::int AS n, current_setting('tend.workspace', true) AS ws FROM agents")));
+    for (const l of leftovers) assert.deepEqual([l!.n, l!.ws ?? ""], [0, ""]);
+    // and the real flows still work inside a tenant
+    await asTenant("wa", async () => {
+      const a = (await agentByKey(w.db, w.A.apiKey))!; // (the route does this as system; here the tenant can read its own agent)
+      const { view } = await requestAuthorization(w.db, a, PAY, null);
+      await decide(w.db, view.id, "approved");
+      assert.equal((await spendApproved(w.db, a, view.id, PAY)).authorized, true);
+      await ingestEvents(w.db, a, [{ type: "task.started", data: { taskId: "t", title: "x" } }]);
+    });
+  } finally { await w.close(); }
+});
+
+test("RLS-5 negative controls: with row-level security switched off on one table, the leak appears and start-up refuses; the known owner-login gap (RESET ROLE) is real", { skip }, async () => {
+  const w = await world();
+  try {
+    // owner switches RLS off on agents (as a broken migration would): the same tenant query now leaks B's agent
+    await asSystem(async () => {}); // (no-op: the owner acts below through a separate owner pool)
+    const owner = await postgres(new URL(URL_.replace(/\/[^/]*$/, `/${(await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d}`)).toString());
+    await owner.exec("ALTER TABLE agents DISABLE ROW LEVEL SECURITY");
+    const leaked = await asTenant("wa", () => w.db.get("SELECT id FROM agents WHERE id = ?", w.B.agent.id));
+    assert.ok(leaked, "the test detects the missing policy: without RLS on agents, tenant A reads B's agent");
+    w.db.isolation!.on = false;
+    await assert.rejects(enableIsolation(w.db, w.role), /row-level security is off on: agents/, "and start-up refuses to run 'isolated'");
+    await owner.exec("ALTER TABLE agents ENABLE ROW LEVEL SECURITY");
+    await enableIsolation(w.db, w.role);
+    // documented limitation: when the login role is the schema owner (the default single-URL deployment), SQL running in the session can RESET ROLE
+    // and leave the runtime role. The policies stop the application's own mistakes, not SQL injection; see docs/database-roles.md.
+    const escaped = await asTenant("wa", () => w.db.tx(async (q) => { await q.exec("RESET ROLE"); return q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"); }));
+    assert.equal(escaped!.n, 2, "KNOWN GAP (owner login): RESET ROLE escapes. With a restricted login role (RLS-6) it does not.");
+    await owner.close();
+  } finally { await w.close(); }
+});
+
+test("RLS-6 with a restricted LOGIN role (DATABASE_MIGRATE_URL split), RESET ROLE and set_config do not escape the tenant boundary... except tend.system, which is a setting", { skip }, async () => {
+  const w = await world();
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const login = `tend_login_${randomBytes(4).toString("hex")}`;
+  let rt: DB | undefined;
+  try {
+    const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
+    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
+    const owner = await postgres(new URL(URL_.replace(/\/[^/]*$/, `/${dbName}`)).toString());
+    await owner.exec(runtimeGrantsSql(login));
+    await owner.close();
+    const u = new URL(URL_); u.pathname = `/${dbName}`; u.username = login;
+    rt = await postgres(u.toString());
+    await enableIsolation(rt, "unused_role_name");
+    assert.equal(rt.isolation?.role, "", "a restricted login is used as is, no role switch");
+    const escaped = await asTenant("wa", () => rt!.tx(async (q) => { await q.exec("RESET ROLE"); return q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"); }));
+    assert.equal(escaped!.n, 1, "RESET ROLE changes nothing for a login that is the runtime role");
+    // the residual gap, stated as a test: SQL in the session can raise tend.system (a setting, not a privilege)
+    const raised = await asTenant("wa", () => rt!.tx(async (q) => { await q.exec("SELECT set_config('tend.system', 'on', true)"); return q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"); }));
+    assert.equal(raised!.n, 2, "KNOWN GAP: an attacker who can run SQL in the application's session can raise the system setting; RLS is not a defence against SQL injection here");
+  } finally { await rt?.close().catch(() => {}); await w.close(); await admin.query(`DROP OWNED BY ${login}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${login}`).catch(() => {}); await admin.end(); }
+});

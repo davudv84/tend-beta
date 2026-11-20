@@ -3,6 +3,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { config } from "./config.ts";
+import { contextSettings } from "./db-context.ts";
 import { HttpError } from "./http.ts";
 
 /** Something to run queries against: the database, or one open transaction. `?` placeholders. */
@@ -22,6 +23,8 @@ export interface Q {
 
 export interface DB extends Q {
   kind: "postgres" | "pglite";
+  /** Row-level tenant isolation (PostgreSQL only): on when every statement runs as the runtime role with the request's tenant context. */
+  isolation?: { on: boolean; role: string };
   tx<T>(fn: (q: Q) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
@@ -318,6 +321,55 @@ export const MIGRATIONS: string[] = [
   `CREATE FUNCTION meta_protect_chain() RETURNS trigger LANGUAGE plpgsql AS $fn$
    BEGIN RAISE EXCEPTION 'this meta key is part of the audit chain and cannot be changed' USING ERRCODE = '42501'; END $fn$;
    CREATE TRIGGER meta_protect_chain_row BEFORE UPDATE OR DELETE ON meta FOR EACH ROW WHEN (OLD.key = 'events.chain.v2_after') EXECUTE FUNCTION meta_protect_chain();`,
+  // Tenant isolation in the database (row-level security). Every tenant-owned row is visible, and writable, only when the transaction's
+  // tend.workspace setting names its workspace, or tend.system is on (the reviewed cross-tenant paths, src/server/db-context.ts). Not FORCEd:
+  // the schema owner (migrations, maintenance, tests on the embedded database) is exempt by PostgreSQL's rules, and the application never runs
+  // as the owner when isolation is on: each transaction does SET LOCAL ROLE to the runtime role, which has no BYPASSRLS (checked at start-up).
+  // Not covered by RLS, on purpose: rate_limits (counters keyed by hashes and addresses, no tenant data), meta (demo state; the audit-chain
+  // boundary row has its own trigger), schema_migrations (read-only to the runtime role).
+  `CREATE FUNCTION tend_ws_visible(ws TEXT) RETURNS BOOLEAN LANGUAGE sql STABLE AS $fn$
+     SELECT current_setting('tend.system', true) = 'on' OR (ws IS NOT NULL AND ws = NULLIF(current_setting('tend.workspace', true), ''))
+   $fn$;
+   CREATE FUNCTION tend_agent_visible(aid TEXT) RETURNS BOOLEAN LANGUAGE sql STABLE AS $fn$
+     SELECT current_setting('tend.system', true) = 'on'
+       OR EXISTS (SELECT 1 FROM agents a WHERE a.id = aid AND a.workspace_id = NULLIF(current_setting('tend.workspace', true), ''))
+   $fn$;
+   CREATE FUNCTION tend_user_visible(uid TEXT) RETURNS BOOLEAN LANGUAGE sql STABLE AS $fn$
+     SELECT current_setting('tend.system', true) = 'on'
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = uid AND u.workspace_id = NULLIF(current_setting('tend.workspace', true), ''))
+   $fn$;
+   ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON workspaces USING (tend_ws_visible(id)) WITH CHECK (tend_ws_visible(id));
+   ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON agents USING (tend_ws_visible(workspace_id)) WITH CHECK (tend_ws_visible(workspace_id));
+   ALTER TABLE central_policies ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON central_policies USING (tend_ws_visible(workspace_id)) WITH CHECK (tend_ws_visible(workspace_id));
+   ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON users USING (tend_ws_visible(workspace_id)) WITH CHECK (tend_ws_visible(workspace_id));
+   ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON notifications USING (tend_ws_visible(workspace_id)) WITH CHECK (tend_ws_visible(workspace_id));
+   ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON events USING (tend_agent_visible(agent_id)) WITH CHECK (tend_agent_visible(agent_id));
+   ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON reviews USING (tend_agent_visible(agent_id)) WITH CHECK (tend_agent_visible(agent_id));
+   ALTER TABLE asks ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON asks USING (tend_agent_visible(agent_id)) WITH CHECK (tend_agent_visible(agent_id));
+   ALTER TABLE authorizations ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON authorizations USING (tend_agent_visible(agent_id)) WITH CHECK (tend_agent_visible(agent_id));
+   ALTER TABLE verification_runs ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON verification_runs USING (tend_agent_visible(agent_id)) WITH CHECK (tend_agent_visible(agent_id));
+   ALTER TABLE operator_sessions ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON operator_sessions USING (tend_user_visible(user_id)) WITH CHECK (tend_user_visible(user_id));
+   ALTER TABLE auth_events ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON auth_events USING (tend_user_visible(user_id)) WITH CHECK (tend_user_visible(user_id));
+   ALTER TABLE user_tokens ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON user_tokens USING (tend_user_visible(user_id)) WITH CHECK (tend_user_visible(user_id));
+   ALTER TABLE onboarding ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON onboarding USING (tend_user_visible(user_id)) WITH CHECK (tend_user_visible(user_id));
+   ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON push_subscriptions USING (tend_user_visible(user_id)) WITH CHECK (tend_user_visible(user_id));
+   ALTER TABLE notification_prefs ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON notification_prefs USING (tend_user_visible(user_id)) WITH CHECK (tend_user_visible(user_id));`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -344,6 +396,45 @@ export function runtimeGrantsSql(role: string): string {
     `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON schema_migrations FROM ${r};`,
     `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${r};`,
   ].join("\n");
+}
+
+/** The tables row-level security covers (migration 18). The start-up check and the tests read this list. */
+export const RLS_TABLES = ["workspaces", "agents", "central_policies", "users", "notifications", "events", "reviews", "asks", "authorizations", "verification_runs",
+  "operator_sessions", "auth_events", "user_tokens", "onboarding", "push_subscriptions", "notification_prefs"] as const;
+
+/**
+ * Turns tenant isolation on for a PostgreSQL pool, or refuses to start. Two cases:
+ *  - the application connects as the schema owner (the default: one DATABASE_URL, as Vercel's Neon integration provides): a NOLOGIN role is
+ *    created (or reused) with exactly runtimeGrantsSql's privileges, and every transaction switches to it with SET LOCAL ROLE;
+ *  - it connects as a separate restricted role (DATABASE_MIGRATE_URL split): that role is used as is.
+ * Either way the effective role must not be a superuser, must not have BYPASSRLS and must not own the tables, and every table in RLS_TABLES must
+ * have row-level security enabled. Anything else stops the start: running "isolated" without isolation would be worse than not claiming it.
+ */
+export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
+  if (db.kind !== "postgres" || !db.isolation) throw new Error("tenant isolation needs PostgreSQL");
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(role)) throw new Error("TEND_DB_RUNTIME_ROLE must be a lower-case identifier");
+  const owner = (await db.get<{ owner: boolean }>("SELECT pg_get_userbyid(relowner) = current_user AS owner FROM pg_class WHERE oid = 'public.agents'::regclass"))?.owner;
+  if (owner) {
+    await db.exec(`DO $do$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN
+        CREATE ROLE "${role}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
+      END IF;
+    END $do$;`);
+    // Membership lets this session switch to it (SET ROLE); owner-level rights stay with the login role, which the application never uses then.
+    await db.exec(`GRANT "${role}" TO CURRENT_USER`);
+    await db.exec(runtimeGrantsSql(role));
+    db.isolation.role = role;
+  }
+  db.isolation.on = true;
+  // Self-test, as the application will run: the effective role and the tables, read inside an isolated transaction.
+  const t = await db.tx((q) => q.get<{ who: string; sup: boolean; bypass: boolean; owns: boolean; missing: string | null }>(
+    `SELECT current_user AS who, r.rolsuper AS sup, r.rolbypassrls AS bypass,
+            EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relowner = r.oid) AS owns,
+            (SELECT string_agg(t, ',') FROM unnest(?::text[]) AS t WHERE NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = ('public.' || t)::regclass AND c.relrowsecurity)) AS missing
+       FROM pg_roles r WHERE r.rolname = current_user`, [...RLS_TABLES]));
+  const problem = !t ? "could not read the effective role" : t.sup ? `the effective role ${t.who} is a superuser` : t.bypass ? `the effective role ${t.who} has BYPASSRLS`
+    : t.owns ? `the effective role ${t.who} owns tables (owners are exempt from row-level security)` : t.missing ? `row-level security is off on: ${t.missing}` : "";
+  if (problem) { db.isolation.on = false; throw new Error(`tenant isolation cannot be guaranteed: ${problem}. Fix the database roles (docs/database-roles.md) or set TEND_DB_ISOLATION=off explicitly.`); }
 }
 
 /** Fails unless every migration this code knows has been applied (a newer schema is allowed: rolling deploys): the application role must not run on an older one. It checks versions, not privileges. */
@@ -421,25 +512,37 @@ export async function postgres(url: string): Promise<DB> {
   const pool = new pg.Pool({ connectionString: url, max: 4, idleTimeoutMillis: 5_000, connectionTimeoutMillis: 10_000, query_timeout: limit + 1_000 });
   pool.on("error", (e) => console.error("[tend] idle database client error", e.message));
   const base = queries(pool, (sql) => pool.query(sql));
+  // Tenant isolation (enableIsolation): each transaction starts as the runtime role with the request's tenant context, all with SET LOCAL, so it ends
+  // with the transaction: nothing survives on the pooled connection (and PgBouncer's transaction pooling, which Neon uses, stays safe).
+  const isolation = { on: false, role: "" };
+  const preamble = () => {
+    const c = contextSettings(); // validated identifiers, safe as literals
+    return `${isolation.role ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`;
+  };
+  const tx: DB["tx"] = async (fn) => {
+    const client = await pool.connect();
+    try {
+      await client.query(`BEGIN; SET LOCAL statement_timeout = ${limit}; SET LOCAL idle_in_transaction_session_timeout = ${limit * 2}${isolation.on ? `; ${preamble()}` : ""}`);
+      const out = await fn(queries(client, (sql) => client.query(sql)));
+      await client.query("COMMIT");
+      return out;
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  };
+  // With isolation on, a statement outside a transaction becomes a transaction of its own, so it too carries the role and the context.
+  type Fn = (...x: unknown[]) => Promise<unknown>;
+  const one = <K extends "get" | "all" | "run" | "exec">(k: K) => ((...a: unknown[]) => (isolation.on ? tx((q) => (q[k] as unknown as Fn)(...a)) : (base[k] as unknown as Fn)(...a))) as unknown as Q[K];
   return {
     ...base,
+    get: one("get"), all: one("all"), run: one("run"), exec: one("exec"),
     kind: "postgres",
+    isolation,
     lockEvents: () => Promise.reject(new Error("lockEvents needs a transaction")),
-    async tx(fn) {
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        await client.query(`SET LOCAL statement_timeout = ${limit}; SET LOCAL idle_in_transaction_session_timeout = ${limit * 2}`);
-        const out = await fn(queries(client, (sql) => client.query(sql)));
-        await client.query("COMMIT");
-        return out;
-      } catch (e) {
-        await client.query("ROLLBACK").catch(() => {});
-        throw e;
-      } finally {
-        client.release();
-      }
-    },
+    tx,
     close: () => pool.end(),
   };
 }
@@ -500,10 +603,16 @@ async function open() {
     const admin = await postgres(migrateUrl);
     try { await migrate(admin); } finally { await admin.close().catch(() => {}); }
     const runtime = await postgres(url);
-    try { await assertSchemaCurrent(runtime); } catch (e) { await runtime.close().catch(() => {}); throw e; }
+    try {
+      await assertSchemaCurrent(runtime);
+      if (config.dbIsolation) await enableIsolation(runtime);
+    } catch (e) { await runtime.close().catch(() => {}); throw e; }
     return runtime;
   }
   const db = url ? await postgres(url) : await pglite(path.join(config.dataDir, "pglite"));
   await migrate(db);
+  if (url && config.dbIsolation) {
+    try { await enableIsolation(db); } catch (e) { await db.close().catch(() => {}); throw e; }
+  } else if (url && process.env.NODE_ENV === "production") console.error("[tend] WARNING: TEND_DB_ISOLATION=off: tenant isolation is enforced by the application only, not by the database.");
   return db;
 }

@@ -46,7 +46,27 @@ const BLANK = ["DATABASE_URL", "POSTGRES_URL", "VERCEL", "TEND_TRUSTED_PROXY", "
  * @param confine  macOS only: { allowWrite: [dirs], hidden: [dirs] } runs the server under buildServerProfile (see confine.mjs); throws if unavailable, never runs unconfined
  * @param database  "embedded" (default: the temp database) or "postgres" (a rehearsal of a hosted instance: env.DATABASE_URL must point at a throwaway local PostgreSQL)
  */
+/**
+ * TEND_E2E_DATABASE_URL (a PostgreSQL superuser URL on THIS machine): every isolated server gets a fresh database there instead of the embedded
+ * one, so the whole e2e suite runs against real PostgreSQL with row-level tenant isolation on (production default). Dropped when the server stops.
+ */
+async function freshPostgres() {
+  const base = process.env.TEND_E2E_DATABASE_URL;
+  if (!base) return undefined;
+  const u = new URL(base);
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(u.hostname)) throw new Error("TEND_E2E_DATABASE_URL must point at this machine");
+  const pg = (await import("pg")).default;
+  const admin = new pg.Client({ connectionString: base });
+  await admin.connect();
+  const name = `tend_e2e_${Math.random().toString(36).slice(2, 10)}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  u.pathname = `/${name}`;
+  return { url: u.toString(), drop: async () => { await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`).catch(() => {}); await admin.end().catch(() => {}); } };
+}
+
 export async function startIsolatedServer({ root, env, database = "embedded", port: wantedPort, confine, keepDir = false }) {
+  const fresh = database === "embedded" ? await freshPostgres() : undefined;
+  if (fresh) { env = { ...env, DATABASE_URL: fresh.url }; database = "postgres"; }
   if (!existsSync(path.join(root, ".next/BUILD_ID"))) throw new Error("There is no production build yet. Run `npm run build` first.");
   const dir = mkdtempSync(path.join(tmpdir(), "tend-isolated-"));
   for (const name of [".next", "node_modules", "package.json", "next.config.ts", "public"]) if (existsSync(path.join(root, name))) symlinkSync(path.join(root, name), path.join(dir, name));
@@ -70,6 +90,7 @@ export async function startIsolatedServer({ root, env, database = "embedded", po
     await sleep(300);
     for (const p of pids) try { process.kill(p, "SIGKILL"); } catch {}
     if (!keepDir) rmSync(dir, { recursive: true, force: true });
+    await fresh?.drop();
   };
   try {
     let health;

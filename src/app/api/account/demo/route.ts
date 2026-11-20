@@ -1,3 +1,4 @@
+import { asSystem } from "@/server/db-context";
 import { demoSignIn } from "@/server/accounts";
 import { getDb } from "@/server/db";
 import { json, requireSameSite, route } from "@/server/http";
@@ -9,6 +10,6 @@ export const maxDuration = 60;
 /** One click into the read-only demo account (accounts.ts demoSignIn). Same-site only, like every sign-in. */
 export const POST = route(async (req) => {
   requireSameSite(req);
-  const s = await demoSignIn(await getDb(), req);
+  const s = await asSystem(async () => demoSignIn(await getDb(), req));
   return json({ ok: true }, 200, { "set-cookie": sessionHeader(s.value, s.ttl, req) });
 });

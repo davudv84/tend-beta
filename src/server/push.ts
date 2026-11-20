@@ -8,6 +8,7 @@
 import { createCipheriv, createECDH, createPrivateKey, hkdfSync, randomBytes, sign } from "node:crypto";
 import { DICTS } from "../i18n/index.ts";
 import { config } from "./config.ts";
+import { asSystem } from "./db-context.ts";
 import type { DB } from "./db.ts";
 import { hrefOf, type Kind } from "./notifications.ts";
 
@@ -104,6 +105,10 @@ export const PUSH_MAX_AGE = 15 * 60_000;
  * never send the same one twice. One that cannot be delivered is not retried: the app still lists it.
  */
 export async function flushPush(db: DB, now = Date.now()) {
+  // The queue spans workspaces (one job sends everyone's notifications); each notification still goes only to its own workspace's browsers.
+  return asSystem(() => flushQueued(db, now));
+}
+async function flushQueued(db: DB, now: number) {
   if (!config.vapid) {
     await db.run("UPDATE notifications SET push = 'skipped' WHERE push = 'queued'");
     return { configured: false, sent: 0, failed: 0 };

@@ -10,7 +10,7 @@
 import security from "eslint-plugin-security";
 import tsParser from "@typescript-eslint/parser";
 
-export default [
+const config = [
   {
     files: ["**/*.ts", "**/*.tsx", "**/*.mjs"],
     languageOptions: { parser: tsParser, parserOptions: { ecmaFeatures: { jsx: true } } },
@@ -26,3 +26,4 @@ export default [
   },
   { ignores: ["**/*.test.ts", "**/*.test.mjs"] },
 ];
+export default config;

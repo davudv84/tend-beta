@@ -177,7 +177,7 @@ test("PV-6 start-up with separate migration and runtime roles on real PostgreSQL
     assert.ok(third.error, "runtime-only start on a schema that is missing a migration: the runtime role cannot migrate it, so it must not run");
   } finally {
     g.__tendDb = undefined;
-    for (const [k, v] of [["DATABASE_URL", saved.a], ["DATABASE_MIGRATE_URL", saved.m], ["POSTGRES_URL", saved.p], ["VERCEL", saved.v]] as const) v === undefined ? delete process.env[k] : (process.env[k] = v);
+    for (const [k, v] of [["DATABASE_URL", saved.a], ["DATABASE_MIGRATE_URL", saved.m], ["POSTGRES_URL", saved.p], ["VERCEL", saved.v]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; };
     await owner?.close().catch(() => {});
     await base.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`).catch(() => {});
     await base.query(`DROP ROLE IF EXISTS ${role}`).catch(() => {});

@@ -190,7 +190,24 @@ export const config = {
     const v = Number(process.env.TEND_WORKSPACE_RPM ?? "");
     return Number.isInteger(v) && v >= 100 && v <= 100_000 ? v : 3000;
   },
+  /**
+   * Database-enforced tenant isolation (row-level security, src/server/db-context.ts). On by default for every production server that uses
+   * PostgreSQL; TEND_DB_ISOLATION=off turns it off (the application's own workspace checks remain), =on forces it everywhere PostgreSQL is used.
+   * With it on, a database where it cannot be guaranteed stops the start.
+   */
+  get dbIsolation() {
+    const v = (process.env.TEND_DB_ISOLATION ?? "").toLowerCase();
+    if (v === "off" || v === "0") return false;
+    if (v === "on" || v === "1") return true;
+    return process.env.NODE_ENV === "production";
+  },
+  /** The NOLOGIN role every transaction switches to when the application connects as the schema owner (TEND_DB_RUNTIME_ROLE, default tend_runtime). */
+  get dbRuntimeRole() {
+    return process.env.TEND_DB_RUNTIME_ROLE || "tend_runtime";
+  },
   get localHttp() {
-    return process.env.TEND_LOCAL_HTTP === "1" && !process.env.VERCEL && this.trustedProxy === 0 && !this.databaseUrl;
+    // A database URL normally means a hosted deployment; a PostgreSQL on this same machine (loopback) does not.
+    const localDb = (() => { try { return ["127.0.0.1", "localhost", "[::1]", "::1"].includes(new URL(this.databaseUrl).hostname); } catch { return false; } })();
+    return process.env.TEND_LOCAL_HTTP === "1" && !process.env.VERCEL && this.trustedProxy === 0 && (!this.databaseUrl || localDb);
   },
 };

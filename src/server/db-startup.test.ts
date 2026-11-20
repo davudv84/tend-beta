@@ -9,9 +9,9 @@ import { assertSchemaCurrent, getDb, memoryDb, MIGRATIONS } from "./db.ts";
 const g = globalThis as { __tendDb?: Promise<unknown> };
 async function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void>) {
   const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
-  for (const [k, v] of Object.entries(env)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; };
   g.__tendDb = undefined;
-  try { await fn(); } finally { for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v); g.__tendDb = undefined; }
+  try { await fn(); } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }; g.__tendDb = undefined; }
 }
 const rejects = async (p: Promise<unknown>) => { try { await p; return undefined; } catch (e) { return e as Error & { code?: string }; } };
 

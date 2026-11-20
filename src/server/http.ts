@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { currentSession, type Session } from "./session.ts";
+import { bindSystem, bindWorkspace, withRequestContext } from "./db-context.ts";
 import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { spend } from "./limits.ts";
@@ -53,7 +54,8 @@ async function deliverQueued() {
 
 /** Wraps a route handler: known errors become JSON, unknown ones are logged and hidden. */
 export function route<C>(fn: (req: Request, ctx: C) => Promise<Response> | Response) {
-  return async (req: Request, ctx: C) => {
+  // Every request starts with an empty database context (nothing tenant-scoped visible) until authentication binds one.
+  return (req: Request, ctx: C) => withRequestContext(async () => {
     try {
       const res = await fn(req, ctx);
       await deliverQueued();
@@ -64,7 +66,7 @@ export function route<C>(fn: (req: Request, ctx: C) => Promise<Response> | Respo
       console.error("[tend] unhandled error", describeError(e));
       return json({ error: "internal_error", message: "Something went wrong on the server." }, 500);
     }
-  };
+  });
 }
 
 export async function readJson(req: Request, max = 64_000): Promise<unknown> {
@@ -166,6 +168,7 @@ export async function requireOperator(req: Request, db: Q): Promise<Session> {
   if (!s) throw new HttpError(403, "operator_required", "Sign in to make changes. Visitors have read-only access.");
   // Every operator route goes through here, so this one check makes a read-only account read-only everywhere: it may look, never change.
   if (s.readOnly && req.method !== "GET" && req.method !== "HEAD") throw new HttpError(403, "read_only_account", "This is a read-only demo account with sample data. Nothing here can be changed.");
+  bindWorkspace(s.workspace); // from the server-side session, never from the request
   return s;
 }
 
@@ -174,5 +177,6 @@ export async function requireAdmin(req: Request, db: Q): Promise<Session> {
   if (config.adminDisabled) throw new HttpError(404, "not_found", "Not found.");
   const s = await requireOperator(req, db);
   if (!s.admin) throw new HttpError(403, "admin_required", "Only the admin can do this.");
+  bindSystem(); // the admin's own routes (accounts, the whole audit log) span workspaces
   return s;
 }
