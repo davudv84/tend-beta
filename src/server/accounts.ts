@@ -54,7 +54,7 @@ export async function checkPassword(pw: string, stored: string) {
 let dummy: Promise<string> | undefined;
 const dummyHash = () => (dummy ??= hashPassword(randomBytes(16).toString("hex")));
 
-const cleanEmail = (v: unknown) => {
+export const cleanEmail = (v: unknown) => {
   const e = typeof v === "string" ? v.trim().toLowerCase() : "";
   if (e.length > 254 || !EMAIL.test(e)) throw new HttpError(422, "invalid_email", "Enter a valid e-mail address.");
   return e;
@@ -71,7 +71,7 @@ interface UserRow { id: string; email: string; password_hash: string; workspace_
 const userByEmail = (q: Q, email: string) => q.get<UserRow>("SELECT * FROM users WHERE email = ?", email);
 
 /** Where links in mails point. Configured in production (config.appUrl), never read from the request there; locally the request's own origin. */
-function base(req?: Request) {
+export function base(req?: Request) {
   if (config.appUrl) return config.appUrl;
   if ((process.env.NODE_ENV === "production" && !config.localHttp) || !req) throw new HttpError(503, "accounts_disabled", "Accounts are not configured on this server.");
   return new URL(req.url).origin;
@@ -81,10 +81,10 @@ function requireAccounts() {
 }
 
 /** A fresh one-time token for this user and purpose; any older unused one of the same purpose stops working. */
-async function issueToken(q: Q, userId: string, purpose: "verify" | "reset", now: number) {
+export async function issueToken(q: Q, userId: string, purpose: "verify" | "reset", now: number, ttl = TOKEN_TTL[purpose]) {
   const token = randomBytes(32).toString("base64url");
   await q.run("UPDATE user_tokens SET used_at = ? WHERE user_id = ? AND purpose = ? AND used_at IS NULL", now, userId, purpose);
-  await q.run("INSERT INTO user_tokens (hash, user_id, purpose, created_at, expires_at) VALUES (?, ?, ?, ?, ?)", sha(token), userId, purpose, now, now + TOKEN_TTL[purpose]);
+  await q.run("INSERT INTO user_tokens (hash, user_id, purpose, created_at, expires_at) VALUES (?, ?, ?, ?, ?)", sha(token), userId, purpose, now, now + ttl);
   return token;
 }
 /** Spends a token: the user it belongs to, or a 400. Malformed, unknown, used and expired tokens all get the same answer. */
@@ -330,8 +330,10 @@ export async function setAccess(db: DB, req: Request, userId: string, action: un
       await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", now, userId);
       await audit(q, "account.disabled", { userId, sessionId: by, now });
     } else await q.run("UPDATE users SET disabled_at = NULL WHERE id = ?", userId);
-    return { user: (await listUsers(q)).find((x) => x.id === userId), outbox, workspace: u.workspace_id };
+    // The workspace's agent keys go with its last active member: other members of a shared workspace keep their agents working.
+    const othersActive = !!(await q.get("SELECT 1 FROM users WHERE workspace_id = ? AND id <> ? AND disabled_at IS NULL", u.workspace_id, userId));
+    return { user: (await listUsers(q)).find((x) => x.id === userId), outbox, workspace: u.workspace_id, othersActive };
   });
-  if (action === "disable") for (const a of await allAgents(db, result.workspace)) if (a.origin === "connected") await revokeKey(db, a.id, by);
+  if (action === "disable" && !result.othersActive) for (const a of await allAgents(db, result.workspace)) if (a.origin === "connected") await revokeKey(db, a.id, by);
   return { user: result.user, outbox: result.outbox };
 }

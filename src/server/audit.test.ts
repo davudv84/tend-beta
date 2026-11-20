@@ -43,12 +43,12 @@ test("requireOperator returns the session and refuses everything else", async ()
   const db = await memoryDb();
   try {
     const me = await signedIn(db);
-    assert.equal((await requireOperator(me.request(), db)).id, me.id);
-    assert.equal((await requireOperator(me.request({ origin: "http://tend.test" }), db)).id, me.id);
-    assert.equal(await failure(() => requireOperator(req(), db)), "operator_required");
-    assert.equal(await failure(() => requireOperator(req(`${Date.now() + 1000}.0123456789abcdef.forged`), db)), "operator_required");
-    assert.equal(await failure(() => requireOperator(me.request({ origin: "http://evil.test" }), db)), "bad_origin", "a valid session from another site is refused");
-    assert.equal(await failure(() => requireOperator(me.request({ origin: "not a url" }), db)), "bad_origin");
+    assert.equal((await requireOperator(me.request(), db, "view")).id, me.id);
+    assert.equal((await requireOperator(me.request({ origin: "http://tend.test" }), db, "view")).id, me.id);
+    assert.equal(await failure(() => requireOperator(req(), db, "view")), "operator_required");
+    assert.equal(await failure(() => requireOperator(req(`${Date.now() + 1000}.0123456789abcdef.forged`), db, "view")), "operator_required");
+    assert.equal(await failure(() => requireOperator(me.request({ origin: "http://evil.test" }), db, "view")), "bad_origin", "a valid session from another site is refused");
+    assert.equal(await failure(() => requireOperator(me.request({ origin: "not a url" }), db, "view")), "bad_origin");
   } finally {
     await db.close();
   }

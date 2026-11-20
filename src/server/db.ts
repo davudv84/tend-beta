@@ -476,6 +476,15 @@ export const MIGRATIONS: string[] = [
      IF k IS NULL THEN RETURN false; END IF;
      RETURN mac = encode(sha256(k || sha256(convert_to(ws || '|' || sys || '|' || nonce, 'UTF8'))), 'hex');
    END $fn$;`,
+  // Workspace roles (src/server/rbac.ts): several members per workspace. Every existing account founded its workspace, so it is its owner.
+  `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'owner' CHECK (role IN ('owner', 'admin', 'operator', 'viewer'));
+   ALTER TABLE users ADD COLUMN invited_by TEXT;
+   ALTER TABLE users DROP CONSTRAINT users_workspace_id_key;
+   CREATE INDEX users_workspace ON users(workspace_id);
+   ALTER TABLE auth_events DROP CONSTRAINT auth_events_type_check;
+   ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected',
+     'account.registered', 'account.verified', 'account.approved', 'account.disabled', 'account.reset_requested', 'account.password_reset',
+     'member.invited', 'member.role_changed', 'member.removed'));`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */

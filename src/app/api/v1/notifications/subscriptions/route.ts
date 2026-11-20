@@ -8,7 +8,7 @@ import { hasSubscription, removeSubscription, saveSubscription } from "@/server/
  */
 export const POST = route(async (req) => {
   const db = await getDb();
-  const s = await requireOperator(req, db);
+  const s = await requireOperator(req, db, "self");
   await limit(db, `push-sub:${s.id}`, 20);
   const body = await readJson(req, 4_000);
   if (body && typeof body === "object" && "check" in body) return json({ subscribed: await hasSubscription(db, s.userId, (body as { check: unknown }).check) });
@@ -19,6 +19,6 @@ export const POST = route(async (req) => {
 /** Turns them off for one browser. Only the account that subscribed it can. */
 export const DELETE = route(async (req) => {
   const db = await getDb();
-  const s = await requireOperator(req, db);
+  const s = await requireOperator(req, db, "self");
   return json({ removed: await removeSubscription(db, s.userId, await readJson(req, 4_000)) });
 });

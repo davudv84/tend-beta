@@ -6,7 +6,7 @@ import { agentInWorkspace, setPolicy } from "@/server/repo";
 /** The saved policy as the server would apply it, with every gateway tool's current decision. Operators only: a policy is not for visitors. */
 export const GET = route(async (req, { params }: { params: Promise<{ id: string }> }) => {
   const db = await getDb();
-  const { workspace } = await requireOperator(req, db);
+  const { workspace } = await requireOperator(req, db, "view");
   const { id } = await params;
   await agentInWorkspace(db, workspace, id);
   return json(await policyView(db, id));
@@ -18,7 +18,7 @@ export const GET = route(async (req, { params }: { params: Promise<{ id: string 
  */
 export const POST = route(async (req, { params }: { params: Promise<{ id: string }> }) => {
   const db = await getDb();
-  const { id: by, workspace } = await requireOperator(req, db);
+  const { id: by, workspace } = await requireOperator(req, db, "manage");
   const { id } = await params;
   await agentInWorkspace(db, workspace, id);
   const body = (await readJson(req)) as { rules?: unknown; enforcement?: unknown; expectedVersion?: unknown } | null;

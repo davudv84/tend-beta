@@ -5,7 +5,7 @@ import { decide, reviewInWorkspace } from "@/server/repo";
 /** Records a human decision on a review. Approving a permission request grants it and bumps the config version. */
 export const POST = route(async (req, { params }: { params: Promise<{ id: string }> }) => {
   const db = await getDb();
-  const { id: by, workspace } = await requireOperator(req, db);
+  const { id: by, workspace } = await requireOperator(req, db, "operate");
   const { id } = await params;
   await reviewInWorkspace(db, workspace, id);
   const body = (await readJson(req)) as { status?: string; note?: string };

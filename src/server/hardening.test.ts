@@ -49,12 +49,12 @@ test("an operator request that the browser says came from another site is refuse
   try {
     const me = await signedIn(db);
     const req = (extra: Record<string, string>) => me.request(extra, "http://tend.test/api/v1/x");
-    assert.ok(await requireOperator(req({}), db), "no fetch metadata (a script, curl): allowed with a session");
-    assert.ok(await requireOperator(req({ "sec-fetch-site": "same-origin" }), db));
-    assert.ok(await requireOperator(req({ "sec-fetch-site": "none" }), db));
+    assert.ok(await requireOperator(req({}), db, "view"), "no fetch metadata (a script, curl): allowed with a session");
+    assert.ok(await requireOperator(req({ "sec-fetch-site": "same-origin" }), db, "view"));
+    assert.ok(await requireOperator(req({ "sec-fetch-site": "none" }), db, "view"));
     for (const site of ["cross-site", "same-site"])
-      await assert.rejects(() => requireOperator(req({ "sec-fetch-site": site }), db), (e) => e instanceof HttpError && e.status === 403 && e.code === "bad_origin", site);
-    await assert.rejects(() => requireOperator(req({ origin: "http://evil.example" }), db), (e) => e instanceof HttpError && e.code === "bad_origin");
+      await assert.rejects(() => requireOperator(req({ "sec-fetch-site": site }), db, "view"), (e) => e instanceof HttpError && e.status === 403 && e.code === "bad_origin", site);
+    await assert.rejects(() => requireOperator(req({ origin: "http://evil.example" }), db, "view"), (e) => e instanceof HttpError && e.code === "bad_origin");
   } finally {
     await db.close();
   }

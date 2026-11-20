@@ -5,6 +5,6 @@ import { registerAgent } from "@/server/repo";
 /** Registers a connected agent. The API key is returned once and never stored in plain text. */
 export const POST = route(async (req) => {
   const db = await getDb();
-  const { id: by, workspace } = await requireOperator(req, db);
+  const { id: by, workspace } = await requireOperator(req, db, "manage");
   return json(await registerAgent(db, await readJson(req), by, workspace), 201);
 });

@@ -6,7 +6,7 @@ import { latestVerification, runVerification } from "@/server/verification";
 /** The latest protection checks for a connected agent, or { run: null }. Operators only: the results describe weaknesses. */
 export const GET = route(async (req, { params }: { params: Promise<{ id: string }> }) => {
   const db = await getDb();
-  const { workspace } = await requireOperator(req, db);
+  const { workspace } = await requireOperator(req, db, "view");
   const { id } = await params;
   await agentInWorkspace(db, workspace, id);
   return json({ run: await latestVerification(db, id) });
@@ -15,7 +15,7 @@ export const GET = route(async (req, { params }: { params: Promise<{ id: string 
 /** Runs the checks now (a few seconds), stores the result as evidence and returns it. Operators only; a few runs a minute at most. */
 export const POST = route(async (req, { params }: { params: Promise<{ id: string }> }) => {
   const db = await getDb();
-  const { id: by, workspace } = await requireOperator(req, db);
+  const { id: by, workspace } = await requireOperator(req, db, "operate");
   const { id } = await params;
   await agentInWorkspace(db, workspace, id);
   await limit(db, `verify:${id}`, 4);

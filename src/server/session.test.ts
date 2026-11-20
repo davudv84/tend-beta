@@ -43,7 +43,7 @@ test("signing out revokes the session on the server: the same cookie, replayed a
     assert.equal(await signOut(db, me.request(), Date.now()), true);
     for (let i = 0; i < 3; i++) {
       assert.equal(await isOperator(db, me.request()), false, "replay of a signed-out cookie");
-      await assert.rejects(() => requireOperator(me.request(), db), (e) => e instanceof HttpError && e.status === 403 && e.code === "operator_required");
+      await assert.rejects(() => requireOperator(me.request(), db, "view"), (e) => e instanceof HttpError && e.status === 403 && e.code === "operator_required");
     }
     assert.equal((await viewerOf(db, me.request())).canAct, false);
     assert.equal(await signOut(db, me.request(), Date.now()), false, "signing out twice does nothing");
@@ -431,7 +431,7 @@ test("if the session store fails the request fails: a lookup error is never read
     const flaky = { ...wrap(db), kind: db.kind, tx: (fn: (q: Q) => Promise<unknown>) => db.tx((q) => fn(wrap(q))), close: () => db.close() } as DB;
     broken = /operator_sessions/;
     await assert.rejects(() => isOperator(flaky, me.request()), /simulated/);
-    await assert.rejects(() => requireOperator(me.request(), flaky), /simulated/);
+    await assert.rejects(() => requireOperator(me.request(), flaky, "view"), /simulated/);
     await assert.rejects(() => viewerOf(flaky, me.request()), /simulated/);
     // Sign-in writes the session and its log line together: if the log cannot be written there is no session.
     broken = /INSERT INTO auth_events/;

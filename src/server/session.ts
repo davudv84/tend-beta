@@ -20,6 +20,7 @@ import type { Q } from "./db.ts";
 import { cookie, type Viewer } from "./auth.ts";
 import { spend } from "./limits.ts";
 import { asSystem, bindWorkspace } from "./db-context.ts";
+import { isRole, type Role } from "./rbac.ts";
 
 export const SESSION_TTL = 12 * 60 * 60 * 1000;
 /** A user stays signed in for a week on the browser they signed in on (the cookie survives a restart); signing out or a reset ends it. */
@@ -61,13 +62,14 @@ function epoch() {
 }
 
 interface SessionRow { id: string; secret_hash: string; epoch: string; created_at: number; expires_at: number; last_seen_at: number | null; revoked_at: number | null; client: string | null; user_id: string | null }
-interface AccountRow { workspace_id: string; email: string; email_verified_at: number | null; approved_at: number | null; disabled_at: number | null; password_changed_at: number; read_only: number }
+interface AccountRow { workspace_id: string; email: string; email_verified_at: number | null; approved_at: number | null; disabled_at: number | null; password_changed_at: number; read_only: number; role: string }
 /** Who a live session acts for: `by` is recorded beside everything it does; `workspace` bounds everything it can see or change. `readOnly`: it may look, never change (the demo account). */
-export interface Session { id: string; userId: string | null; workspace: string; email?: string; admin: boolean; readOnly?: boolean }
+export interface Session { id: string; userId: string | null; workspace: string; email?: string; admin: boolean; readOnly?: boolean; role: Role }
 
 export type AuthEventType = "signin.succeeded" | "signin.failed" | "signin.blocked" | "session.signed_out" | "session.revoked_all" | "session.rejected" | "log.suppressed" | "agentkey.rejected"
-  | "account.registered" | "account.verified" | "account.approved" | "account.disabled" | "account.reset_requested" | "account.password_reset";
-const NEVER_DROPPED = new Set<AuthEventType>(["signin.succeeded", "session.signed_out", "session.revoked_all", "log.suppressed", "account.verified", "account.approved", "account.disabled", "account.password_reset"]);
+  | "account.registered" | "account.verified" | "account.approved" | "account.disabled" | "account.reset_requested" | "account.password_reset"
+  | "member.invited" | "member.role_changed" | "member.removed";
+const NEVER_DROPPED = new Set<AuthEventType>(["member.invited", "member.role_changed", "member.removed", "signin.succeeded", "session.signed_out", "session.revoked_all", "log.suppressed", "account.verified", "account.approved", "account.disabled", "account.password_reset"]);
 
 /**
  * Appends to the authentication log. Successes and sign-outs are always written. Failures, blocks and rejected sessions are the
@@ -116,7 +118,7 @@ async function lookupSession(q: Q, req: Request, now: number): Promise<Session |
     : Number(row.expires_at) <= now ? "expired"
     : row.user_id === null && row.epoch !== e ? "admin_token_changed"
     : undefined;
-  const account = !reason && row.user_id !== null ? await q.get<AccountRow>("SELECT workspace_id, email, email_verified_at, approved_at, disabled_at, password_changed_at, read_only FROM users WHERE id = ?", row.user_id) : undefined;
+  const account = !reason && row.user_id !== null ? await q.get<AccountRow>("SELECT workspace_id, email, email_verified_at, approved_at, disabled_at, password_changed_at, read_only, role FROM users WHERE id = ?", row.user_id) : undefined;
   const accountReason = reason || row.user_id === null ? undefined
     : !account ? "account_gone" : account.disabled_at !== null ? "account_disabled" : account.email_verified_at === null && config.emailVerification ? "email_unverified"
     : account.approved_at === null ? "not_approved" : Number(account.password_changed_at) > Number(row.created_at) ? "password_changed"
@@ -130,7 +132,8 @@ async function lookupSession(q: Q, req: Request, now: number): Promise<Session |
     return undefined;
   }
   if (row.last_seen_at === null || Number(row.last_seen_at) < now - TOUCH_EVERY) await q.run("UPDATE operator_sessions SET last_seen_at = ? WHERE id = ? AND revoked_at IS NULL", Math.round(now), id);
-  return account ? { id, userId: row.user_id, workspace: account.workspace_id, email: account.email, admin: false, ...(account.read_only && { readOnly: true }) } : { id, userId: null, workspace: DEFAULT_WORKSPACE, admin: true };
+  // A read-only (demo) account is a viewer whatever its row says; the platform admin owns the default workspace.
+  return account ? { id, userId: row.user_id, workspace: account.workspace_id, email: account.email, admin: false, role: account.read_only ? "viewer" : (isRole(account.role) ? account.role : "viewer"), ...(account.read_only && { readOnly: true }) } : { id, userId: null, workspace: DEFAULT_WORKSPACE, admin: true, role: "owner" };
 }
 
 /** The id of the live session this request carries, or undefined. */

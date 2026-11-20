@@ -5,6 +5,7 @@ import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { spend } from "./limits.ts";
 import { takePushDue } from "./push-due.ts";
+import { authorize, type Need } from "./rbac.ts";
 
 export { spend };
 
@@ -162,12 +163,13 @@ export function requireSameSite(req: Request) {
  * revoked one stops working at once. Returns the session: `id` is recorded with what the operator did, and `workspace` bounds what the
  * route may read or change (an id from another workspace must be answered as not found). Always `await` it: an unawaited call checks nothing.
  */
-export async function requireOperator(req: Request, db: Q): Promise<Session> {
+export async function requireOperator(req: Request, db: Q, need: Need): Promise<Session> {
   requireSameSite(req);
   const s = await currentSession(db, req);
   if (!s) throw new HttpError(403, "operator_required", "Sign in to make changes. Visitors have read-only access.");
   // Every operator route goes through here, so this one check makes a read-only account read-only everywhere: it may look, never change.
   if (s.readOnly && req.method !== "GET" && req.method !== "HEAD") throw new HttpError(403, "read_only_account", "This is a read-only demo account with sample data. Nothing here can be changed.");
+  authorize(s.role, need); // the workspace role, from the server-side account (src/server/rbac.ts)
   bindWorkspace(s.workspace); // from the server-side session, never from the request
   return s;
 }
@@ -175,7 +177,7 @@ export async function requireOperator(req: Request, db: Q): Promise<Session> {
 /** The admin token's session only: approving accounts, the demo. With the admin turned off (TEND_ADMIN=0) these routes do not exist. */
 export async function requireAdmin(req: Request, db: Q): Promise<Session> {
   if (config.adminDisabled) throw new HttpError(404, "not_found", "Not found.");
-  const s = await requireOperator(req, db);
+  const s = await requireOperator(req, db, "view");
   if (!s.admin) throw new HttpError(403, "admin_required", "Only the admin can do this.");
   bindSystem(); // the admin's own routes (accounts, the whole audit log) span workspaces
   return s;

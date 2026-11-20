@@ -60,8 +60,8 @@ test("the first sign-in creates a read-only account whose workspace holds labell
 test("every change is refused for the demo account; reads work", async () => {
   const db = await memoryDb();
   const { cookie } = await demo(db);
-  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) assert.equal(await code(requireOperator(as(cookie, method), db)), "read_only_account", method);
-  for (const method of ["GET", "HEAD"]) assert.equal(await code(requireOperator(as(cookie, method), db)), "ok", method);
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) assert.equal(await code(requireOperator(as(cookie, method), db, "view")), "read_only_account", method);
+  for (const method of ["GET", "HEAD"]) assert.equal(await code(requireOperator(as(cookie, method), db, "view")), "ok", method);
   await db.close();
 });
 
@@ -144,7 +144,7 @@ test("Try the live demo: one click gives a read-only demo session, never one int
   const s = await demoSignIn(db, post());
   const session = (await currentSession(db, as(s.value)))!;
   assert.equal(session.readOnly, true);
-  assert.equal(await code(requireOperator(as(s.value, "POST"), db)), "read_only_account", "every change is still refused");
+  assert.equal(await code(requireOperator(as(s.value, "POST"), db, "view")), "read_only_account", "every change is still refused");
   // The same address, past its budget, is refused.
   const same = () => new Request("http://tend.test/api/account/demo", { method: "POST", headers: { host: "tend.test", "x-forwarded-for": "10.9.9.9" } });
   for (let i = 0; i < 20; i++) await demoSignIn(db, same());
