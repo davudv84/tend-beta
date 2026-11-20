@@ -8,7 +8,7 @@
 // It also checks what it started: the database must be the embedded one, and the process holding the port must be this server (not a stale
 // one from an earlier run answering for it). stop() ends the whole process tree, including the renamed `next-server` child that a plain kill leaves behind.
 import { execFileSync, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,7 +24,28 @@ const lines = (cmd, args) => {
 };
 /** pid and all its descendants (this tree only). */
 export const processTree = (pid) => [pid, ...lines("pgrep", ["-P", String(pid)]).map(Number).flatMap(processTree)];
-export const listeners = (port) => lines("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"]).map(Number);
+/**
+ * The processes listening on a TCP port. On Linux read from /proc: lsof (4.95) silently skips a process whose name contains a parenthesis,
+ * and Next.js names its server "next-server (v…)", so lsof reported no listener at all. Elsewhere (macOS) lsof.
+ */
+export const listeners = (port) => {
+  if (process.platform !== "linux") return lines("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"]).map(Number);
+  const hex = port.toString(16).toUpperCase().padStart(4, "0");
+  const inodes = new Set();
+  for (const f of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    let rows = [];
+    try { rows = readFileSync(f, "utf8").split("\n").slice(1); } catch { continue; }
+    for (const r of rows) { const c = r.trim().split(/\s+/); if (c.length > 9 && c[1].endsWith(`:${hex}`) && c[3] === "0A") inodes.add(c[9]); } // 0A = LISTEN
+  }
+  if (!inodes.size) return [];
+  const pids = [];
+  for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d))) {
+    let fds = [];
+    try { fds = readdirSync(`/proc/${pid}/fd`); } catch { continue; }
+    if (fds.some((fd) => { try { const m = /^socket:\[(\d+)\]$/.exec(readlinkSync(`/proc/${pid}/fd/${fd}`)); return !!m && inodes.has(m[1]); } catch { return false; } })) pids.push(Number(pid));
+  }
+  return pids;
+};
 
 /** A free port chosen by the operating system, never one a stale server already holds. */
 export const freePort = () => new Promise((resolve, reject) => {
@@ -68,10 +89,13 @@ async function freshPostgres(dataDir) {
   // restricted login of its own, and the tenant context is signed. TEND_E2E_OWNER_LOGIN=1 runs the legacy single-owner-URL setup instead.
   if (process.env.TEND_E2E_OWNER_LOGIN === "1") return { env: { DATABASE_URL: u.toString(), TEND_DB_ALLOW_OWNER_LOGIN: "1" }, drop: async () => { await admin.end().catch(() => {}); } };
   const login = `${name}_app`;
-  if (!(await admin.query("SELECT 1 FROM pg_roles WHERE rolname = $1", [login])).rowCount) await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
-  await admin.query(`GRANT CONNECT ON DATABASE ${name} TO ${login}`);
-  const app = new URL(u); app.username = login; app.password = "";
+  // A throwaway password per start (CI's PostgreSQL requires one over TCP); never printed, gone with the test cluster.
   const { randomBytes } = await import("node:crypto");
+  const loginPw = randomBytes(24).toString("hex");
+  if (!(await admin.query("SELECT 1 FROM pg_roles WHERE rolname = $1", [login])).rowCount) await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${loginPw}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+  else await admin.query(`ALTER ROLE ${login} PASSWORD '${loginPw}'`);
+  await admin.query(`GRANT CONNECT ON DATABASE ${name} TO ${login}`);
+  const app = new URL(u); app.username = login; app.password = loginPw;
   return {
     env: { DATABASE_URL: app.toString(), DATABASE_MIGRATE_URL: u.toString(), TEND_CONTEXT_KEY: process.env.TEND_E2E_CONTEXT_KEY || randomBytes(32).toString("base64url") },
     drop: async () => { await admin.end().catch(() => {}); },

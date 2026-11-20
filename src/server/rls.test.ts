@@ -12,6 +12,9 @@ import { contextSignature, enableIsolation, migrate, postgres, RLS_TABLES, runti
 import { HttpError } from "./http.ts";
 
 const URL_ = process.env.TEND_TEST_DATABASE_URL ?? "";
+// Logins created by a test get the base URL's password, so swapping only the user name in that URL connects as them (CI's PostgreSQL requires
+// passwords over TCP; a local cluster that trusts local connections ignores it).
+const ROLE_PW = (() => { try { return decodeURIComponent(new URL(URL_).password).replace(/'/g, "''"); } catch { return ""; } })() || "tend-test-login";
 const skip = URL_ ? false : "set TEND_TEST_DATABASE_URL (or run `npm run test:postgres`) to test against real PostgreSQL";
 const PAY = { tool: "wire", action: "send", resource: "ACC-1", detail: "EUR 5.00 to X" };
 const asTenant = <T>(ws: string, fn: () => Promise<T>) => withRequestContext(async () => { bindWorkspace(ws); return fn(); });
@@ -143,7 +146,7 @@ test("RLS-6 with a restricted LOGIN role (DATABASE_MIGRATE_URL split), RESET ROL
   let rt: DB | undefined;
   try {
     const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
-    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
     const owner = await postgres(new URL(URL_.replace(/\/[^/]*$/, `/${dbName}`)).toString());
     await owner.exec(runtimeGrantsSql(login));
@@ -180,7 +183,7 @@ test("RLS-8 start-up refuses a loose policy, a runtime role that is a member of 
   let db: DB | undefined;
   try {
     // a NON-superuser schema owner that may create roles, like a managed provider's default database owner
-    await admin.query(`CREATE ROLE ${owner} LOGIN NOSUPERUSER CREATEDB CREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${owner} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER CREATEDB CREATEROLE NOBYPASSRLS`);
     await admin.query(`CREATE DATABASE ${name} OWNER ${owner}`);
     const u = new URL(URL_); u.pathname = `/${name}`; u.username = owner;
     db = await postgres(u.toString());
@@ -194,7 +197,7 @@ test("RLS-8 start-up refuses a loose policy, a runtime role that is a member of 
     await assert.rejects(enableIsolation(db, rt), /unexpected row-level security policies: agents\.open_all/);
     await asOwnerQuery(db, `DROP POLICY open_all ON agents`);
     // a separate runtime LOGIN that is a member of the owner (split deployment set up wrongly): owner rights flow to it, so start-up refuses
-    await admin.query(`CREATE ROLE ${rt}_l LOGIN NOSUPERUSER NOBYPASSRLS IN ROLE ${owner}`);
+    await admin.query(`CREATE ROLE ${rt}_l LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOBYPASSRLS IN ROLE ${owner}`);
     const ul = new URL(URL_); ul.pathname = `/${name}`; ul.username = `${rt}_l`;
     const member = await postgres(ul.toString());
     try { await assert.rejects(enableIsolation(member, rt), /owns tables, or is a member of a role that does/); } finally { await member.close(); }
@@ -221,7 +224,7 @@ test("RLS-9 signed tenant context (TEND_CONTEXT_KEY) with a restricted login: SQ
   let rt: DB | undefined;
   try {
     const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
-    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
     const ownerUrl = new URL(URL_); ownerUrl.pathname = `/${dbName}`;
     const owner = await postgres(ownerUrl.toString());
@@ -267,7 +270,7 @@ test("RLS-10 a signed context captured from one transaction cannot be replayed i
   let rt: DB | undefined;
   try {
     const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
-    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
     const ownerUrl = new URL(URL_); ownerUrl.pathname = `/${dbName}`;
     const owner = await postgres(ownerUrl.toString());
@@ -311,7 +314,7 @@ test("RLS-11 SQL injected into one request cannot leave a temp table (or a sessi
   let rt: DB | undefined;
   try {
     const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
-    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
     const ownerUrl = new URL(URL_); ownerUrl.pathname = `/${dbName}`;
     const owner = await postgres(ownerUrl.toString());
@@ -349,9 +352,9 @@ test("RLS-12 production start-up rules with distinct roles (Neon-style owner): o
   const start = async () => { g.__tendDb = undefined; try { return { db: (await getDb()) as DB }; } catch (e) { return { error: (e as Error).message }; } };
   const started: DB[] = [];
   try {
-    await admin.query(`CREATE ROLE ${owner} LOGIN NOSUPERUSER CREATEDB CREATEROLE NOBYPASSRLS`); // like neondb_owner
+    await admin.query(`CREATE ROLE ${owner} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER CREATEDB CREATEROLE NOBYPASSRLS`); // like neondb_owner
     await admin.query(`CREATE DATABASE ${name} OWNER ${owner}`);
-    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE ${name} TO ${login}`);
     for (const k of keys) delete process.env[k];
     process.env.TEND_DB_STRICT = "1"; process.env.TEND_DB_ISOLATION = "on"; process.env.TEND_DB_RUNTIME_ROLE = rt;
@@ -421,7 +424,7 @@ test("RLS-13 session state left by injected SQL dies with its transaction (advis
   let rt: DB | undefined;
   try {
     const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
-    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
     const ownerUrl = new URL(URL_); ownerUrl.pathname = `/${dbName}`;
     const owner = await postgres(ownerUrl.toString());

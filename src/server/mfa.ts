@@ -26,7 +26,7 @@ function seal(secret: string) {
     return `plain.${secret}`;
   }
   const iv = randomBytes(12);
-  const c = createCipheriv("aes-256-gcm", k, iv);
+  const c = createCipheriv("aes-256-gcm", k, iv, { authTagLength: 16 });
   const ct = Buffer.concat([c.update(secret, "utf8"), c.final()]);
   return `v1.${iv.toString("base64url")}.${c.getAuthTag().toString("base64url")}.${ct.toString("base64url")}`;
 }
@@ -35,7 +35,8 @@ function unseal(stored: string): string {
   if (v === "plain" && process.env.NODE_ENV !== "production") return a;
   const k = key();
   if (v !== "v1" || !k) throw new HttpError(503, "mfa_unavailable", "Two-step sign-in cannot be checked on this server (TEND_MFA_KEY missing or changed).");
-  const d = createDecipheriv("aes-256-gcm", k, Buffer.from(a, "base64url"));
+  // The tag length is fixed: without it Node accepts any length from 4 bytes, and a truncated tag is far easier to forge.
+  const d = createDecipheriv("aes-256-gcm", k, Buffer.from(a, "base64url"), { authTagLength: 16 });
   d.setAuthTag(Buffer.from(b, "base64url"));
   return Buffer.concat([d.update(Buffer.from(c, "base64url")), d.final()]).toString("utf8");
 }

@@ -132,3 +132,16 @@ test("MFA-6 ten wrong codes in a day lock the second factor until a password res
   assert.match(r.outbox[0].text, /turned off .* by the TEND admin/);
   assert.equal((await db.get<{ reason: string }>("SELECT reason FROM auth_events WHERE user_id = ? AND type = 'mfa.disabled'", s.userId))!.reason, "admin_reset");
 });
+
+test("MFA-7 the sealed secret's GCM tag must be full length: the real tag cut to 4 bytes is refused (Node would accept it without authTagLength)", async () => {
+  const db = await memoryDb();
+  const s = await account(db, "mfa7@example.com");
+  const { secret } = await db.tx((q) => startEnrollment(q, s));
+  const now = Date.now();
+  await db.tx((q) => confirmEnrollment(q, s, ref(secret, now / 1000), now));
+  const row = (await db.get<{ secret: string }>("SELECT secret FROM user_mfa WHERE user_id = ?", s.userId))!.secret;
+  const [v, iv, tag, ct] = row.split(".");
+  const short = Buffer.from(tag, "base64url").subarray(0, 4).toString("base64url");
+  await db.run("UPDATE user_mfa SET secret = ? WHERE user_id = ?", [v, iv, short, ct].join("."), s.userId);
+  assert.notEqual(await code(passwordSignIn(db, post(), { email: "mfa7@example.com", password: PW, code: ref(secret, now / 1000 + 60) }, now + 60_000)), "ok", "a truncated tag never verifies");
+});

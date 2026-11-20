@@ -14,6 +14,9 @@ import { HttpError } from "./http.ts";
 import { agentByKey, decide, MAX_AGENTS_PER_WORKSPACE, registerAgent, revokeKey, setPolicy } from "./repo.ts";
 
 const URL_ = process.env.TEND_TEST_DATABASE_URL ?? "";
+// Logins created by a test get the base URL's password, so swapping only the user name in that URL connects as them (CI's PostgreSQL requires
+// passwords over TCP; a local cluster that trusts local connections ignores it).
+const ROLE_PW = (() => { try { return decodeURIComponent(new URL(URL_).password).replace(/'/g, "''"); } catch { return ""; } })() || "tend-test-login";
 const skip = URL_ ? false : "set TEND_TEST_DATABASE_URL (or run `npm run test:postgres`) to test against real PostgreSQL";
 const PAY = { tool: "wire", action: "send", resource: "ACC-1", detail: "EUR 5.00 to X" };
 
@@ -112,7 +115,7 @@ test("PV-5 least-privilege application role on real PostgreSQL: the flows work, 
   try {
     // the schema owner's side: create the role (no special attributes) and grant it exactly runtimeGrantsSql
     const owner = (await t.db.get<{ db: string }>("SELECT current_database() AS db"))!.db;
-    await admin.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${role} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE ${owner} TO ${role}`);
     await t.db.exec(runtimeGrantsSql(role));
     const u = new URL(URL_); u.pathname = `/${owner}`; u.username = role;
@@ -156,7 +159,7 @@ test("PV-6 start-up with separate migration and runtime roles on real PostgreSQL
   await base.connect();
   const name = `tend_split_${randomBytes(5).toString("hex")}`, role = `tend_run_${randomBytes(4).toString("hex")}`;
   await base.query(`CREATE DATABASE ${name}`);
-  await base.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+  await base.query(`CREATE ROLE ${role} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
   await base.query(`GRANT CONNECT ON DATABASE ${name} TO ${role}`);
   const urlFor = (user?: string) => { const u = new URL(URL_); u.pathname = `/${name}`; if (user) u.username = user; return u.toString(); };
   const saved = { a: process.env.DATABASE_URL, m: process.env.DATABASE_MIGRATE_URL, p: process.env.POSTGRES_URL, v: process.env.VERCEL };
@@ -204,7 +207,7 @@ test("PV-7 the application role cannot erase the audit log through a cascade fro
   let appDb: DB | undefined;
   try {
     const owner = (await t.db.get<{ db: string }>("SELECT current_database() AS db"))!.db;
-    await admin.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${role} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE ${owner} TO ${role}`);
     await t.db.exec(runtimeGrantsSql(role));
     const u = new URL(URL_); u.pathname = `/${owner}`; u.username = role;

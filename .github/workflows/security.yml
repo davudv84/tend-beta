@@ -39,12 +39,16 @@ jobs:
         run: npm run typecheck
       - name: Static security analysis (eslint-plugin-security)
         run: npx eslint -c eslint.security.config.mjs src/server src/app/api src/lib src/proxy.ts
+      # Semgrep on the runner's default Python (3.14) ended with exit code 2 (a fatal error, no findings printed); 3.12 is what it supports.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Static security analysis (Semgrep, pinned public rules, ERROR severity)
         run: |
-          python3 -m pip install --user semgrep==1.186.0
+          python -m venv "$RUNNER_TEMP/semgrep" && "$RUNNER_TEMP/semgrep/bin/pip" install --quiet semgrep==1.186.0
           git clone --quiet https://github.com/semgrep/semgrep-rules.git "$RUNNER_TEMP/semgrep-rules"
           git -C "$RUNNER_TEMP/semgrep-rules" checkout --quiet a5ad1714f00c9f7fde980cab0ea1d6dc6d414fd2
-          python3 -m semgrep scan --metrics=off --disable-version-check --severity ERROR --error \
+          "$RUNNER_TEMP/semgrep/bin/semgrep" scan --metrics=off --disable-version-check --severity ERROR --error \
             --config "$RUNNER_TEMP/semgrep-rules/typescript" --config "$RUNNER_TEMP/semgrep-rules/javascript" \
             --exclude '*.test.*' src/app src/server src/lib src/ui src/components src/proxy.ts
       - name: Dependency audit (production dependencies, any severity)
