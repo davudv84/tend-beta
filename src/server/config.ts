@@ -205,6 +205,14 @@ export const config = {
   get dbRuntimeRole() {
     return process.env.TEND_DB_RUNTIME_ROLE || "tend_runtime";
   },
+  /**
+   * TEND_CONTEXT_KEY: signs the tenant context of every transaction (src/server/db.ts, migration 20), so SQL injected into the application's
+   * session cannot choose its own tenant. At least 32 characters of random data; keep it in the deployment's secret store. Unset: unsigned.
+   * Set but too short: the start is refused (enableIsolation), never silently unsigned.
+   */
+  get contextKey() {
+    return process.env.TEND_CONTEXT_KEY ?? "";
+  },
   get localHttp() {
     // A database URL normally means a hosted deployment; a PostgreSQL on this same machine (loopback) does not.
     const localDb = (() => { try { return ["127.0.0.1", "localhost", "[::1]", "::1"].includes(new URL(this.databaseUrl).hostname); } catch { return false; } })();

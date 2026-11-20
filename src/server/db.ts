@@ -1,5 +1,6 @@
 // Postgres everywhere, so there is one SQL dialect: a hosted database in production (DATABASE_URL),
 // an embedded PGlite on disk for local development, and an in-memory PGlite for tests.
+import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { config } from "./config.ts";
@@ -374,6 +375,39 @@ export const MIGRATIONS: string[] = [
   // events, so the trigger would link to the tenant's last event and break the global chain (found by review, test RLS-7). The trigger runs with
   // its owner's rights (the owner is exempt from RLS) and a pinned search_path, so the lookup always reads the global head. It returns nothing.
   `ALTER FUNCTION events_chain() SECURITY DEFINER SET search_path = pg_catalog, public;`,
+  // Signed tenant context. The policies only trust tend.workspace / tend.system when the transaction also carries a MAC over them made with a
+  // context key: tend.ctx_mac = sha256(key || sha256(workspace | system | nonce)), the key named by tend.ctx_kid. The keys live in a table the
+  // runtime role cannot read, and are checked by a SECURITY DEFINER function, so SQL running in the application's session (injection) can still
+  // SET the settings but cannot make them valid: a forged or altered context makes every tenant row invisible (fail closed). With no key
+  // installed (TEND_CONTEXT_KEY unset), the context is unsigned, as before. The outer sha256 over a fixed-length inner digest rules out length
+  // extension. Only meaningful with a restricted login (DATABASE_MIGRATE_URL): an owner login can RESET ROLE past all of this.
+  `CREATE TABLE tend_context_keys (kid TEXT PRIMARY KEY, secret BYTEA NOT NULL, created_at BIGINT NOT NULL);
+   REVOKE ALL ON tend_context_keys FROM PUBLIC;
+   CREATE FUNCTION tend_ctx_valid() RETURNS BOOLEAN LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $fn$
+   DECLARE
+     k BYTEA;
+     ws TEXT := coalesce(current_setting('tend.workspace', true), '');
+     sys TEXT := coalesce(current_setting('tend.system', true), '');
+     nonce TEXT := coalesce(current_setting('tend.ctx_nonce', true), '');
+     mac TEXT := coalesce(current_setting('tend.ctx_mac', true), '');
+     key_id TEXT := coalesce(current_setting('tend.ctx_kid', true), '');
+   BEGIN
+     IF NOT EXISTS (SELECT 1 FROM public.tend_context_keys) THEN RETURN true; END IF;
+     SELECT secret INTO k FROM public.tend_context_keys WHERE kid = key_id;
+     IF k IS NULL OR length(nonce) < 32 THEN RETURN false; END IF;
+     RETURN mac = encode(sha256(k || sha256(convert_to(ws || '|' || sys || '|' || nonce, 'UTF8'))), 'hex');
+   END $fn$;
+   CREATE OR REPLACE FUNCTION tend_ws_visible(ws TEXT) RETURNS BOOLEAN LANGUAGE sql STABLE AS $fn$
+     SELECT tend_ctx_valid() AND (current_setting('tend.system', true) = 'on' OR (ws IS NOT NULL AND ws = NULLIF(current_setting('tend.workspace', true), '')))
+   $fn$;
+   CREATE OR REPLACE FUNCTION tend_agent_visible(aid TEXT) RETURNS BOOLEAN LANGUAGE sql STABLE AS $fn$
+     SELECT tend_ctx_valid() AND (current_setting('tend.system', true) = 'on'
+       OR EXISTS (SELECT 1 FROM agents a WHERE a.id = aid AND a.workspace_id = NULLIF(current_setting('tend.workspace', true), '')))
+   $fn$;
+   CREATE OR REPLACE FUNCTION tend_user_visible(uid TEXT) RETURNS BOOLEAN LANGUAGE sql STABLE AS $fn$
+     SELECT tend_ctx_valid() AND (current_setting('tend.system', true) = 'on'
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = uid AND u.workspace_id = NULLIF(current_setting('tend.workspace', true), '')))
+   $fn$;`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -398,8 +432,29 @@ export function runtimeGrantsSql(role: string): string {
     // maintenance flag raised) would erase their history without any privilege on them. users and workspaces are the parents of those parents.
     `REVOKE DELETE, TRUNCATE ON agents, users, workspaces FROM ${r};`,
     `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON schema_migrations FROM ${r};`,
+    `REVOKE ALL ON tend_context_keys FROM ${r};`,
     `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${r};`,
   ].join("\n");
+}
+
+/** The context key (TEND_CONTEXT_KEY, at least 32 bytes): its id and bytes, or undefined (unsigned context). */
+export function contextKey(): { kid: string; secret: Buffer } | undefined {
+  const raw = config.contextKey;
+  if (!raw) return undefined;
+  const secret = Buffer.from(raw, "utf8");
+  return { kid: createHash("sha256").update(secret).digest("hex").slice(0, 16), secret };
+}
+/** sha256(key || sha256(workspace | system | nonce)), as tend_ctx_valid() recomputes it. A fresh random nonce per transaction. */
+export function contextSignature(workspace: string, system: string, nonce = randomBytes(16).toString("hex")) {
+  const k = contextKey();
+  if (!k) return undefined;
+  const inner = createHash("sha256").update(`${workspace}|${system}|${nonce}`, "utf8").digest();
+  return { kid: k.kid, nonce, mac: createHash("sha256").update(Buffer.concat([k.secret, inner])).digest("hex") };
+}
+/** Installs the context key in the owner-only table (run with the schema owner's connection). Older keys stay valid until removed (rotation). */
+export async function installContextKey(owner: Q) {
+  const k = contextKey();
+  if (k) await owner.run("INSERT INTO tend_context_keys (kid, secret, created_at) VALUES (?, ?, ?) ON CONFLICT (kid) DO NOTHING", k.kid, k.secret, Date.now());
 }
 
 /** The tables row-level security covers (migration 18). The start-up check and the tests read this list. */
@@ -429,8 +484,10 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
     // Membership lets this session switch to it (SET ROLE); owner-level rights stay with the login role, which the application never uses then.
     await q.exec(`GRANT "${role}" TO CURRENT_USER`);
     await q.exec(runtimeGrantsSql(role));
+    await installContextKey(q);
   });
   if (owner) db.isolation.role = role;
+  if (config.contextKey && config.contextKey.length < 32) throw new Error("TEND_CONTEXT_KEY must be at least 32 characters of random data");
   db.isolation.on = true;
   // Self-test, as the application will run: the effective role and the tables, read inside an isolated transaction.
   const t = await db.tx((q) => q.get<{ who: string; sup: boolean; bypass: boolean; owns: boolean; missing: string | null; loose: string | null }>(
@@ -447,7 +504,11 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
   const problem = !t ? "could not read the effective role" : t.sup ? `the effective role ${t.who} is a superuser` : t.bypass ? `the effective role ${t.who} has BYPASSRLS`
     : t.owns ? `the effective role ${t.who} owns tables, or is a member of a role that does (owners are exempt from row-level security)` : t.missing ? `row-level security is off on: ${t.missing}`
     : t.loose ? `unexpected row-level security policies: ${t.loose}` : "";
-  if (problem) { db.isolation.on = false; throw new Error(`tenant isolation cannot be guaranteed: ${problem}. Fix the database roles (docs/database-roles.md) or set TEND_DB_ISOLATION=off explicitly.`); }
+  // A context key installed in the database means every context must be signed with one of its keys: this server's key must be one of them,
+  // or every request would see nothing. Checked through the same function the policies use.
+  const signed = problem ? undefined : await db.tx((q) => q.get<{ ok: boolean; keys: boolean }>("SELECT tend_ctx_valid() AS ok, EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'tend_ctx_valid') AS keys"));
+  const keyProblem = !problem && signed && !signed.ok ? "the database holds context keys and this server's TEND_CONTEXT_KEY is not one of them (or is unset)" : "";
+  if (problem || keyProblem) { db.isolation.on = false; throw new Error(`tenant isolation cannot be guaranteed: ${problem || keyProblem}. Fix the database roles (docs/database-roles.md) or set TEND_DB_ISOLATION=off explicitly.`); }
 }
 
 /** Fails unless every migration this code knows has been applied (a newer schema is allowed: rolling deploys): the application role must not run on an older one. It checks versions, not privileges. */
@@ -530,7 +591,9 @@ export async function postgres(url: string): Promise<DB> {
   const isolation = { on: false, role: "" };
   const preamble = () => {
     const c = contextSettings(); // validated identifiers, safe as literals
-    return `${isolation.role && !c.owner ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`;
+    const signed = contextSignature(c.workspace, c.system); // hex only
+    return `${isolation.role && !c.owner ? `SET LOCAL ROLE "${isolation.role}"; ` : ""}SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`
+      + (signed ? `, set_config('tend.ctx_nonce', '${signed.nonce}', true), set_config('tend.ctx_kid', '${signed.kid}', true), set_config('tend.ctx_mac', '${signed.mac}', true)` : "");
   };
   const tx: DB["tx"] = async (fn) => {
     const client = await pool.connect();
@@ -614,7 +677,7 @@ async function open() {
     if (!url) throw new Error("DATABASE_MIGRATE_URL is set without DATABASE_URL");
     if (migrateUrl === url) console.error("[tend] WARNING: DATABASE_MIGRATE_URL equals DATABASE_URL, so the application still runs as the schema owner: this is not a role split.");
     const admin = await postgres(migrateUrl);
-    try { await migrate(admin); } finally { await admin.close().catch(() => {}); }
+    try { await migrate(admin); await installContextKey(admin); } finally { await admin.close().catch(() => {}); }
     const runtime = await postgres(url);
     try {
       await assertSchemaCurrent(runtime);

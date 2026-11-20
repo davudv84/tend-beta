@@ -69,7 +69,7 @@ async function freshPostgres(dataDir) {
 
 export async function startIsolatedServer({ root, env, database = "embedded", port: wantedPort, confine, keepDir = false }) {
   const fresh = database === "embedded" ? await freshPostgres(env?.TEND_DATA_DIR) : undefined;
-  if (fresh) { env = { ...env, DATABASE_URL: fresh.url }; database = "postgres"; }
+  if (fresh) { env = { ...env, DATABASE_URL: fresh.url, ...(process.env.TEND_E2E_CONTEXT_KEY && { TEND_CONTEXT_KEY: process.env.TEND_E2E_CONTEXT_KEY }) }; database = "postgres"; }
   if (!existsSync(path.join(root, ".next/BUILD_ID"))) throw new Error("There is no production build yet. Run `npm run build` first.");
   const dir = mkdtempSync(path.join(tmpdir(), "tend-isolated-"));
   for (const name of [".next", "node_modules", "package.json", "next.config.ts", "public"]) if (existsSync(path.join(root, name))) symlinkSync(path.join(root, name), path.join(dir, name));

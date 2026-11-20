@@ -210,3 +210,49 @@ test("RLS-8 start-up refuses a loose policy, a runtime role that is a member of 
 });
 /** A statement as the login role itself (no runtime-role switch): what a migration would do. */
 async function asOwnerQuery(db: DB, sql: string) { const { asOwner } = await import("./db-context.ts"); await asOwner(() => db.exec(sql)); }
+
+test("RLS-9 signed tenant context (TEND_CONTEXT_KEY) with a restricted login: SQL running in the session cannot raise system or switch tenant; without the key installed it could (negative control)", { skip }, async () => {
+  const saved = process.env.TEND_CONTEXT_KEY;
+  process.env.TEND_CONTEXT_KEY = randomBytes(32).toString("base64url");
+  const w = await world(); // the owner pool installs the key as it enables isolation
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const login = `tend_sig_${randomBytes(4).toString("hex")}`;
+  let rt: DB | undefined;
+  try {
+    const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
+    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
+    const ownerUrl = new URL(URL_); ownerUrl.pathname = `/${dbName}`;
+    const owner = await postgres(ownerUrl.toString());
+    await owner.exec(runtimeGrantsSql(login));
+    const u = new URL(URL_); u.pathname = `/${dbName}`; u.username = login;
+    rt = await postgres(u.toString());
+    await enableIsolation(rt, "unused_role_name");
+    const count = (sql: string, ws = "wa") => asTenant(ws, () => rt!.tx(async (q) => { if (sql) await q.exec(sql); return (await q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"))!.n; }));
+    assert.equal(await count(""), 1, "a properly signed context sees its own tenant");
+    // what RLS-6 showed working without a key: raising the system setting from SQL. Signed: the context no longer verifies, so nothing is visible.
+    assert.equal(await count("SELECT set_config('tend.system', 'on', true)"), 0, "raising tend.system invalidates the context (fail closed)");
+    assert.equal(await count("SELECT set_config('tend.workspace', 'wb', true)"), 0, "switching tend.workspace invalidates it");
+    assert.equal(await count("SELECT set_config('tend.ctx_mac', repeat('0', 64), true)"), 0, "a made-up MAC does not verify");
+    assert.equal(await count("RESET ROLE; SELECT set_config('tend.system', 'on', true)"), 0, "and RESET ROLE does not help a restricted login");
+    // the key itself is out of reach of the runtime role
+    const denied = async (sql: string) => { try { await asTenant("wa", () => rt!.exec(sql)); return "ALLOWED"; } catch (e) { return (e as { code?: string }).code; } };
+    for (const sql of ["SELECT * FROM tend_context_keys", "DELETE FROM tend_context_keys", "INSERT INTO tend_context_keys VALUES ('x', 'x', 0)", "CREATE OR REPLACE FUNCTION tend_ctx_valid() RETURNS boolean LANGUAGE sql AS 'SELECT true'"])
+      assert.equal(await denied(sql), "42501", sql);
+    // a server started with another key (or none) while the database holds keys: refused at start-up, never silently blind
+    process.env.TEND_CONTEXT_KEY = randomBytes(32).toString("base64url");
+    rt.isolation!.on = false;
+    await assert.rejects(enableIsolation(rt, "unused_role_name"), /context keys and this server's TEND_CONTEXT_KEY is not one of them/);
+    // negative control: with no key installed (the owner removes them), the same forgery works again: the protection is the signature
+    await owner.exec("DELETE FROM tend_context_keys");
+    delete process.env.TEND_CONTEXT_KEY;
+    await enableIsolation(rt, "unused_role_name");
+    assert.equal(await count("SELECT set_config('tend.system', 'on', true)"), 2, "unsigned: raising the setting reads every tenant (the RLS-6 gap)");
+    await owner.close();
+  } finally {
+    if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
+    await rt?.close().catch(() => {}); await w.close();
+    await admin.query(`DROP OWNED BY ${login}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${login}`).catch(() => {}); await admin.end();
+  }
+});
