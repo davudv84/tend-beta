@@ -33,6 +33,10 @@ const unit = [
   { id: "M-15", why: "the production default becomes public again", file: "src/server/config.ts", find: '    return process.env.NODE_ENV === "production" ? false : !this.adminToken;', to: "    return !this.adminToken;", tests: ["src/server/config-hardening.test.ts"] },
   { id: "M-19", why: "workspace roles are not enforced (every member may do everything)", file: "src/server/rbac.ts", find: "  if (!atLeast(role, NEEDS[need])) throw", to: "  if (false as boolean) throw", tests: ["src/server/rbac.test.ts"] },
   { id: "M-20", why: "member changes trust the role the session lookup saw, not the role at the time of the change", file: "src/server/members.ts", find: "  const me = members.find((m) => m.id === s.userId && m.disabled_at === null);", to: "  const me = { role: s.role, disabled_at: null };", tests: ["src/server/rbac.test.ts"] },
+  { id: "M-21", why: "a TOTP code can be used again (replay protection removed)", file: "src/server/mfa.ts", edits: [
+    { find: ", ...(r.last_step !== null && { afterTimeStep: Number(r.last_step) })", to: "" },
+    { find: "WHERE user_id = ? AND (last_step IS NULL OR last_step < ?)\", res.timeStep, r.user_id, res.timeStep)", to: "WHERE user_id = ?\", res.timeStep, r.user_id)" }], tests: ["src/server/mfa.test.ts"] },
+  { id: "M-22", why: "sign-in no longer asks for the second factor", file: "src/server/accounts.ts", find: "  if (factor === \"missing\") throw", to: "  if (false as boolean) throw", tests: ["src/server/mfa.test.ts"] },
   // needs real PostgreSQL (TEND_TEST_DATABASE_URL); without it the row-level security tests are skipped, so the mutation is not run
   ...(process.env.TEND_TEST_DATABASE_URL ? [
     { id: "M-16", why: "a signed tenant context is no longer bound to its transaction (captured settings can be replayed in later transactions)", file: "src/server/db.ts", find: "     IF nonce <> ${TX_BINDING} THEN RETURN false; END IF;\n", to: "", tests: ["src/server/rls.test.ts"] },

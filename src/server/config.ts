@@ -212,6 +212,11 @@ export const config = {
     if (v === "1" || v === "on") return true;
     return process.env.NODE_ENV === "production" && this.dbIsolation;
   },
+  /** Encrypts accounts' TOTP secrets at rest (src/server/mfa.ts). At least 32 random characters; production refuses two-step setup without it. */
+  get mfaKey() {
+    const k = process.env.TEND_MFA_KEY ?? "";
+    return k.length >= 32 ? k : "";
+  },
   /** Explicit, logged exception to dbStrict for deployments that still log in as the schema owner (one DATABASE_URL). RLS is then bypassable by SQL injection. */
   get dbAllowOwnerLogin() {
     return process.env.TEND_DB_ALLOW_OWNER_LOGIN === "1";

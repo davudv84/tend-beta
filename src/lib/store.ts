@@ -58,7 +58,7 @@ interface Store extends Projection {
   poll: () => Promise<void>;
   signIn: (token: string) => Promise<Result>;
   /** E-mail and password (accounts). Like signIn, it checks that this browser really holds the session before changing the screen. */
-  signInWithPassword: (email: string, password: string) => Promise<Result>;
+  signInWithPassword: (email: string, password: string, code?: string) => Promise<Result>;
   signOut: () => Promise<void>;
   /** The live sessions and recent sign-in activity (operators only). */
   getSessions: () => Promise<{ ok: true; data: SessionOverview } | Failure>;
@@ -191,8 +191,8 @@ export const useStore = create<Store>()(
           return { ok: true };
         },
 
-        signInWithPassword: async (email, password) => {
-          const r = await call("/api/account/sign-in", { email, password });
+        signInWithPassword: async (email, password, code) => {
+          const r = await call("/api/account/sign-in", { email, password, ...(code && { code }) });
           if (!r.ok) return r;
           const check = await call<{ viewer?: Viewer }>("/api/operator/session", undefined, "GET");
           if (!check.ok || check.data.viewer?.role !== "operator") return { ok: false, error: "", code: "session_not_kept", status: 200 };

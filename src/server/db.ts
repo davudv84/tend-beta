@@ -485,6 +485,21 @@ export const MIGRATIONS: string[] = [
    ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected',
      'account.registered', 'account.verified', 'account.approved', 'account.disabled', 'account.reset_requested', 'account.password_reset',
      'member.invited', 'member.role_changed', 'member.removed'));`,
+  // Two-step sign-in (TOTP, src/server/mfa.ts). The secret is encrypted by the application (TEND_MFA_KEY); one row per account.
+  `CREATE TABLE user_mfa (
+     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     secret TEXT NOT NULL,
+     enabled_at BIGINT,
+     last_step BIGINT,
+     recovery TEXT NOT NULL DEFAULT '[]',
+     created_at BIGINT NOT NULL
+   );
+   ALTER TABLE user_mfa ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON user_mfa USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));
+   ALTER TABLE auth_events DROP CONSTRAINT auth_events_type_check;
+   ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected',
+     'account.registered', 'account.verified', 'account.approved', 'account.disabled', 'account.reset_requested', 'account.password_reset',
+     'member.invited', 'member.role_changed', 'member.removed', 'mfa.enabled', 'mfa.disabled'));`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -536,7 +551,7 @@ export async function installContextKey(owner: Q) {
 
 /** The tables row-level security covers (migration 18). The start-up check and the tests read this list. */
 export const RLS_TABLES = ["workspaces", "agents", "central_policies", "users", "notifications", "events", "reviews", "asks", "authorizations", "verification_runs",
-  "operator_sessions", "auth_events", "user_tokens", "onboarding", "push_subscriptions", "notification_prefs"] as const;
+  "operator_sessions", "auth_events", "user_tokens", "onboarding", "push_subscriptions", "notification_prefs", "user_mfa"] as const;
 
 /**
  * Turns tenant isolation on for a PostgreSQL pool, or refuses to start. Two cases:

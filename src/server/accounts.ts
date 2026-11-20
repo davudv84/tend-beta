@@ -22,6 +22,7 @@ import { clientIp, HttpError } from "./http.ts";
 import { spend } from "./limits.ts";
 import { ensureDemoAccount } from "./demo-account.ts";
 import { allAgents, revokeKey } from "./repo.ts";
+import { secondFactor } from "./mfa.ts";
 import { audit, createSession, signOut } from "./session.ts";
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number, opts: object) => Promise<Buffer>;
@@ -206,7 +207,7 @@ export async function resendVerification(db: DB, req: Request, input: unknown, n
 export async function passwordSignIn(db: DB, req: Request, input: unknown, now = Date.now()) {
   requireAccounts();
   const client = clientIp(req);
-  const o = (input ?? {}) as { email?: unknown; password?: unknown };
+  const o = (input ?? {}) as { email?: unknown; password?: unknown; code?: unknown };
   const email = typeof o.email === "string" ? o.email.trim().toLowerCase().slice(0, 254) : "";
   const password = typeof o.password === "string" ? o.password.slice(0, PASSWORD.max) : "";
   const perClient = await spend(db, `account:fail:${client}`, LIMITS.signInFailuresPerMinute, { now });
@@ -223,7 +224,15 @@ export async function passwordSignIn(db: DB, req: Request, input: unknown, now =
     await audit(db, "signin.failed", { client, reason: "invalid_credentials", ...(u && { userId: u.id }), now });
     throw new HttpError(401, "invalid_credentials", "That e-mail address and password don’t match an account.");
   }
-  // The password was right: give the failures back.
+  // Two-step sign-in, when the account has it: checked BEFORE the failures are given back, so guessing codes spends the same budget as
+  // guessing passwords. Only someone who knew the password learns that a code is needed.
+  const factor = await secondFactor(db, u.id, typeof o.code === "string" ? o.code.slice(0, 40) : undefined, now);
+  if (factor === "missing") throw new HttpError(401, "mfa_required", "Enter the code from your authenticator app (or a recovery code).");
+  if (factor === "invalid") {
+    await audit(db, "signin.failed", { client, reason: "mfa_invalid", userId: u.id, now });
+    throw new HttpError(401, "mfa_invalid", "That code is not right. Use the current code from your authenticator app, or a recovery code.");
+  }
+  // The password (and the code) were right: give the failures back.
   await spend(db, `account:fail:${client}`, LIMITS.signInFailuresPerMinute, { now, cost: -1 });
   await spend(db, `account:fail:${email}`, LIMITS.failuresPerAccountPerHour, { windowMs: HOUR, now, cost: -1 });
   if (u.disabled_at !== null || (u.read_only && u.email !== config.demoAccount?.email)) throw new HttpError(403, "account_disabled", "This account has been disabled. Contact the TEND admin.");

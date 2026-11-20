@@ -58,7 +58,8 @@
     "beta:local:rehearse": "node scripts/beta-local-rehearsal.mjs",
     "tester:init": "node scripts/tester-init.mjs",
     "tester:agent": "node scripts/tester-agent.mjs",
-    "tester:export": "node scripts/tester-export.mjs"
+    "tester:export": "node scripts/tester-export.mjs",
+    "e2e:mfa": "node scripts/mfa-e2e.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",
@@ -68,6 +69,7 @@
     "lucide-react": "^1.61.0",
     "next": "16.4.6",
     "next-themes": "^0.4.6",
+    "otplib": "13.6.0",
     "pg": "^8.23.1",
     "radix-ui": "^1.8.1",
     "react": "19.3.0",

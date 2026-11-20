@@ -111,6 +111,8 @@ export const de: Dict = {
     network: "Der TEND-Server ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     status: (n) => `Der Server antwortete mit ${n}.`,
     codes: {
+      mfa_required: "Geben Sie den Code aus Ihrer Authenticator-App oder einen Wiederherstellungscode ein.",
+      mfa_invalid: "Dieser Code stimmt nicht. Verwenden Sie den aktuellen Code aus Ihrer Authenticator-App oder einen Wiederherstellungscode.",
       onboarding_incomplete: "TEND hat noch keine Entscheidung über die Testaktion Ihres Agenten gesehen. Führen Sie den Test aus und schließen Sie dann ab.",
       push_not_configured: "Browser-Benachrichtigungen sind auf diesem TEND-Server nicht eingerichtet.",
       invalid_subscription: "Das Benachrichtigungs-Abonnement dieses Browsers wurde nicht angenommen.",
@@ -1292,7 +1294,7 @@ export const de: Dict = {
     back: "Zurück zur Anmeldung",
     emailPlaceholder: "E-Mail-Adresse eingeben",
     passwordPlaceholder: "Passwort eingeben",
-    signIn: { title: "Anmelden", welcome: "Willkommen zurück bei TEND.", read: "Lesen Sie unsere", and: "und unseren Hinweis zum", submit: "Anmelden", busy: "Anmelden …", forgot: "Passwort vergessen?", create: "Konto erstellen", admin: "Admin-Anmeldung", resend: "Bestätigungslink erneut senden", resent: "Falls die Adresse ein unbestätigtes Konto hat, ist ein neuer Link unterwegs." },
+    signIn: { code: "Code aus Ihrer Authenticator-App", codeHint: "Oder einer Ihrer Wiederherstellungscodes.", title: "Anmelden", welcome: "Willkommen zurück bei TEND.", read: "Lesen Sie unsere", and: "und unseren Hinweis zum", submit: "Anmelden", busy: "Anmelden …", forgot: "Passwort vergessen?", create: "Konto erstellen", admin: "Admin-Anmeldung", resend: "Bestätigungslink erneut senden", resent: "Falls die Adresse ein unbestätigtes Konto hat, ist ein neuer Link unterwegs." },
     signUp: { title: "TEND-Konto erstellen", body: "TEND ist in der privaten Beta. Nachdem Sie Ihre E-Mail-Adresse bestätigt haben, gibt ein Admin den Zugang frei; Sie erhalten eine E-Mail.", bodyOpen: "TEND ist in der privaten Beta. Bestätigen Sie Ihre E-Mail-Adresse, dann melden Sie sich an.", bodyInstant: "TEND ist in der privaten Beta. Erstellen Sie Ihr Konto und legen Sie sofort los; ohne Bestätigungs-E-Mail.", bodyApproval: "TEND ist in der privaten Beta. Nachdem Sie Ihr Konto erstellt haben, gibt ein Admin den Zugang frei; Sie erhalten eine E-Mail.", signInFailed: "Das Konto konnte nicht angemeldet werden. Hat diese Adresse schon ein Konto, melden Sie sich mit dessen Passwort an oder setzen Sie es zurück.", submit: "Konto erstellen", busy: "Wird erstellt …", have: "Schon ein Konto?", verifyTitle: "Bestätigen Sie Ihre E-Mail-Adresse, um fortzufahren", verifyBody: (email: string) => `Wir haben einen Bestätigungslink an ${email} gesendet. Öffnen Sie ihn auf diesem oder einem anderen Gerät; diese Seite geht dann von selbst weiter.`, waiting: "Warten auf Ihre Bestätigung …", continuing: "Bestätigt. Sie werden zu TEND weitergeleitet …", resend: "Bestätigungs-E-Mail erneut senden", resendIn: (s: number) => `Erneut senden in ${s}${NB}s`, resent: "Erneut gesendet. Prüfen Sie Ihren Posteingang und den Spam-Ordner. Der neueste Link ersetzt die früheren.", resendLimit: "Noch nichts da? Sie können bis zu dreimal pro Stunde einen neuen Link anfordern.", change: "Andere E-Mail-Adresse verwenden", stopped: "Diese Seite prüft nicht mehr. Sobald Ihre Adresse bestätigt ist, melden Sie sich an." },
     verify: { title: "E-Mail-Adresse bestätigen", password: "Passwort", passwordHint: "Das Passwort, das Sie bei der Registrierung gewählt haben", submit: "Bestätigen", busy: "Wird bestätigt …", doneTitle: "Adresse bestätigt", waiting: "Ein Admin prüft Ihren Zugang. Sie erhalten eine E-Mail, sobald Sie sich anmelden können.", ready: "Ihr Zugang ist bereit. Sie können sich jetzt anmelden.", readyAuto: "Wenn Sie sich in einem anderen Tab oder auf einem anderen Gerät registriert haben, geht es dort von selbst weiter. Sie können auch hier fortfahren.", continue: "Weiter", missing: "Diese Seite braucht den Link aus Ihrer E-Mail. Öffnen Sie ihn erneut oder fordern Sie einen neuen an." },
     forgot: { title: "Passwort zurücksetzen", body: "Geben Sie Ihre E-Mail-Adresse ein; wir senden einen Link, um ein neues Passwort zu wählen.", submit: "Link senden", busy: "Wird gesendet …", sentTitle: "Posteingang prüfen", sent: "Falls die Adresse ein Konto hat, ist ein Link unterwegs. Er funktioniert einmal, 30 Minuten lang." },
@@ -2018,7 +2020,16 @@ export const de: Dict = {
     recentTitle: "Letzte Anmeldeaktivität", recentSub: "Vom Server aufgezeichnet, neueste zuerst. Es enthält nie das eingegebene Token oder ein Sitzungsgeheimnis.", noRecent: "Noch nichts aufgezeichnet.",
     authEvents: { "signin.succeeded": "Angemeldet", "signin.failed": "Fehlgeschlagene Anmeldung", "signin.blocked": "Zu viele Fehlversuche: diese Adresse wurde eine Minute lang abgewiesen", "session.signed_out": "Abgemeldet", "session.revoked_all": "Überall abgemeldet", "session.rejected": "Eine widerrufene oder abgelaufene Sitzung wurde erneut verwendet", "log.suppressed": "Mehr Fehlversuche, als sich einzeln auflisten lassen", "agentkey.rejected": "Eine Anfrage nutzte einen unbekannten oder widerrufenen Agenten-Schlüssel" },
     authReasons: { invalid_token: "falsches Token", malformed: "kein Token gesendet", operator_disabled: "Operator-Zugang nicht eingerichtet", too_many_failures: "zu viele Fehlversuche", revoked: "wurde abgemeldet", expired: "war abgelaufen", admin_token_changed: "Admin-Token wurde geändert", wrong_secret: "falsches Sitzungsgeheimnis", missing_key: "kein Schlüssel gesendet", invalid_key: "unbekannter oder widerrufener Schlüssel" },
-    accountSub: "Darstellung, Sprache und Abmelden. Es gibt eine Operator-Rolle: TEND hat noch keine Benutzerkonten oder Organisationen.",
+    accountSub: "Darstellung, Sprache, Anmeldung in zwei Schritten und Abmelden. Mitglieder des Arbeitsbereichs und ihre Rollen werden über die API verwaltet (/api/v1/members).",
+    twoStep: {
+      title: "Anmeldung in zwei Schritten", sub: "Nach Ihrem Passwort fragt TEND zusätzlich nach einem Code aus einer Authenticator-App (zum Beispiel 1Password, Google Authenticator oder Authy).",
+      on: "An", off: "Aus", left: (n: number) => `Noch ${n} Wiederherstellungscodes.`, start: "Einrichten", enable: "Einschalten", disable: "Ausschalten", cancel: "Abbrechen",
+      step1: "Fügen Sie diesen Schlüssel Ihrer Authenticator-App hinzu (oder öffnen Sie den Link auf Ihrem Telefon):", openLink: "In der Authenticator-App öffnen",
+      step2: "Geben Sie dann den 6-stelligen Code aus der App ein:", code: "Code", password: "Passwort",
+      recovery: "Wiederherstellungscodes. Jeder funktioniert einmal, falls Sie Ihr Telefon verlieren. Bewahren Sie sie sicher auf; sie werden nur jetzt angezeigt.",
+      disableHint: "Zum Ausschalten geben Sie Ihr Passwort und einen aktuellen Code (oder einen Wiederherstellungscode) ein.",
+      adminToken: "Die Anmeldung in zwei Schritten gilt für Konten. Das Admin-Token kann sie nicht verwenden.",
+    },
   },
 
   assistant: {

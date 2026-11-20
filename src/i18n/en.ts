@@ -117,6 +117,8 @@ export const en = {
     network: "Couldn’t reach the TEND server. Check your connection and try again.",
     status: (n: number) => `The server answered ${n}.`,
     codes: {
+      mfa_required: "Enter the code from your authenticator app, or a recovery code.",
+      mfa_invalid: "That code is not right. Use the current code from your authenticator app, or a recovery code.",
       onboarding_incomplete: "TEND hasn’t seen your agent’s test action decided yet. Run the test, then finish.",
       push_not_configured: "Browser notifications aren’t set up on this TEND server.",
       invalid_subscription: "This browser’s notification subscription was not accepted.",
@@ -1305,7 +1307,7 @@ export const en = {
     back: "Back to sign in",
     emailPlaceholder: "Enter your e-mail address",
     passwordPlaceholder: "Enter your password",
-    signIn: { title: "Sign in", welcome: "Welcome back to TEND.", read: "Read our", and: "and", submit: "Sign in", busy: "Signing in…", forgot: "Forgot password?", create: "Create an account", admin: "Admin sign-in", resend: "Send the confirmation link again", resent: "If the address has an unconfirmed account, a new link is on its way." },
+    signIn: { code: "Code from your authenticator app", codeHint: "Or one of your recovery codes.", title: "Sign in", welcome: "Welcome back to TEND.", read: "Read our", and: "and", submit: "Sign in", busy: "Signing in…", forgot: "Forgot password?", create: "Create an account", admin: "Admin sign-in", resend: "Send the confirmation link again", resent: "If the address has an unconfirmed account, a new link is on its way." },
     signUp: { title: "Create your TEND account", body: "TEND is in private beta. After you confirm your e-mail address, an admin approves your access; you’ll get an e-mail.", bodyOpen: "TEND is in private beta. Confirm your e-mail address, then sign in.", bodyInstant: "TEND is in private beta. Create your account and start right away; no confirmation e-mail.", bodyApproval: "TEND is in private beta. After you create your account, an admin approves your access; you’ll get an e-mail.", signInFailed: "The account could not be signed in. If this address already has an account, sign in with its password or reset it.", submit: "Create account", busy: "Creating…", have: "Already have an account?", verifyTitle: "Verify your email to continue", verifyBody: (email: string) => `We sent a confirmation link to ${email}. Open it on this or any other device; this page continues on its own.`, waiting: "Waiting for your confirmation…", continuing: "Confirmed. Taking you to TEND…", resend: "Resend verification email", resendIn: (s: number) => `Resend in ${s}s`, resent: "Sent again. Check your inbox, and your spam folder. The newest link replaces the earlier ones.", resendLimit: "Nothing yet? You can ask for a new link up to three times an hour.", change: "Use a different e-mail address", stopped: "This page has stopped checking. Once your address is confirmed, sign in." },
     verify: { title: "Confirm your e-mail address", password: "Password", passwordHint: "The one you chose when you signed up", submit: "Confirm", busy: "Confirming…", doneTitle: "Address confirmed", waiting: "An admin will review your access. You’ll get an e-mail when you can sign in.", ready: "Your access is ready. You can sign in now.", readyAuto: "If you signed up in another tab or on another device, it continues there on its own. You can also continue here.", continue: "Continue", missing: "This page needs the link from your e-mail. Open the link again, or ask for a new one." },
     forgot: { title: "Reset your password", body: "Enter your e-mail address and we’ll send a link to choose a new password.", submit: "Send link", busy: "Sending…", sentTitle: "Check your inbox", sent: "If the address has an account, a link is on its way. It works once, for 30 minutes." },
@@ -2031,7 +2033,16 @@ export const en = {
     recentTitle: "Recent sign-in activity", recentSub: "Recorded by the server, newest first. It never contains the token that was typed or a session secret.", noRecent: "Nothing recorded yet.",
     authEvents: { "signin.succeeded": "Signed in", "signin.failed": "Failed sign-in", "signin.blocked": "Too many failed attempts: that address was refused for a minute", "session.signed_out": "Signed out", "session.revoked_all": "Signed out everywhere", "session.rejected": "A revoked or expired session was used again", "log.suppressed": "More failures than can be listed one by one", "agentkey.rejected": "A request used an unknown or revoked agent key" } as Record<string, string>,
     authReasons: { invalid_token: "wrong token", malformed: "no token sent", operator_disabled: "operator access not configured", too_many_failures: "too many failures", revoked: "was signed out", expired: "had expired", admin_token_changed: "admin token was changed", wrong_secret: "wrong session secret", missing_key: "no key sent", invalid_key: "unknown or revoked key" } as Record<string, string>,
-    accountSub: "Appearance, language and sign-out. There is one operator role: TEND has no user accounts or organizations yet.",
+    accountSub: "Appearance, language, two-step sign-in and sign-out. Workspace members and their roles are managed through the API (/api/v1/members).",
+    twoStep: {
+      title: "Two-step sign-in", sub: "After your password, TEND also asks for a code from an authenticator app (for example 1Password, Google Authenticator or Authy).",
+      on: "On", off: "Off", left: (n: number) => `${n} recovery codes left.`, start: "Set up", enable: "Turn on", disable: "Turn off", cancel: "Cancel",
+      step1: "Add this key to your authenticator app (or open the link on your phone):", openLink: "Open in authenticator app",
+      step2: "Then enter the 6-digit code the app shows:", code: "Code", password: "Password",
+      recovery: "Recovery codes. Each works once if you lose your phone. Store them somewhere safe; they are shown only now.",
+      disableHint: "To turn it off, enter your password and a current code (or a recovery code).",
+      adminToken: "Two-step sign-in is for accounts. The admin token cannot use it.",
+    },
   },
 
   assistant: {

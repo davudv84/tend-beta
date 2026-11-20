@@ -22,6 +22,8 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "operator/session:DELETE": "public", // ends the caller's own session, and only with that session's own secret
   "operator/sessions:GET": "operator",
   "operator/sessions:DELETE": "operator",
+  "account/mfa:GET": "operator",
+  "account/mfa:POST": "operator",
   "v1/members:GET": "operator",
   "v1/members:POST": "operator",
   "v1/members/[id]:PATCH": "operator",
@@ -114,6 +116,7 @@ test("every API handler is classified, and calls the guard its class requires", 
 // The workspace role each operator route requires (src/server/rbac.ts). A new operator route must be added here with its need.
 const NEED: Record<string, string> = {
   "operator/sessions:GET": "self", "operator/sessions:DELETE": "self",
+  "account/mfa:GET": "self", "account/mfa:POST": "self",
   "v1/members:GET": "view", "v1/members:POST": "members", "v1/members/[id]:PATCH": "members", "v1/members/[id]:DELETE": "members",
   "v1/agents:POST": "manage", "v1/agents/[id]/verification:GET": "view", "v1/agents/[id]/verification:POST": "operate",
   "v1/agents/[id]/policy:GET": "view", "v1/agents/[id]/policy:POST": "manage", "v1/agents/[id]/check-in-requests:POST": "operate",

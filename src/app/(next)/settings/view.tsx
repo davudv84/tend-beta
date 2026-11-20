@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { NotificationSettings } from "@/components/notification-settings";
+import { TwoStep } from "@/components/two-step";
 import { SignIn } from "@/components/sign-in";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n/error-text";
@@ -213,6 +214,7 @@ export default function View() {
           <Card>
             <CardHeader title={g.tabs.account} sub={g.accountSub} />
             <div className="border-t border-border px-6 py-6"><Preferences /></div>
+            {operator && <TwoStep />}
             {operator && <SetupGuide />}
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border px-6 py-4 text-[14px]">
               <Link href="/labs" className="font-medium text-primary hover:underline">{t.ui.footer.labs}</Link>
