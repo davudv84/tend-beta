@@ -3,6 +3,7 @@ name: security
 # Every job must pass for a pull request to be green. Nothing here is allowed to fail silently: there is no continue-on-error, no skipped
 # step, and failing runs upload their logs. See SECURITY-VERIFICATION.md for what each job proves and what it does not.
 on:
+  workflow_dispatch: # run by hand from the Actions tab, on any branch
   pull_request:
   push:
     branches: [main, "security/**"] # security branches run the full suite before any pull request

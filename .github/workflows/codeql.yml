@@ -3,6 +3,7 @@ name: codeql
 # Static analysis of the TypeScript/JavaScript code with GitHub's CodeQL (security-extended queries). Findings appear under Security → Code
 # scanning; make "CodeQL" a required check on protected branches (docs/ci.md).
 on:
+  workflow_dispatch: # run by hand from the Actions tab, on any branch
   pull_request:
   push:
     branches: [main, "security/**"] # security branches run the full suite before any pull request
