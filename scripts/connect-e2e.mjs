@@ -8,11 +8,13 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
+import { freePort } from "./isolated-server.mjs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { TEST_SCRIPT } from "../src/lib/connect-snippet.ts";
 
-const PORT = 3960 + Math.floor(Math.random() * 9);
+// A port the operating system says is free (one of a few fixed ones collided with a server left over from another suite).
+const PORT = await freePort();
 const URL_ = `http://127.0.0.1:${PORT}`;
 const ADMIN = `fake_admin_${randomBytes(18).toString("hex")}`;
 const dir = mkdtempSync(path.join(tmpdir(), "tend-connect-e2e-"));
