@@ -21,8 +21,9 @@ How the database layer works:
 - The runtime role: when the application logs in as the schema owner (one `DATABASE_URL`, Vercel's Neon integration), a `NOLOGIN` role
   (`TEND_DB_RUNTIME_ROLE`, default `tend_runtime`) is created with `runtimeGrantsSql`'s privileges and the login role is granted membership.
   With `DATABASE_MIGRATE_URL` the restricted login is used as is.
-- Start-up self-test (`enableIsolation`): the effective role must not be a superuser, must not have `BYPASSRLS`, must own no table, and every
-  table in `RLS_TABLES` must have RLS on. Otherwise the server does not start. `TEND_DB_ISOLATION=off` is the only way to run without it, and
+- Start-up self-test (`enableIsolation`): the effective role must not be a superuser, must not have `BYPASSRLS`, must not own or be a member
+  of the role that owns a table, every table in `RLS_TABLES` must have RLS on with exactly TEND's policy (no extra permissive policy), and a
+  configured `TEND_CONTEXT_KEY` must be one the database holds. Otherwise the server does not start. `TEND_DB_ISOLATION=off` is the only way to run without it, and
   production logs a warning then.
 - The explicit cross-tenant paths run with `tend.system = on` and are all marked `asSystem` (`grep -rn asSystem src`):
   - looking up a session or an agent key before anyone is known;
@@ -32,13 +33,24 @@ How the database layer works:
   - moving a browser's push subscription to the account that subscribed it last.
   The built-in demo's maintenance uses `asOwner` (no role switch).
 
-**What the database layer does NOT stop**, each shown by a test in `src/server/rls.test.ts`:
+**Signed tenant context** (migration 20, `TEND_CONTEXT_KEY`): the server also sets a fresh nonce and a MAC,
+`sha256(key || sha256(workspace | system | nonce))`, per transaction. The policies trust `tend.workspace` and `tend.system` only when
+`tend_ctx_valid()`, a `SECURITY DEFINER` function, recomputes that MAC with a key from `tend_context_keys`, a table only the owner can read.
+Start-up refuses a key the database does not hold. With no key installed the check is off (development, older deployments). Rotation:
+`docs/operations.md`. Migration 21 rewrote the policies so the context is checked once per statement (an initplan) rather than once per row:
+on 12,000 to 20,000 events, tenant queries went from 242 to 601 ms down to 17 to 25 ms (`redteam/bench/rls-bench.mjs`).
 
-- **Owner login (the default single-URL deployment):** SQL running in the application's session can `RESET ROLE` back to the owner (RLS-5).
-- **Any login:** such SQL can also `set_config('tend.system', 'on', true)` (RLS-6). A setting is not a privilege.
-- So RLS stops the application's **own mistakes**. It does not stop **SQL injection**, which parameterised queries and the restricted role's
-  privileges address. Closing this gap needs a signed, transaction-bound context that the policies verify through a `SECURITY DEFINER` function
-  keyed by a secret the runtime role cannot read. That is not implemented.
+**What the database layer does and does NOT stop**, each shown by a test in `src/server/rls.test.ts`:
+
+- **Restricted login** (`DATABASE_MIGRATE_URL` for the owner, `DATABASE_URL` for a role that is not the owner) **with a context key**:
+  injected SQL that sets `tend.system = on` or another tenant's `tend.workspace` sees nothing, because it cannot compute the MAC
+  (RLS-9, with a negative control: without a key installed the same SQL reads everything). It can still replay the settings the server already
+  set for *its own* transaction, so it acts as the current tenant, and use what the runtime role's privileges allow there.
+- **Owner login (the default single-URL deployment):** SQL running in the application's session can `RESET ROLE` back to the owner (RLS-5),
+  which bypasses RLS and can read the key table. The signed context does not help here.
+- **No context key:** such SQL can `set_config('tend.system', 'on', true)` (RLS-6). A setting is not a privilege.
+- So in the default single-URL deployment RLS stops the application's **own mistakes**, not **SQL injection**. Against injection, use a
+  restricted login plus `TEND_CONTEXT_KEY`; parameterised queries are the first line either way.
 
 **Not covered by RLS, on purpose:**
 
@@ -49,13 +61,14 @@ How the database layer works:
 
 **Evidence** (all on real PostgreSQL 16):
 
-- `src/server/rls.test.ts` RLS-1…6:
+- `src/server/rls.test.ts` RLS-1…9:
   - self-test;
   - cross-tenant reads and writes through code with no workspace check;
   - fail closed;
   - no pooled-connection contamination over 200 interleaved requests;
   - negative control (RLS off on one table, then the leak appears and start-up refuses);
-  - the two gaps above.
+  - the gaps above;
+  - the audit hash chain under RLS (RLS-7), the stricter self-test (RLS-8), the signed context (RLS-9).
 - The e2e suites with `TEND_E2E_DATABASE_URL`.
 - `node redteam/mutation-controls.mjs --routes` with `TEND_E2E_DATABASE_URL`: with the workspace check removed from the reviews route or the
   agent-keys route, the 9,108-request tenant matrix still holds.
@@ -114,7 +127,7 @@ database has no demo. A database *owner* can always drop the triggers; keep the 
 
 ## Possible next steps for the database layer
 
-- A signed, transaction-bound tenant context (see above), so injected SQL cannot pick a tenant.
-- A `workspace_id` column on the agent-linked tables, so policies don't need the `agents` subquery (performance on large logs).
+- Default to a restricted login on Vercel/Neon (today it needs `DATABASE_MIGRATE_URL` set by hand), so the signed context protects the default deployment.
+- A `workspace_id` column on the agent-linked tables, so policies don't need the `agents` subquery.
 - Separate roles for the cross-tenant jobs instead of a setting.
 - Per-tenant advisory locks instead of one global write lock.
