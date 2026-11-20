@@ -32,6 +32,8 @@ export interface DB extends Q {
 
 /** Advisory lock keys. Lock order is always DEMO before EVENTS, so they can't deadlock. */
 const LOCK = { MIGRATE: 7310, EVENTS: 7311, DEMO: 7312 } as const;
+/** How far a signed context's issue time may be from its transaction's start (migration 22; changing it needs a new migration). */
+export const CTX_WINDOW_MS = 60_000;
 export { LOCK };
 
 /** `?` → `$1, $2, …`. Tend's SQL never contains a literal question mark. */
@@ -433,6 +435,27 @@ export const MIGRATIONS: string[] = [
    DROP POLICY tenant ON onboarding; CREATE POLICY tenant ON onboarding USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));
    DROP POLICY tenant ON push_subscriptions; CREATE POLICY tenant ON push_subscriptions USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));
    DROP POLICY tenant ON notification_prefs; CREATE POLICY tenant ON notification_prefs USING ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace()))) WITH CHECK ((SELECT tend_ctx_system()) OR user_id IN (SELECT u.id FROM users u WHERE u.workspace_id = (SELECT tend_ctx_workspace())));`,
+  // A signed context is valid only in a transaction that starts within CTX_WINDOW of when the server issued it: the nonce is
+  // "<issued at, ms>.<32 hex>" and covered by the MAC, so settings read from one transaction (SQL injected into a system transaction) cannot
+  // be replayed later. now() is the transaction's start. Within the window a replay still works; the window bounds it.
+  `CREATE OR REPLACE FUNCTION tend_ctx_valid() RETURNS BOOLEAN LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $fn$
+   DECLARE
+     k BYTEA;
+     ws TEXT := coalesce(current_setting('tend.workspace', true), '');
+     sys TEXT := coalesce(current_setting('tend.system', true), '');
+     nonce TEXT := coalesce(current_setting('tend.ctx_nonce', true), '');
+     mac TEXT := coalesce(current_setting('tend.ctx_mac', true), '');
+     key_id TEXT := coalesce(current_setting('tend.ctx_kid', true), '');
+     issued NUMERIC;
+   BEGIN
+     IF NOT EXISTS (SELECT 1 FROM public.tend_context_keys) THEN RETURN true; END IF;
+     IF nonce !~ '^[0-9]{13}[.][0-9a-f]{32}$' THEN RETURN false; END IF;
+     issued := split_part(nonce, '.', 1)::NUMERIC;
+     IF abs(issued - floor(extract(epoch FROM now()) * 1000)) > ${CTX_WINDOW_MS} THEN RETURN false; END IF;
+     SELECT secret INTO k FROM public.tend_context_keys WHERE kid = key_id;
+     IF k IS NULL THEN RETURN false; END IF;
+     RETURN mac = encode(sha256(k || sha256(convert_to(ws || '|' || sys || '|' || nonce, 'UTF8'))), 'hex');
+   END $fn$;`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -469,8 +492,8 @@ export function contextKey(): { kid: string; secret: Buffer } | undefined {
   const secret = Buffer.from(raw, "utf8");
   return { kid: createHash("sha256").update(secret).digest("hex").slice(0, 16), secret };
 }
-/** sha256(key || sha256(workspace | system | nonce)), as tend_ctx_valid() recomputes it. A fresh random nonce per transaction. */
-export function contextSignature(workspace: string, system: string, nonce = randomBytes(16).toString("hex")) {
+/** sha256(key || sha256(workspace | system | nonce)), as tend_ctx_valid() recomputes it. A fresh nonce per transaction: "<now, ms>.<random hex>". */
+export function contextSignature(workspace: string, system: string, nonce = `${Date.now()}.${randomBytes(16).toString("hex")}`) {
   const k = contextKey();
   if (!k) return undefined;
   const inner = createHash("sha256").update(`${workspace}|${system}|${nonce}`, "utf8").digest();
@@ -531,8 +554,12 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
     : t.loose ? `unexpected row-level security policies: ${t.loose}` : "";
   // A context key installed in the database means every context must be signed with one of its keys: this server's key must be one of them,
   // or every request would see nothing. Checked through the same function the policies use.
-  const signed = problem ? undefined : await db.tx((q) => q.get<{ ok: boolean; keys: boolean }>("SELECT tend_ctx_valid() AS ok, EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'tend_ctx_valid') AS keys"));
-  const keyProblem = !problem && signed && !signed.ok ? "the database holds context keys and this server's TEND_CONTEXT_KEY is not one of them (or is unset)" : "";
+  // A signed context also carries its issue time (migration 22), so the server's clock must agree with the database's.
+  const signed = problem ? undefined : await db.tx((q) => q.get<{ ok: boolean; t: string }>("SELECT tend_ctx_valid() AS ok, floor(extract(epoch FROM now()) * 1000)::text AS t"));
+  const skew = signed ? Math.abs(Date.now() - Number(signed.t)) : 0;
+  const keyProblem = problem || !signed || signed.ok ? ""
+    : config.contextKey && skew > CTX_WINDOW_MS / 2 ? `this server's clock is ${Math.round(skew / 1000)} s away from the database's, so its signed context is refused as stale; fix the clock (NTP)`
+    : "the database holds context keys and this server's TEND_CONTEXT_KEY is not one of them (or is unset)";
   if (problem || keyProblem) { db.isolation.on = false; throw new Error(`tenant isolation cannot be guaranteed: ${problem || keyProblem}. Fix the database roles (docs/database-roles.md) or set TEND_DB_ISOLATION=off explicitly.`); }
 }
 

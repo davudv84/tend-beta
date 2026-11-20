@@ -36,7 +36,9 @@ How the database layer works:
 **Signed tenant context** (migration 20, `TEND_CONTEXT_KEY`): the server also sets a fresh nonce and a MAC,
 `sha256(key || sha256(workspace | system | nonce))`, per transaction. The policies trust `tend.workspace` and `tend.system` only when
 `tend_ctx_valid()`, a `SECURITY DEFINER` function, recomputes that MAC with a key from `tend_context_keys`, a table only the owner can read.
-Start-up refuses a key the database does not hold. With no key installed the check is off (development, older deployments). Rotation:
+The nonce is `<issue time, ms>.<random>`; since migration 22 a context is valid only in a transaction that starts within 60 s of
+its issue time, so settings read out of one transaction cannot be replayed later (RLS-10; before the fix a captured system context worked
+forever). Start-up refuses a key the database does not hold, and a server clock more than 30 s away from the database's. With no key installed the check is off (development, older deployments). Rotation:
 `docs/operations.md`. Migration 21 rewrote the policies so the context is checked once per statement (an initplan) rather than once per row:
 on 12,000 to 20,000 events, tenant queries went from 242 to 601 ms down to 17 to 25 ms (`redteam/bench/rls-bench.mjs`).
 
@@ -44,8 +46,9 @@ on 12,000 to 20,000 events, tenant queries went from 242 to 601 ms down to 17 to
 
 - **Restricted login** (`DATABASE_MIGRATE_URL` for the owner, `DATABASE_URL` for a role that is not the owner) **with a context key**:
   injected SQL that sets `tend.system = on` or another tenant's `tend.workspace` sees nothing, because it cannot compute the MAC
-  (RLS-9, with a negative control: without a key installed the same SQL reads everything). It can still replay the settings the server already
-  set for *its own* transaction, so it acts as the current tenant, and use what the runtime role's privileges allow there.
+  (RLS-9, with a negative control: without a key installed the same SQL reads everything). It still acts as the current tenant of *its
+  own* transaction, with the runtime role's privileges. Settings it reads out of a transaction (a system one, if the injection is in a
+  sign-in or session lookup) can be replayed in other transactions for up to 60 s.
 - **Owner login (the default single-URL deployment):** SQL running in the application's session can `RESET ROLE` back to the owner (RLS-5),
   which bypasses RLS and can read the key table. The signed context does not help here.
 - **No context key:** such SQL can `set_config('tend.system', 'on', true)` (RLS-6). A setting is not a privilege.
@@ -68,7 +71,7 @@ on 12,000 to 20,000 events, tenant queries went from 242 to 601 ms down to 17 to
   - no pooled-connection contamination over 200 interleaved requests;
   - negative control (RLS off on one table, then the leak appears and start-up refuses);
   - the gaps above;
-  - the audit hash chain under RLS (RLS-7), the stricter self-test (RLS-8), the signed context (RLS-9).
+  - the audit hash chain under RLS (RLS-7), the stricter self-test (RLS-8), the signed context (RLS-9), its freshness window (RLS-10).
 - The e2e suites with `TEND_E2E_DATABASE_URL`.
 - `node redteam/mutation-controls.mjs --routes` with `TEND_E2E_DATABASE_URL`: with the workspace check removed from the reviews route or the
   agent-keys route, the 9,108-request tenant matrix still holds.

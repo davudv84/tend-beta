@@ -2,7 +2,7 @@
 // Negative controls: a security test is only evidence if it FAILS when the check it claims to protect is removed. Each mutation below deletes or
 // weakens one real check in the source, runs the tests that should notice, and requires them to fail; the file is restored afterwards (and the
 // restored tree must be byte-identical to git). A mutation that the tests do NOT notice is reported as UNDETECTED and fails the run.
-//   node redteam/mutation-controls.mjs            unit-level mutations (fast, embedded database)
+//   node redteam/mutation-controls.mjs            unit-level mutations (fast, embedded database; with TEND_TEST_DATABASE_URL also the PostgreSQL ones)
 //   node redteam/mutation-controls.mjs --routes   route mutations: production build + tenant matrix (about 1 minute each)
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -31,6 +31,10 @@ const unit = [
     { find: "WHERE id = ? AND status = 'pending' AND expires_at > ?\",\n        status, ms(now)", to: "WHERE id = ? AND expires_at > ?\",\n        status, ms(now)" }], tests: [U] },
   { id: "M-14", why: "agent-written free text keeps invisible characters", file: "src/lib/clean.ts", find: "[0x00, 0x08], [0x0b, 0x0c], [0x0e, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x34f, 0x34f], [0x61c, 0x61c], [0x115f, 0x1160], [0x180e, 0x180e],\n  [0x200b, 0x200b], [0x200e, 0x200f]", to: "[0x00, 0x08], [0x0b, 0x0c], [0x0e, 0x1f], [0x7f, 0x9f], [0x200e, 0x200f]", tests: ["src/server/hardening.test.ts"] },
   { id: "M-15", why: "the production default becomes public again", file: "src/server/config.ts", find: '    return process.env.NODE_ENV === "production" ? false : !this.adminToken;', to: "    return !this.adminToken;", tests: ["src/server/config-hardening.test.ts"] },
+  // needs real PostgreSQL (TEND_TEST_DATABASE_URL); without it the row-level security tests are skipped, so the mutation is not run
+  ...(process.env.TEND_TEST_DATABASE_URL ? [
+    { id: "M-16", why: "a signed tenant context no longer expires (captured settings can be replayed in any later transaction)", file: "src/server/db.ts", find: "     IF abs(issued - floor(extract(epoch FROM now()) * 1000)) > ${CTX_WINDOW_MS} THEN RETURN false; END IF;\n", to: "", tests: ["src/server/rls.test.ts"] },
+  ] : []),
 ];
 const routes = [
   { id: "M-R1", why: "reviews route: the workspace check on the id is removed (any operator can approve any tenant's request)", file: "src/app/api/v1/reviews/[id]/route.ts", find: "  await reviewInWorkspace(db, workspace, id);\n", to: "" },

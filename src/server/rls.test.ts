@@ -8,7 +8,7 @@ import pg from "pg";
 import { decide, registerAgent, agentInWorkspace, setPolicy, agentByKey, ingestEvents } from "./repo.ts";
 import { requestAuthorization, spendApproved } from "./authz.ts";
 import { asSystem, bindWorkspace, withRequestContext } from "./db-context.ts";
-import { enableIsolation, migrate, postgres, RLS_TABLES, runtimeGrantsSql, type DB } from "./db.ts";
+import { contextSignature, enableIsolation, migrate, postgres, RLS_TABLES, runtimeGrantsSql, type DB } from "./db.ts";
 import { HttpError } from "./http.ts";
 
 const URL_ = process.env.TEND_TEST_DATABASE_URL ?? "";
@@ -249,6 +249,48 @@ test("RLS-9 signed tenant context (TEND_CONTEXT_KEY) with a restricted login: SQ
     delete process.env.TEND_CONTEXT_KEY;
     await enableIsolation(rt, "unused_role_name");
     assert.equal(await count("SELECT set_config('tend.system', 'on', true)"), 2, "unsigned: raising the setting reads every tenant (the RLS-6 gap)");
+    await owner.close();
+  } finally {
+    if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
+    await rt?.close().catch(() => {}); await w.close();
+    await admin.query(`DROP OWNED BY ${login}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${login}`).catch(() => {}); await admin.end();
+  }
+});
+
+test("RLS-10 a signed context captured from one transaction cannot be replayed after its freshness window (nonce carries the issue time)", { skip }, async () => {
+  const saved = process.env.TEND_CONTEXT_KEY;
+  process.env.TEND_CONTEXT_KEY = randomBytes(32).toString("base64url");
+  const w = await world();
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const login = `tend_rep_${randomBytes(4).toString("hex")}`;
+  let rt: DB | undefined;
+  try {
+    const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
+    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
+    const ownerUrl = new URL(URL_); ownerUrl.pathname = `/${dbName}`;
+    const owner = await postgres(ownerUrl.toString());
+    await owner.exec(runtimeGrantsSql(login));
+    const u = new URL(URL_); u.pathname = `/${dbName}`; u.username = login;
+    rt = await postgres(u.toString());
+    await enableIsolation(rt, "unused_role_name");
+    // SQL injected into a system transaction (e.g. the session lookup) can read the signed settings and keep them somewhere
+    const cap = (await withRequestContext(() => asSystem(() => rt!.tx((q) => q.get<{ nonce: string; kid: string; mac: string }>(
+      "SELECT current_setting('tend.ctx_nonce', true) AS nonce, current_setting('tend.ctx_kid', true) AS kid, current_setting('tend.ctx_mac', true) AS mac")))))!;
+    const replay = (c: { nonce: string; kid: string; mac: string }) => `SELECT set_config('tend.workspace', '', true), set_config('tend.system', 'on', true), set_config('tend.ctx_nonce', '${c.nonce}', true), set_config('tend.ctx_kid', '${c.kid}', true), set_config('tend.ctx_mac', '${c.mac}', true)`;
+    const count = (sql: string) => asTenant("wa", () => rt!.tx(async (q) => { if (sql) await q.exec(sql); return (await q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents"))!.n; }));
+    assert.match(cap.nonce, /^\d{13}\.[0-9a-f]{32}$/, "the nonce carries the time it was issued");
+    // residual, stated in docs/database-roles.md: replayed within the window, a captured system context still works
+    assert.equal(await count(replay(cap)), 2, "fresh capture replayed at once: still valid (the window is the bound)");
+    // what a capture from 10 minutes ago looks like (signed with the real key, issue time in the past) and one claiming to be from the future
+    for (const offset of [-10 * 60_000, -2 * 60_000, 10 * 60_000]) {
+      const nonce = `${Date.now() + offset}.${randomBytes(16).toString("hex")}`;
+      const old = contextSignature("", "on", nonce)!;
+      assert.equal(await count(replay(old)), 0, `a context issued ${offset / 1000} s from now is refused`);
+    }
+    const altered = { ...cap, nonce: cap.nonce.replace(/^\d+/, String(Date.now())) };
+    assert.equal(await count(replay(altered)), 0, "rewriting the issue time breaks the MAC");
     await owner.close();
   } finally {
     if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
