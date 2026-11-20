@@ -93,6 +93,18 @@ jobs:
         env:
           TEND_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: node --no-warnings --test src/server/postgres.test.ts src/server/postgres-verify.test.ts src/server/rls.test.ts
+      - name: Negative controls for the database layer (context freshness, search_path pinning must be caught when removed)
+        env:
+          TEND_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: node redteam/mutation-controls.mjs --only=M-16,M-17
+      - name: Operations drills (backup and restore with audit-checkpoint verification, context-key rotation)
+        env:
+          DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          sudo apt-get install -y --no-install-recommends postgresql-client-16 >/dev/null
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          node --no-warnings scripts/ops/backup-restore-drill.mjs
+          node --no-warnings scripts/ops/context-key-rotation-drill.mjs
       - name: Production build
         run: npm run build
       - name: End-to-end suites and tenant matrix on PostgreSQL with row-level security on (production default)

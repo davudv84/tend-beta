@@ -15,7 +15,7 @@ How the database layer works:
 - The tenant comes from **authentication on the server** (`src/server/db-context.ts`): `requireOperator` binds the session's workspace,
   `authAgent` the key's agent's workspace. A request starts with no tenant, which shows nothing tenant-scoped (fail closed). Binding a second,
   different workspace in one request is refused.
-- Every transaction starts with `SET LOCAL ROLE <runtime role>` and `set_config('tend.workspace', …, true)`: transaction-scoped, so nothing
+- Every transaction starts with `SET LOCAL search_path = public, pg_temp`, `SET LOCAL ROLE <runtime role>` and `set_config('tend.workspace', …, true)`: transaction-scoped, so nothing
   survives on a pooled connection (safe with PgBouncer transaction pooling, which Neon uses). A statement outside a transaction becomes a
   transaction of its own.
 - The runtime role: when the application logs in as the schema owner (one `DATABASE_URL`, Vercel's Neon integration), a `NOLOGIN` role
@@ -49,6 +49,9 @@ on 12,000 to 20,000 events, tenant queries went from 242 to 601 ms down to 17 to
   (RLS-9, with a negative control: without a key installed the same SQL reads everything). It still acts as the current tenant of *its
   own* transaction, with the runtime role's privileges. Settings it reads out of a transaction (a system one, if the injection is in a
   sign-in or session lookup) can be replayed in other transactions for up to 60 s.
+  Every transaction also pins `search_path` to `public, pg_temp`: otherwise a temporary table such SQL leaves on a pooled connection
+  (any role may create one) is searched before the real table in later requests. Before the fix, a temp `agents` table made a tenant's own
+  agent key authenticate into another workspace (RLS-11).
 - **Owner login (the default single-URL deployment):** SQL running in the application's session can `RESET ROLE` back to the owner (RLS-5),
   which bypasses RLS and can read the key table. The signed context does not help here.
 - **No context key:** such SQL can `set_config('tend.system', 'on', true)` (RLS-6). A setting is not a privilege.
@@ -71,7 +74,7 @@ on 12,000 to 20,000 events, tenant queries went from 242 to 601 ms down to 17 to
   - no pooled-connection contamination over 200 interleaved requests;
   - negative control (RLS off on one table, then the leak appears and start-up refuses);
   - the gaps above;
-  - the audit hash chain under RLS (RLS-7), the stricter self-test (RLS-8), the signed context (RLS-9), its freshness window (RLS-10).
+  - the audit hash chain under RLS (RLS-7), the stricter self-test (RLS-8), the signed context (RLS-9), its freshness window (RLS-10), temp-table shadowing (RLS-11).
 - The e2e suites with `TEND_E2E_DATABASE_URL`.
 - `node redteam/mutation-controls.mjs --routes` with `TEND_E2E_DATABASE_URL`: with the workspace check removed from the reviews route or the
   agent-keys route, the 9,108-request tenant matrix still holds.
