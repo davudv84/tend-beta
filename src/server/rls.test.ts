@@ -410,3 +410,53 @@ test("RLS-12 production start-up rules with distinct roles (Neon-style owner): o
     await admin.end();
   }
 });
+
+test("RLS-13 session state left by injected SQL dies with its transaction (advisory locks, read-only default, lock timeout); the self-test refuses runtime roles that can rewrite the logs", { skip }, async () => {
+  const saved = process.env.TEND_CONTEXT_KEY;
+  process.env.TEND_CONTEXT_KEY = randomBytes(32).toString("base64url");
+  const w = await world();
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const login = `tend_lk_${randomBytes(4).toString("hex")}`;
+  let rt: DB | undefined;
+  try {
+    const dbName = (await w.db.get<{ d: string }>("SELECT current_database() AS d"))!.d;
+    await admin.query(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${login}`);
+    const ownerUrl = new URL(URL_); ownerUrl.pathname = `/${dbName}`;
+    const owner = await postgres(ownerUrl.toString());
+    await owner.exec(runtimeGrantsSql(login));
+    const u = new URL(URL_); u.pathname = `/${dbName}`; u.username = login;
+    rt = await postgres(u.toString());
+    await enableIsolation(rt, "unused_role_name");
+    // injected into tenant A's requests, on every pooled connection: the event-order lock and the migration lock held at SESSION level,
+    // every later transaction read-only by default, and a 1 ms lock timeout
+    for (let i = 0; i < 8; i++) await asTenant("wa", () => rt!.tx((q) => q.exec("SELECT pg_advisory_lock(7311), pg_advisory_lock(7310); SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY; SET lock_timeout = 1")));
+    const held = await admin.query(`SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid WHERE l.locktype = 'advisory' AND a.usename = '${login}'`);
+    assert.equal(held.rows[0].n, 0, "no advisory lock survives the transaction that took it");
+    // tenant B's writes go through at once, on whichever connection
+    const t0 = Date.now();
+    const b = (await withRequestContext(() => asSystem(() => agentByKey(rt!, w.B.apiKey))))!;
+    await Promise.all(Array.from({ length: 8 }, (_, i) => withRequestContext(async () => { bindWorkspace("wb"); await ingestEvents(rt!, b, [{ type: "task.started", data: { taskId: `t${i}`, title: "x" } }]); })));
+    assert.ok(Date.now() - t0 < 3_000, `writes were not stalled (${Date.now() - t0} ms)`);
+    const settings = await asTenant("wa", () => rt!.tx((q) => q.get<{ ro: string; lt: string }>("SELECT current_setting('transaction_read_only') AS ro, current_setting('lock_timeout') AS lt")));
+    assert.deepEqual(settings, { ro: "off", lt: "0" }, "session defaults are back to normal for the next request");
+    // the self-test: a runtime role that may rewrite the log (here a stray grant; pg_write_all_data works the same) is refused
+    await owner.exec(`GRANT UPDATE ON events TO ${login}`);
+    rt.isolation!.on = false;
+    await assert.rejects(enableIsolation(rt, "unused_role_name"), /may update, delete or truncate the audit log tables/);
+    await owner.exec(`REVOKE UPDATE ON events FROM ${login}`);
+    await admin.query(`GRANT pg_write_all_data TO ${login}`);
+    await assert.rejects(enableIsolation(rt, "unused_role_name"), /may update, delete or truncate the audit log tables/);
+    await admin.query(`REVOKE pg_write_all_data FROM ${login}`);
+    await admin.query(`GRANT pg_read_server_files TO ${login}`);
+    await assert.rejects(enableIsolation(rt, "unused_role_name"), /read or write files as the database server/);
+    await admin.query(`REVOKE pg_read_server_files FROM ${login}`);
+    await enableIsolation(rt, "unused_role_name");
+    await owner.close();
+  } finally {
+    if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
+    await rt?.close().catch(() => {}); await w.close();
+    await admin.query(`DROP OWNED BY ${login}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${login}`).catch(() => {}); await admin.end();
+  }
+});

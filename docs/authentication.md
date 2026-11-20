@@ -20,15 +20,18 @@ reset, turning on two-step sign-in (other sessions), account removal or disablin
 | Role | May |
 | --- | --- |
 | viewer | read the workspace; own notification settings, own sessions, two-step setup |
-| operator | + decide approvals, pause/resume agents, ask for check-ins, run protection checks |
+| operator | + decide approvals, pause/resume agents, ask for check-ins, run and read protection checks, mark the workspace's notifications read, send test notifications |
 | admin | + agents, keys, rules, central policies; invite and manage members up to admin |
 | owner | + make and manage owners |
 
 Rules: nobody assigns a role above their own, changes a member above their own role, or changes their own membership; a workspace keeps at least
-one owner; the actor's role is read again inside the change's transaction (a demotion that just happened applies). Members are invited by e-mail
-(`POST /api/v1/members`, a one-time link valid 7 days that sets the password and confirms the address); an address that already has an account
-cannot be invited (accounts never move between workspaces). Removal disables the account and ends its sessions; agents and keys stay with the
-workspace. Every change is in `auth_events` (`member.invited`, `member.role_changed`, `member.removed`) with the acting session.
+one owner; the actor's role is read again inside the change's transaction (a demotion that just happened applies). Invitations
+(`POST /api/v1/members`) are records of their own: a one-time link valid 7 days (`/account/accept`) creates the account in the workspace, with
+the address confirmed; until then no account exists, so an invitation cannot claim an address or block it once withdrawn. The answer is the same
+whether or not the address already has an account (no enumeration), and an existing account can never accept (accounts never move between
+workspaces). Removal disables the account and ends its sessions; agents and keys stay with the workspace. Every change is in `auth_events`
+(`member.invited` and `member.invite_revoked` against the inviter, the address only as a hash; `member.joined`, `member.role_changed`,
+`member.removed`) with the acting session.
 
 Evidence: `src/server/rbac.test.ts` RBAC-1…6; `redteam/live/rbac-matrix.mjs` (34 checks over HTTP on a production build, on PostgreSQL with RLS
 and a restricted login, including two owners demoting each other concurrently); mutations M-19, M-20.
@@ -40,14 +43,18 @@ separated by the application's `user_id` filters; row-level security separates w
 
 TOTP (RFC 6238) through **otplib 13.6.0** (`src/server/mfa.ts`); TEND implements no part of the algorithm.
 
-- Setup → enable with a first code → 10 one-time recovery codes (stored as SHA-256 hashes). Off: password + code or recovery code.
+- Setup and enable need the password again (a stolen session alone cannot put an attacker's authenticator on the account), then a first code →
+  10 one-time recovery codes (stored as SHA-256 hashes). Off: password + code or recovery code. The account is mailed about every change.
+- After 10 wrong codes in a day (a fixed daily window: at worst about 18 guesses across midnight) the second factor is locked until the owner
+  resets the password by e-mail. The platform admin can remove a lost second factor (`/api/admin/users/<id>` `reset_mfa`), on record, and
+  the account is mailed.
 - The secret is sealed with AES-256-GCM under `TEND_MFA_KEY` (32+ characters); production refuses setup without it. A tampered row never signs
   anyone in.
 - At sign-in the code is asked for only after the right password, and checked before the failed-attempt budget is refunded, so guessing codes
   is limited like guessing passwords (10 failures per address per minute, 20 per account per hour).
 - A code works once (its time step is spent atomically); ±30 s clock tolerance.
 
-Evidence: `src/server/mfa.test.ts` MFA-1…5 (the library against RFC 6238's published vectors; codes from an independent reference written in
+Evidence: `src/server/mfa.test.ts` MFA-1…6 (the library against RFC 6238's published vectors; codes from an independent reference written in
 the test), `scripts/mfa-e2e.mjs` (API + real Chromium sign-in on a production build on PostgreSQL), mutations M-21, M-22.
 **Not tested:** real authenticator apps on phones (the format is the standard `otpauth://` one). The settings card's setup flow was not driven
 in a browser (the API it calls was).

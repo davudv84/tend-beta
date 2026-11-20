@@ -69,8 +69,8 @@ export interface Session { id: string; userId: string | null; workspace: string;
 
 export type AuthEventType = "signin.succeeded" | "signin.failed" | "signin.blocked" | "session.signed_out" | "session.revoked_all" | "session.rejected" | "log.suppressed" | "agentkey.rejected"
   | "account.registered" | "account.verified" | "account.approved" | "account.disabled" | "account.reset_requested" | "account.password_reset"
-  | "member.invited" | "member.role_changed" | "member.removed" | "mfa.enabled" | "mfa.disabled";
-const NEVER_DROPPED = new Set<AuthEventType>(["mfa.enabled", "mfa.disabled", "member.invited", "member.role_changed", "member.removed", "signin.succeeded", "session.signed_out", "session.revoked_all", "log.suppressed", "account.verified", "account.approved", "account.disabled", "account.password_reset"]);
+  | "member.invited" | "member.role_changed" | "member.removed" | "member.joined" | "member.invite_revoked" | "mfa.enabled" | "mfa.disabled";
+const NEVER_DROPPED = new Set<AuthEventType>(["member.joined", "member.invite_revoked", "mfa.enabled", "mfa.disabled", "member.invited", "member.role_changed", "member.removed", "signin.succeeded", "session.signed_out", "session.revoked_all", "log.suppressed", "account.verified", "account.approved", "account.disabled", "account.password_reset"]);
 
 /**
  * Appends to the authentication log. Successes and sign-outs are always written. Failures, blocks and rejected sessions are the

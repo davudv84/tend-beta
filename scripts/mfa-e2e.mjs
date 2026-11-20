@@ -19,7 +19,7 @@ const totp = (secret, t = Date.now() / 1000) => { const m = Buffer.alloc(8); m.w
 const api = async (m, p, { body, cookie } = {}) => { const r = await fetch(server.url + p, { method: m, redirect: "manual", headers: { ...(body && { "content-type": "application/json" }), ...(cookie && { cookie }) }, body: body && JSON.stringify(body) }); const text = await r.text(); let j = null; try { j = JSON.parse(text); } catch {} return { status: r.status, body: j, cookie: r.headers.get("set-cookie")?.split(";")[0] }; };
 const mail = async (to) => { for (const end = Date.now() + 20_000; Date.now() < end; await new Promise((r) => setTimeout(r, 150))) { try { const f = readdirSync(path.join(dataDir, "outbox")).filter((x) => x.includes(to)).sort().at(-1); if (f) return readFileSync(path.join(dataDir, "outbox", f), "utf8"); } catch {} } return ""; };
 let passed = 0, failed = 0;
-const check = (ok, text, ev = "") => { ok ? passed++ : failed++; console.log(`${ok ? "ok  " : "FAIL"} ${text}${ok ? "" : `  (${ev})`}`); };
+const check = (ok, text, ev = "") => { if (ok) passed++; else failed++; console.log(`${ok ? "ok  " : "FAIL"} ${text}${ok ? "" : `  (${ev})`}`); };
 const PW = "correct horse battery staple 42";
 let browser;
 // Playwright is not a project dependency: the one installed on this machine (require resolves NODE_PATH; import does not), else skip the browser part.
@@ -32,10 +32,11 @@ try {
   const u = (await api("GET", "/api/admin/users", { cookie: admin })).body.users.find((x) => x.email === email);
   await api("POST", `/api/admin/users/${u.id}`, { cookie: admin, body: { action: "approve" } });
   const cookie = (await api("POST", "/api/account/sign-in", { body: { email, password: PW } })).cookie;
-  const setup = await api("POST", "/api/account/mfa", { cookie, body: { action: "setup" } });
+  check((await api("POST", "/api/account/mfa", { cookie, body: { action: "setup" } })).status === 401, "setup without the password is refused (a stolen session cannot enrol)");
+  const setup = await api("POST", "/api/account/mfa", { cookie, body: { action: "setup", password: PW } });
   check(setup.status === 200 && /^[A-Z2-7]{32}$/.test(setup.body?.secret ?? ""), "setup returns a Base32 secret and an otpauth link", setup.status);
-  check((await api("POST", "/api/account/mfa", { cookie, body: { action: "enable", code: "000000" } })).status === 422, "a wrong first code does not turn it on");
-  const on = await api("POST", "/api/account/mfa", { cookie, body: { action: "enable", code: totp(setup.body.secret) } });
+  check((await api("POST", "/api/account/mfa", { cookie, body: { action: "enable", password: PW, code: "000000" } })).status === 422, "a wrong first code does not turn it on");
+  const on = await api("POST", "/api/account/mfa", { cookie, body: { action: "enable", password: PW, code: totp(setup.body.secret) } });
   check(on.status === 200 && on.body?.recoveryCodes?.length === 10, "the right code turns it on and returns 10 recovery codes", on.status);
   check((await api("POST", "/api/account/sign-in", { body: { email, password: PW } })).body?.error === "mfa_required", "API sign-in with the password alone: mfa_required");
   check((await api("POST", "/api/account/sign-in", { body: { email, password: "wrong wrong wrong 1" } })).body?.error === "invalid_credentials", "a wrong password does not reveal that a code is needed");

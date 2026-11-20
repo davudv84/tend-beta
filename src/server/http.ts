@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
 import { currentSession, type Session } from "./session.ts";
-import { bindSystem, bindWorkspace, dbContext, withRequestContext } from "./db-context.ts";
+import { bindSystem, bindWorkspace, dbContext, setActor, withRequestContext } from "./db-context.ts";
 import { securityEvent } from "./security-events.ts";
 import { config } from "./config.ts";
 import type { Q } from "./db.ts";
@@ -67,8 +67,10 @@ export function route<C>(fn: (req: Request, ctx: C) => Promise<Response> | Respo
       const path = new URL(req.url).pathname;
       if (e instanceof HttpError) {
         // Refused operator requests: missing rights, or another tenant's id (answered as "not found"). Visitors without a session are not counted.
-        if ((e.status === 403 && e.code !== "operator_required" && e.code !== "read_only_account") || (e.status === 404 && e.code.endsWith("_not_found") && path.startsWith("/api/v1/")))
-          securityEvent("authz.denied", { code: e.code, route: path.replace(/\/[a-z]+_[A-Za-z0-9]+/g, "/:id"), client: clientIp(req), session: dbContext()?.workspace ? "bound" : undefined, workspace: dbContext()?.workspace });
+        // Counted per authenticated caller (session or agent): refusals before authentication (no session, a wrong Origin) are not.
+        const actor = dbContext()?.actor;
+        if (actor && ((e.status === 403 && e.code !== "read_only_account") || (e.status === 404 && e.code.endsWith("_not_found") && path.startsWith("/api/v1/"))))
+          securityEvent("authz.denied", { code: e.code, route: path.replace(/\/[a-z]+_[A-Za-z0-9]+/g, "/:id"), session: actor, client: clientIp(req), workspace: dbContext()?.workspace });
         return json({ error: e.code, message: e.message, ...e.extra }, e.status, e.status === 429 ? { "retry-after": String(e.extra?.retryAfter ?? 10) } : {});
       }
       if (/^\/api\/v1\/(authoriz|gateway|agent\/)/.test(path)) securityEvent("enforcement.error", { route: path.replace(/\/[a-z]+_[A-Za-z0-9]+/g, "/:id") });
@@ -175,6 +177,7 @@ export async function requireOperator(req: Request, db: Q, need: Need): Promise<
   requireSameSite(req);
   const s = await currentSession(db, req);
   if (!s) throw new HttpError(403, "operator_required", "Sign in to make changes. Visitors have read-only access.");
+  setActor(s.id);
   // Every operator route goes through here, so this one check makes a read-only account read-only everywhere: it may look, never change.
   if (s.readOnly && req.method !== "GET" && req.method !== "HEAD") throw new HttpError(403, "read_only_account", "This is a read-only demo account with sample data. Nothing here can be changed.");
   authorize(s.role, need); // the workspace role, from the server-side account (src/server/rbac.ts)

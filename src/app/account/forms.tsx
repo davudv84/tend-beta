@@ -341,9 +341,10 @@ export function Forgot() {
   );
 }
 
-export function Reset() {
+export function Reset({ invitation = false }: { invitation?: boolean }) {
   const t = useT();
   const a = t.account;
+  const copy = invitation ? a.accept : a.reset;
   const token = useLinkToken();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -353,21 +354,21 @@ export function Reset() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await call("/api/account/reset", { token, password });
+    const r = await call(invitation ? "/api/account/invitation" : "/api/account/reset", { token, password });
     setBusy(false);
     if (!r.ok) return setError(errorText(t, r));
     forgetLink();
     setDone(true);
   };
-  if (done) return <Done icon="check" title={a.reset.doneTitle} body={a.reset.done}><Foot><A href="/account/sign-in">{a.back}</A></Foot></Done>;
-  if (!token) return <><Title body={a.verify.missing}>{a.reset.title}</Title><Foot><A href="/account/forgot">{a.forgot.submit}</A></Foot></>;
+  if (done) return <Done icon="check" title={copy.doneTitle} body={copy.done}><Foot><A href="/account/sign-in">{a.back}</A></Foot></Done>;
+  if (!token) return <><Title body={a.verify.missing}>{copy.title}</Title>{!invitation && <Foot><A href="/account/forgot">{a.forgot.submit}</A></Foot>}</>;
   return (
     <>
-      <Title body={a.reset.body}>{a.reset.title}</Title>
+      <Title body={copy.body}>{copy.title}</Title>
       <form onSubmit={submit} className="grid gap-4">
         <PasswordField label={a.newPassword} hint={a.passwordHint(MIN)} autoComplete="new-password" value={password} onChange={setPassword} />
         {error && <Alert>{error}</Alert>}
-        <Submit busy={busy} label={a.reset.submit} busyLabel={a.reset.busy} disabled={password.length < MIN} />
+        <Submit busy={busy} label={copy.submit} busyLabel={copy.busy} disabled={password.length < MIN} />
       </form>
       <Foot><A href="/account/sign-in">{a.back}</A></Foot>
     </>

@@ -13,7 +13,8 @@
 // parameterised queries and the restricted role's privileges (docs/database-roles.md), not by this.
 import { AsyncLocalStorage } from "node:async_hooks";
 
-export interface DbContext { workspace?: string; system?: boolean; owner?: boolean }
+/** `actor`: who made the request (a session id or `agent:<id>`), for monitoring only; it grants nothing. */
+export interface DbContext { workspace?: string; system?: boolean; owner?: boolean; actor?: string }
 // One store per process, shared by every bundle: Next.js builds server pages and route handlers into separate module graphs, while the database
 // handle is one per process (globalThis.__tendDb). A per-module store would let a page set a context the driver never sees.
 const g = globalThis as { __tendDbContext?: AsyncLocalStorage<DbContext> };
@@ -21,6 +22,8 @@ const als = (g.__tendDbContext ??= new AsyncLocalStorage<DbContext>());
 const WORKSPACE = /^[A-Za-z0-9_.:-]{1,64}$/;
 
 export const dbContext = (): DbContext | undefined => als.getStore();
+/** Records who the authenticated caller is, for security monitoring (security-events.ts). It grants nothing. */
+export function setActor(actor: string) { const c = als.getStore(); if (c && !c.actor) c.actor = actor; }
 
 /** A fresh, unauthenticated context for one request (route handlers and server pages). Mutated in place once the caller is authenticated. */
 export const withRequestContext = <T>(fn: () => T): T => als.run({}, fn);

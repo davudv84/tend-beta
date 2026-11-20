@@ -19,9 +19,9 @@ interface Rule { rule: string; kinds: string[]; windowSeconds: number; threshold
 export const RULES: Rule[] = [
   { rule: "auth_failures", kinds: ["signin.failed", "signin.blocked"], windowSeconds: 300, threshold: 25, severity: "high", summary: (n) => `${n} failed or blocked sign-ins in 5 minutes on one server instance` },
   { rule: "auth_failures_account", kinds: ["signin.failed"], windowSeconds: 900, threshold: 10, severity: "medium", key: (f) => String(f.account ?? ""), summary: (n) => `${n} failed sign-ins for one account in 15 minutes` },
-  { rule: "mfa_failures", kinds: ["mfa.failed"], windowSeconds: 900, threshold: 5, severity: "high", key: (f) => String(f.account ?? ""), summary: (n) => `${n} wrong second-factor codes after a correct password for one account in 15 minutes (the password may be known)` },
+  { rule: "mfa_failures", kinds: ["mfa.failed"], windowSeconds: 900, threshold: 3, severity: "high", key: (f) => String(f.account ?? ""), summary: (n) => `${n} wrong second-factor codes after a correct password for one account in 15 minutes (the password may be known)` },
   { rule: "suspicious_api_keys", kinds: ["agentkey.rejected"], windowSeconds: 300, threshold: 50, severity: "medium", summary: (n) => `${n} requests with unknown or revoked agent keys in 5 minutes` },
-  { rule: "repeated_denials", kinds: ["authz.denied"], windowSeconds: 300, threshold: 30, severity: "medium", key: (f) => String(f.session ?? f.client ?? ""), summary: (n) => `${n} refused operator requests from one session or address in 5 minutes (probing for other tenants' ids or for rights it lacks)` },
+  { rule: "repeated_denials", kinds: ["authz.denied"], windowSeconds: 300, threshold: 30, severity: "medium", key: (f) => String(f.session ?? ""), summary: (n) => `${n} refused requests from one session or agent in 5 minutes (probing for other tenants' ids or for rights it lacks)` },
   { rule: "tenant_isolation_failure", kinds: ["isolation.failed"], windowSeconds: 3600, threshold: 1, severity: "critical", summary: () => "Database tenant isolation could not be guaranteed at start-up; the server refused to start" },
   { rule: "audit_integrity", kinds: ["audit.failed"], windowSeconds: 3600, threshold: 1, severity: "critical", summary: () => "The audit log hash chain did not verify" },
   { rule: "enforcement_error", kinds: ["enforcement.error"], windowSeconds: 300, threshold: 3, severity: "high", summary: (n) => `${n} server errors on authorization or gateway routes in 5 minutes (agents fail closed: their actions are refused)` },
@@ -84,7 +84,9 @@ export function securityEvent(kind: string, fields: Fields = {}, now = Date.now(
       raised.push(alert);
       void (state.deliver ?? deliverAlert)(alert).catch(() => {});
     }
-    if (state.hits.size > 10_000) state.hits.clear(); // bounded memory under a flood of distinct keys
+    // Bounded memory under a flood of distinct keys: the oldest-created counters go first (a Map keeps insertion order), never all of them,
+    // so a flood cannot wipe the counters of an attack in progress.
+    if (state.hits.size > 10_000) for (const k of [...state.hits.keys()].slice(0, 2_000)) { state.hits.delete(k); state.lastAlert.delete(k); }
   } catch { /* monitoring must never break a request */ }
   return raised;
 }

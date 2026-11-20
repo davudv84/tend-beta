@@ -19,8 +19,8 @@ Nothing else: TEND's start-up (as the owner) migrates, grants `tend_app` exactly
 
 | Variable | Value |
 | --- | --- |
-| `DATABASE_URL` | `postgres://tend_app:…@<pooled host>/neondb?sslmode=require` (the **pooled** endpoint) |
-| `DATABASE_MIGRATE_URL` | `postgres://neondb_owner:…@<direct host>/neondb?sslmode=require` (the **direct** endpoint) |
+| `DATABASE_URL` | the **pooled** endpoint's URL, user `tend_app` with its password, `?sslmode=require` |
+| `DATABASE_MIGRATE_URL` | the **direct** (unpooled) endpoint's URL, user `neondb_owner`, `?sslmode=require` |
 | `TEND_CONTEXT_KEY` | `openssl rand -base64 48` |
 | `TEND_MFA_KEY` | `openssl rand -base64 48` (a different value) |
 | `TEND_ADMIN_TOKEN` | `openssl rand -hex 32` (or `TEND_ADMIN=0`) |

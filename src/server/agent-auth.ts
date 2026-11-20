@@ -3,7 +3,7 @@ import { bearer } from "./auth.ts";
 import type { DB } from "./db.ts";
 import { clientIp, HttpError, limit } from "./http.ts";
 import { agentByKey, workspaceOf } from "./repo.ts";
-import { asSystem, bindWorkspace } from "./db-context.ts";
+import { asSystem, setActor, bindWorkspace } from "./db-context.ts";
 import { audit } from "./session.ts";
 import { spend } from "./limits.ts";
 
@@ -33,7 +33,7 @@ export async function authAgent(db: DB, req: Request) {
   // Every write takes one database-wide lock, so a workspace with many agents must not be able to starve the others: one budget for all its agents.
   const ws = workspaceOf(agent);
   if (!ws) throw new HttpError(401, "invalid_key", "Unknown or revoked API key.");
-  bindWorkspace(ws); // the agent's own workspace, from the key's row, never from the request
+  setActor(`agent:${agent.id}`); bindWorkspace(ws); // the agent's own workspace, from the key's row, never from the request
   await limit(db, `workspace:${ws}`, config.workspaceRequestsPerMinute);
   return agent;
 }

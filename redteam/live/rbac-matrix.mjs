@@ -34,10 +34,13 @@ async function founder(email) {
 }
 async function invite(by, email, role) {
   const r = await api("POST", "/api/v1/members", { cookie: by, body: { email, role } });
-  if (r.status !== 201) throw new Error(`invite ${role}: ${r.text}`);
+  if (r.status !== 202) throw new Error(`invite ${role}: ${r.text}`);
   const t = tokenIn(await mail(email));
-  await api("POST", "/api/account/reset", { body: { token: t, password: PW } });
-  return { id: r.body.member.id, cookie: (await api("POST", "/api/account/sign-in", { body: { email, password: PW } })).cookie };
+  const a = await api("POST", "/api/account/invitation", { body: { token: t, password: PW } });
+  if (a.status !== 200) throw new Error(`accept ${role}: ${a.text}`);
+  const cookie = (await api("POST", "/api/account/sign-in", { body: { email, password: PW } })).cookie;
+  const id = (await api("GET", "/api/v1/members", { cookie })).body.members.find((m) => m.email === email).id;
+  return { id, cookie };
 }
 
 try {
@@ -78,6 +81,11 @@ try {
   // members: escalation
   H((await api("POST", "/api/v1/members", { cookie: op.cookie, body: { email: `x1-${tag}@example.com`, role: "viewer" } })).status === 403, "RB-09", "operator cannot invite");
   H((await api("POST", "/api/v1/members", { cookie: admin.cookie, body: { email: `x2-${tag}@example.com`, role: "owner" } })).status === 403, "RB-10", "admin cannot invite an owner");
+  const exists = await api("POST", "/api/v1/members", { cookie: owner, body: { email: `other-${tag}@example.com`, role: "viewer" } });
+  const fresh = await api("POST", "/api/v1/members", { cookie: owner, body: { email: `nobody-${tag}@example.com`, role: "viewer" } });
+  H(exists.status === 202 && fresh.status === 202 && exists.body?.invitation?.status === fresh.body?.invitation?.status, "RB-19", "inviting an address that has an account answers exactly like a new one (no enumeration)", `${exists.status}/${fresh.status}`);
+  const t2 = tokenIn(await mail(`other-${tag}@example.com`));
+  H((await api("POST", "/api/account/invitation", { body: { token: t2, password: PW } })).status === 400, "RB-20", "an existing account cannot accept an invitation (accounts never move between workspaces)");
   const ownerId = members.find((m) => m.role === "owner").id;
   H((await api("PATCH", `/api/v1/members/${ownerId}`, { cookie: admin.cookie, body: { role: "viewer" } })).status === 403, "RB-11", "admin cannot demote the owner");
   H((await api("PATCH", `/api/v1/members/${admin.id}`, { cookie: admin.cookie, body: { role: "owner" } })).status === 403, "RB-12", "admin cannot promote themselves");

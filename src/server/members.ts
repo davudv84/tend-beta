@@ -1,9 +1,9 @@
 // Workspace members: invitations, role changes, removal (roles and their limits: src/server/rbac.ts). Every change is checked on the server against
 // the actor's role from their session, runs in one transaction with every member of the workspace locked (so two admins cannot demote the last two
-// owners at the same moment), and is recorded in the append-only authentication log (member.invited / member.role_changed / member.removed).
-import { randomUUID } from "node:crypto";
+// owners at the same moment), and is recorded in the append-only authentication log (member.invited / joined / invite_revoked / role_changed / removed).
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { audit, type Session } from "./session.ts";
-import { base, cleanEmail, issueToken, type Outbox } from "./accounts.ts";
+import { base, cleanEmail, hashPassword, passwordProblem, type Outbox } from "./accounts.ts";
 import { HttpError } from "./http.ts";
 import { spend } from "./limits.ts";
 import { isRole, roleChangeProblem, type Role } from "./rbac.ts";
@@ -11,17 +11,18 @@ import type { DB, Q } from "./db.ts";
 
 const INVITE_TTL = 7 * 24 * 3_600_000;
 const INVITES_PER_HOUR = 20;
-/** Stored for an invited member until they choose a password: not a scrypt hash, so no password ever matches it (checkPassword). */
-const NO_PASSWORD = "!invited";
+const sha = (t: string) => createHash("sha256").update(t, "utf8").digest("hex");
 
 interface MemberRow { id: string; email: string; role: string; workspace_id: string; disabled_at: number | null; email_verified_at: number | null; created_at: number; password_hash: string }
-const view = (m: MemberRow) => ({
-  id: m.id, email: m.email, role: m.role as Role, createdAt: Number(m.created_at),
-  status: m.disabled_at !== null ? "removed" : m.password_hash === NO_PASSWORD ? "invited" : "active",
-});
+interface InvitationRow { id: string; workspace_id: string; email: string; role: string; invited_by: string; created_at: number; expires_at: number; accepted_at: number | null; revoked_at: number | null }
+const view = (m: MemberRow) => ({ id: m.id, email: m.email, role: m.role as Role, createdAt: Number(m.created_at), status: m.disabled_at !== null ? "removed" : "active" });
+const invitationView = (i: InvitationRow) => ({ id: i.id, email: i.email, role: i.role as Role, createdAt: Number(i.created_at), expiresAt: Number(i.expires_at), status: "invited" as const });
 
-export async function listMembers(q: Q, workspace: string) {
-  return (await q.all<MemberRow>("SELECT * FROM users WHERE workspace_id = ? ORDER BY created_at", workspace)).map(view);
+/** Members, and invitations not yet accepted, withdrawn or expired. */
+export async function listMembers(q: Q, workspace: string, now = Date.now()) {
+  const members = (await q.all<MemberRow>("SELECT * FROM users WHERE workspace_id = ? ORDER BY created_at", workspace)).map(view);
+  const pending = (await q.all<InvitationRow>("SELECT * FROM invitations WHERE workspace_id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at", workspace, now)).map(invitationView);
+  return [...members, ...pending];
 }
 
 const forbidden = (why: string) => new HttpError(403, "forbidden_role", why);
@@ -42,8 +43,12 @@ function keepsAnOwner(members: MemberRow[], targetId: string) {
   return members.some((m) => m.id !== targetId && m.role === "owner" && m.disabled_at === null);
 }
 
-/** Invites someone by e-mail. The mail carries a one-time link (7 days) to choose a password; using it also confirms the address. */
-export async function inviteMember(db: DB, req: Request, s: Session, input: unknown, now = Date.now()): Promise<{ member: ReturnType<typeof view>; outbox: Outbox }> {
+/**
+ * Invites someone by e-mail: a one-time link (7 days) to create their account in this workspace with the given role. No account exists until
+ * the link is used, so an invitation claims nothing. The answer is the same whether or not the address already has an account somewhere (no
+ * account enumeration); an existing account cannot accept (accounts never move between workspaces) and its owner is simply told.
+ */
+export async function inviteMember(db: DB, req: Request, s: Session, input: unknown, now = Date.now()): Promise<{ invitation: ReturnType<typeof invitationView>; outbox: Outbox }> {
   const o = (input ?? {}) as { email?: unknown; role?: unknown };
   if (!isRole(o.role)) throw new HttpError(422, "invalid_role", "role must be owner, admin, operator or viewer.");
   const problem = roleChangeProblem(s, {}, o.role);
@@ -51,25 +56,58 @@ export async function inviteMember(db: DB, req: Request, s: Session, input: unkn
   const email = cleanEmail(o.email);
   if (!(await spend(db, `members:invite:${s.workspace}`, INVITES_PER_HOUR, { windowMs: 3_600_000, now })).ok)
     throw new HttpError(429, "rate_limited", "Too many invitations from this workspace. Try again later.", { retryAfter: 3600 });
-  const id = `u_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
-  const token = await db.tx(async (q) => {
+  const token = randomBytes(32).toString("base64url");
+  const id = `inv_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+  const row = await db.tx(async (q) => {
     const again = roleChangeProblem(actorNow(s, await lockMembers(q, s.workspace)), {}, o.role as Role);
     if (again) throw forbidden(again);
-    // An address that has an account anywhere cannot be invited, so an invitation can never move someone else's account (or its agents) into
-    // this workspace. The tenant context sees only this workspace's members; the unique index on users.email guards the rest (caught below).
-    if (await q.get("SELECT 1 FROM users WHERE email = ?", email)) throw new HttpError(409, "email_taken", "This address already has a TEND account. Accounts cannot be moved between workspaces.");
-    await q.run("INSERT INTO users (id, email, password_hash, workspace_id, created_at, password_changed_at, approved_at, approved_by, role, invited_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id, email, NO_PASSWORD, s.workspace, now, now, now, s.id, o.role, s.userId ?? "admin");
-    await audit(q, "member.invited", { userId: id, sessionId: s.id, reason: `role=${o.role}`, now });
-    return issueToken(q, id, "reset", now, INVITE_TTL);
-  }).catch((e) => {
-    if (String((e as Error).message).includes("users_email_key")) throw new HttpError(409, "email_taken", "This address already has a TEND account. Accounts cannot be moved between workspaces.");
-    throw e;
+    // A newer invitation to the same address replaces the older one (its link stops working).
+    await q.run("UPDATE invitations SET revoked_at = ? WHERE workspace_id = ? AND email = ? AND accepted_at IS NULL AND revoked_at IS NULL", now, s.workspace, email);
+    await q.run("INSERT INTO invitations (id, workspace_id, email, role, token_hash, invited_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      id, s.workspace, email, o.role, sha(token), s.userId ?? "admin", now, now + INVITE_TTL);
+    // Recorded against the inviter (the invitee has no account yet); the address only as a hash.
+    if (s.userId) await audit(q, "member.invited", { userId: s.userId, sessionId: s.id, reason: `${id} role=${o.role} email=${sha(email).slice(0, 12)}`, now });
+    return (await q.get<InvitationRow>("SELECT * FROM invitations WHERE id = ?", id))!;
   });
-  const link = `${base(req)}/account/reset#token=${token}`;
-  const outbox: Outbox = [{ to: email, subject: "You are invited to a TEND workspace", text: `${s.email ?? "The TEND admin"} invited you to their TEND workspace as ${o.role}.\n\nChoose a password to accept:\n\n${link}\n\nThe link works once, for 7 days. If you do not know this person, ignore this mail.` }];
-  const row = (await db.get<MemberRow>("SELECT * FROM users WHERE id = ?", id))!;
-  return { member: view(row), outbox };
+  const link = `${base(req)}/account/accept#token=${token}`;
+  const outbox: Outbox = [{ to: email, subject: "You are invited to a TEND workspace", text: `${s.email ?? "The TEND admin"} invited you to their TEND workspace as ${o.role}.\n\nChoose a password to accept:\n\n${link}\n\nThe link works once, for 7 days. If this address already has a TEND account, the link will not work (accounts cannot move between workspaces). If you do not know this person, ignore this mail.` }];
+  return { invitation: invitationView(row), outbox };
+}
+
+/** Accepting: creates the account (address confirmed by the link, approved by the inviter) in the inviting workspace. Run as system. */
+export async function acceptInvitation(db: DB, input: unknown, now = Date.now()) {
+  const o = (input ?? {}) as { token?: unknown; password?: unknown };
+  const bad = new HttpError(400, "invalid_link", "This link is not valid any more. Ask for a new invitation.");
+  if (typeof o.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(o.token)) throw bad;
+  const live = await db.get<InvitationRow>("SELECT * FROM invitations WHERE token_hash = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?", sha(o.token), now);
+  if (!live) throw bad;
+  const weak = passwordProblem(o.password, live.email);
+  if (weak) throw new HttpError(422, "weak_password", weak);
+  const hash = await hashPassword(o.password as string);
+  return db.tx(async (q) => {
+    const inv = await q.get<InvitationRow>("UPDATE invitations SET accepted_at = ? WHERE id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ? RETURNING *", now, live.id, now);
+    if (!inv) throw bad;
+    if (await q.get("SELECT 1 FROM users WHERE email = ?", inv.email)) throw bad; // an existing account is never moved
+    const userId = `u_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+    await q.run("INSERT INTO users (id, email, password_hash, workspace_id, created_at, password_changed_at, email_verified_at, approved_at, approved_by, role, invited_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      userId, inv.email, hash, inv.workspace_id, now, now, now, now, inv.invited_by, inv.role, inv.invited_by);
+    await audit(q, "member.joined", { userId, reason: `${inv.id} role=${inv.role}`, now });
+    return { ok: true as const, email: inv.email };
+  });
+}
+
+/** Withdraws an invitation that was not accepted yet. Admins and owners, for roles up to their own. */
+async function revokeInvitation(db: DB, s: Session, id: string, now: number) {
+  return db.tx(async (q) => {
+    const members = await lockMembers(q, s.workspace);
+    const inv = await q.get<InvitationRow>("SELECT * FROM invitations WHERE id = ? AND workspace_id = ? AND accepted_at IS NULL AND revoked_at IS NULL", id, s.workspace);
+    if (!inv) throw new HttpError(404, "member_not_found", "No such member in this workspace.");
+    const problem = roleChangeProblem(actorNow(s, members), { from: inv.role as Role }, "removed");
+    if (problem) throw forbidden(problem);
+    await q.run("UPDATE invitations SET revoked_at = ? WHERE id = ?", now, id);
+    if (s.userId) await audit(q, "member.invite_revoked", { userId: s.userId, sessionId: s.id, reason: id, now });
+    return { removed: true as const, id };
+  });
 }
 
 export async function setMemberRole(db: DB, s: Session, memberId: string, role: unknown, now = Date.now()) {
@@ -90,6 +128,7 @@ export async function setMemberRole(db: DB, s: Session, memberId: string, role: 
 
 /** Removes a member: their account is disabled, every session ends and their links stop working. Agents and their keys stay with the workspace. */
 export async function removeMember(db: DB, s: Session, memberId: string, now = Date.now()) {
+  if (memberId.startsWith("inv_")) return revokeInvitation(db, s, memberId, now);
   return db.tx(async (q) => {
     const members = await lockMembers(q, s.workspace);
     const m = members.find((x) => x.id === memberId && x.disabled_at === null);

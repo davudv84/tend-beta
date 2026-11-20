@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { test } from "node:test";
 import { verify } from "otplib";
-import { passwordSignIn, register, setAccess, verifyEmail } from "./accounts.ts";
+import { passwordSignIn, register, requestReset, resetPassword, setAccess, verifyEmail } from "./accounts.ts";
 import { memoryDb, type DB } from "./db.ts";
 import { confirmEnrollment, disableMfa, mfaStatus, startEnrollment } from "./mfa.ts";
 import { currentSession, sessionCookieName } from "./session.ts";
@@ -113,4 +113,22 @@ test("MFA-5 turning it off needs a valid code; production refuses setup without 
     (process.env as Record<string, string>).NODE_ENV = "production"; delete process.env.TEND_MFA_KEY;
     assert.equal(await code(db.tx((q) => startEnrollment(q, s))), "mfa_unavailable");
   } finally { (process.env as Record<string, string | undefined>).NODE_ENV = saved.env; process.env.TEND_MFA_KEY = saved.key; }
+});
+
+test("MFA-6 ten wrong codes in a day lock the second factor until a password reset; the platform admin can remove a lost factor, on record", async () => {
+  const db = await memoryDb();
+  const s = await account(db, "mfa6@example.com");
+  const { secret } = await db.tx((q) => startEnrollment(q, s));
+  const now = Date.now();
+  await db.tx((q) => confirmEnrollment(q, s, ref(secret, now / 1000), now));
+  for (let i = 0; i < 10; i++) assert.equal(await code(passwordSignIn(db, post(), { email: "mfa6@example.com", password: PW, code: String(200000 + i) }, now + 30_000)), "mfa_invalid");
+  assert.equal(await code(passwordSignIn(db, post(), { email: "mfa6@example.com", password: PW, code: ref(secret, now / 1000 + 60) }, now + 60_000)), "mfa_locked", "the right code is refused once locked");
+  assert.equal(await code(passwordSignIn(db, post(), { email: "mfa6@example.com", password: "wrong password!!", code: "1" }, now + 60_000)), "invalid_credentials", "a wrong password still says nothing about the second factor");
+  const reset = await requestReset(db, post(), { email: "mfa6@example.com" }, now + 61_000);
+  await resetPassword(db, { token: /#token=([A-Za-z0-9_-]{43})/.exec(reset.outbox[0].text)![1], password: PW }, now + 62_000);
+  assert.equal(await code(passwordSignIn(db, post(), { email: "mfa6@example.com", password: PW, code: ref(secret, now / 1000 + 90) }, now + 90_000)), "ok", "after the reset: unlocked, the second factor still required and working");
+  const r = await setAccess(db, post(), s.userId!, "reset_mfa", "admin-session");
+  assert.equal((await mfaStatus(db, s.userId!)).enabled, false);
+  assert.match(r.outbox[0].text, /turned off .* by the TEND admin/);
+  assert.equal((await db.get<{ reason: string }>("SELECT reason FROM auth_events WHERE user_id = ? AND type = 'mfa.disabled'", s.userId))!.reason, "admin_reset");
 });

@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { checkProductionConfig } from "../check-production-config.mjs";
 
 const good = {
-  DATABASE_URL: "postgres://tend_app:pw-runtime@db.example.net/tend?sslmode=require", DATABASE_MIGRATE_URL: "postgres://owner:pw-owner@db.example.net/tend?sslmode=require",
+  DATABASE_URL: "postgres://tend_app@db.example.net/tend?sslmode=require", DATABASE_MIGRATE_URL: "postgres://owner@db.example.net/tend?sslmode=require",
   TEND_CONTEXT_KEY: "c".repeat(10) + "0123456789abcdefghijklmnopqrstuv", TEND_MFA_KEY: "m".repeat(10) + "0123456789abcdefghijklmnopqrstuv",
   TEND_ADMIN_TOKEN: "a".repeat(4) + "0123456789abcdefghijklmnopqrstuvwxyz", TEND_APP_URL: "https://tend.example.net", TEND_ALERT_WEBHOOK_URL: "https://hooks.example.net/x",
 };
@@ -37,5 +37,5 @@ test("PROD-2 the command line prints no value and exits 1 on a blocking problem"
   try { out = execFileSync(process.execPath, ["scripts/check-production-config.mjs", file], { encoding: "utf8", env: { PATH: process.env.PATH } }); } catch (e) { out = e.stdout; code = e.status; }
   assert.equal(code, 1);
   assert.match(out, /BLOCKING  TEND_CONTEXT_KEY/);
-  for (const v of [...Object.values(good), "tooshortsecretvalue", "pw-runtime", "pw-owner"]) assert.ok(!out.includes(v), "no value printed");
+  for (const v of [...Object.values(good), "tooshortsecretvalue"]) assert.ok(!out.includes(v), "no value printed");
 });

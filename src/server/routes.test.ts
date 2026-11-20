@@ -22,6 +22,7 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "operator/session:DELETE": "public", // ends the caller's own session, and only with that session's own secret
   "operator/sessions:GET": "operator",
   "operator/sessions:DELETE": "operator",
+  "account/invitation:POST": "account",
   "account/mfa:GET": "operator",
   "account/mfa:POST": "operator",
   "v1/members:GET": "operator",
@@ -118,12 +119,12 @@ const NEED: Record<string, string> = {
   "operator/sessions:GET": "self", "operator/sessions:DELETE": "self",
   "account/mfa:GET": "self", "account/mfa:POST": "self",
   "v1/members:GET": "view", "v1/members:POST": "members", "v1/members/[id]:PATCH": "members", "v1/members/[id]:DELETE": "members",
-  "v1/agents:POST": "manage", "v1/agents/[id]/verification:GET": "view", "v1/agents/[id]/verification:POST": "operate",
+  "v1/agents:POST": "manage", "v1/agents/[id]/verification:GET": "operate", "v1/agents/[id]/verification:POST": "operate",
   "v1/agents/[id]/policy:GET": "view", "v1/agents/[id]/policy:POST": "manage", "v1/agents/[id]/check-in-requests:POST": "operate",
   "v1/agents/[id]/control:POST": "operate", "v1/agents/[id]/keys:POST": "manage", "v1/agents/[id]/keys:DELETE": "manage",
   "v1/reviews/[id]:POST": "operate", "v1/central-policies:GET": "view", "v1/central-policies:POST": "manage", "v1/central-policies/[id]:POST": "manage",
-  "v1/central-policies/[id]/assignments:POST": "manage", "v1/sample-agent:POST": "manage", "v1/notifications:GET": "self", "v1/notifications/test:POST": "self",
-  "v1/notifications/preferences:GET": "self", "v1/notifications/preferences:POST": "self", "v1/notifications/read:POST": "self",
+  "v1/central-policies/[id]/assignments:POST": "manage", "v1/sample-agent:POST": "manage", "v1/notifications:GET": "self", "v1/notifications/test:POST": "operate",
+  "v1/notifications/preferences:GET": "self", "v1/notifications/preferences:POST": "self", "v1/notifications/read:POST": "operate",
   "v1/notifications/subscriptions:POST": "self", "v1/notifications/subscriptions:DELETE": "self", "v1/policy-simulations:POST": "view",
   "v1/integrations/status:GET": "view", "v1/onboarding:GET": "self", "v1/onboarding:POST": "self",
 };

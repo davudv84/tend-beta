@@ -56,15 +56,17 @@ export function TwoStep() {
             <a href={setup.uri} className="w-fit font-medium text-primary hover:underline">{g.openLink}</a>
             <p>{g.step2}</p>
             <input className={input} inputMode="numeric" autoComplete="one-time-code" placeholder={g.code} value={code} onChange={(e) => setCode(e.target.value)} />
+            <input className={input} type="password" autoComplete="current-password" placeholder={g.password} value={password} onChange={(e) => setPassword(e.target.value)} />
             <div className="flex gap-2">
-              <button type="button" disabled={busy || code.length !== 6} className={buttonClass("primary")} onClick={async () => { const d = await act({ action: "enable", code }); if (d?.recoveryCodes) { setCodes(d.recoveryCodes); setSetup(null); load(); } }}>{g.enable}</button>
+              <button type="button" disabled={busy || code.length !== 6 || !password} className={buttonClass("primary")} onClick={async () => { const d = await act({ action: "enable", code, password }); if (d?.recoveryCodes) { setCodes(d.recoveryCodes); setSetup(null); load(); } }}>{g.enable}</button>
               <button type="button" className={buttonClass("secondary")} onClick={() => setSetup(null)}>{g.cancel}</button>
             </div>
           </>
         ) : (
           <>
             <p><span className="font-medium">{g.off}.</span></p>
-            <div><button type="button" disabled={busy} className={buttonClass("secondary")} onClick={async () => { const d = await act({ action: "setup" }); if (d?.secret && d.uri) setSetup({ secret: d.secret, uri: d.uri }); }}>{g.start}</button></div>
+            <input className={input} type="password" autoComplete="current-password" placeholder={g.password} value={password} onChange={(e) => setPassword(e.target.value)} />
+            <div><button type="button" disabled={busy || !password} className={buttonClass("secondary")} onClick={async () => { const d = await act({ action: "setup", password }); if (d?.secret && d.uri) setSetup({ secret: d.secret, uri: d.uri }); }}>{g.start}</button></div>
           </>
         )}
         {error && <p role="alert" className="text-[#b42318]">{error}</p>}

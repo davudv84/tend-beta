@@ -14,6 +14,12 @@ In production the start-up self-test checks all of that by actual privileges (`e
 `TEND_DB_ALLOW_OWNER_LOGIN=1` lets a single owner URL start anyway, with a warning at every start: then RLS stops application mistakes but
 not SQL injection (RLS-5).
 
+Pooled connections: every transaction starts `BEGIN READ WRITE` and ends (commit or rollback) with `pg_advisory_unlock_all()` and `RESET ALL`
+before the connection goes back to the pool; a connection that cannot be cleaned is closed. So a session-level advisory lock taken by
+injected SQL (which would stall every tenant's writes) or a session-level setting dies with the transaction that made it (RLS-13, M-23). The
+self-test also refuses a runtime role that may update or delete the log tables (a stray grant, `pg_write_all_data`), owns schema `public` or
+TEND's context functions, or may run programs or read files as the server.
+
 ## Tenant isolation: two layers
 
 1. **The application** checks every id against the caller's workspace (`agentInWorkspace`, `reviewInWorkspace`, `centralInWorkspace` in

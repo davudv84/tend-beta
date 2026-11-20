@@ -2,10 +2,10 @@
 // stale roles, cross-workspace ids, and the audit trail. Embedded database; the same code runs under row-level security on PostgreSQL.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { passwordSignIn, register, resetPassword, setAccess, verifyEmail } from "./accounts.ts";
+import { passwordSignIn, register, setAccess, verifyEmail } from "./accounts.ts";
 import { memoryDb, type DB } from "./db.ts";
 import { requireOperator } from "./http.ts";
-import { inviteMember, listMembers, removeMember, setMemberRole } from "./members.ts";
+import { acceptInvitation, inviteMember, listMembers, removeMember, setMemberRole } from "./members.ts";
 import { authorize, roleChangeProblem, type Need, type Role } from "./rbac.ts";
 import { currentSession, sessionCookieName, type Session } from "./session.ts";
 import { withRequestContext } from "./db-context.ts";
@@ -35,7 +35,7 @@ async function signIn(db: DB, email: string, pw = PW) {
 }
 async function invited(db: DB, by: Session, email: string, role: Role) {
   const { outbox } = await inviteMember(db, post(), by, { email, role });
-  await resetPassword(db, { token: tokenIn(outbox[0].text), password: PW });
+  await acceptInvitation(db, { token: tokenIn(outbox[0].text), password: PW });
   return signIn(db, email);
 }
 const sees = (db: DB, s: { cookie: string }) => withRequestContext(() => currentSession(db, get(s.cookie)));
@@ -54,21 +54,35 @@ test("RBAC-1 permission matrix: each role gets exactly its needs, checked by req
     assert.equal(await code(withRequestContext(() => requireOperator(get(s.cookie), db, need))), expect, `${s.role} → ${need}`);
 });
 
-test("RBAC-2 invitations: same workspace, chosen role, a one-time link that sets the password and confirms the address; no password works before", async () => {
+test("RBAC-2 invitations: nothing exists until accepted, so an invitation cannot claim an address, block it, move an account, or reveal one", async () => {
   const db = await memoryDb();
   const owner = await founder(db, "owner2@example.com");
-  const { member, outbox } = await inviteMember(db, post(), owner, { email: "new@example.com", role: "operator" });
-  assert.equal(member.status, "invited");
+  const { invitation, outbox } = await inviteMember(db, post(), owner, { email: "new@example.com", role: "operator" });
+  assert.equal(invitation.status, "invited");
   assert.equal(outbox[0].to, "new@example.com");
-  for (const pw of [PW, "!invited", ""]) assert.equal(await code(passwordSignIn(db, post(), { email: "new@example.com", password: pw })), "invalid_credentials", "an invited account has no usable password");
-  await resetPassword(db, { token: tokenIn(outbox[0].text), password: PW });
+  assert.equal(await db.get("SELECT 1 FROM users WHERE email = 'new@example.com'"), undefined, "no account before the link is used");
+  assert.ok((await listMembers(db, owner.workspace)).some((m) => m.email === "new@example.com" && m.status === "invited"));
+  await acceptInvitation(db, { token: tokenIn(outbox[0].text), password: PW });
   const s = await signIn(db, "new@example.com");
   assert.equal(s.workspace, owner.workspace);
   assert.equal(s.role, "operator");
-  assert.equal(await code(resetPassword(db, { token: tokenIn(outbox[0].text), password: PW })), "invalid_link", "the link works once");
-  // an address with an account anywhere cannot be invited: an invitation never moves someone else's account into this workspace
-  await founder(db, "elsewhere@example.com");
-  assert.equal(await code(inviteMember(db, post(), owner, { email: "elsewhere@example.com", role: "viewer" })), "email_taken");
+  assert.equal(await code(acceptInvitation(db, { token: tokenIn(outbox[0].text), password: PW })), "invalid_link", "the link works once");
+  // an address with an account elsewhere: the inviter gets the same answer as for a new address, and the link never moves the account
+  const other = await founder(db, "elsewhere@example.com");
+  const r = await inviteMember(db, post(), owner, { email: "elsewhere@example.com", role: "viewer" });
+  assert.equal(r.invitation.status, "invited", "no 'already has an account' answer (no enumeration)");
+  assert.equal(await code(acceptInvitation(db, { token: tokenIn(r.outbox[0].text), password: PW })), "invalid_link");
+  assert.equal((await signIn(db, "elsewhere@example.com")).workspace, other.workspace, "the existing account stays where it was");
+  // invited but never accepted: the real person signs up normally and gets their own workspace; the invitation then no longer works
+  const pre = await inviteMember(db, post(), owner, { email: "ceo@example.com", role: "viewer" });
+  const ceo = await founder(db, "ceo@example.com");
+  assert.notEqual(ceo.workspace, owner.workspace, "an invitation does not pre-claim an address");
+  assert.equal(await code(acceptInvitation(db, { token: tokenIn(pre.outbox[0].text), password: PW })), "invalid_link");
+  // withdrawn before acceptance: the link dies, and the address stays free to sign up
+  const w = await inviteMember(db, post(), owner, { email: "later@example.com", role: "viewer" });
+  await removeMember(db, owner, w.invitation.id);
+  assert.equal(await code(acceptInvitation(db, { token: tokenIn(w.outbox[0].text), password: PW })), "invalid_link");
+  assert.equal((await founder(db, "later@example.com")).role, "owner", "the address can still create its own account");
   assert.equal(await code(inviteMember(db, post(), owner, { email: "x@example.com", role: "superuser" })), "invalid_role");
 });
 
@@ -129,9 +143,11 @@ test("RBAC-6 another workspace's member ids are 'not found', and member changes 
   assert.ok(!(await listMembers(db, one.workspace)).some((m) => m.email.startsWith("two6") || m.email.startsWith("op6")));
   await setMemberRole(db, two, twoOp.userId!, "viewer");
   await removeMember(db, two, twoOp.userId!);
-  const log = await db.all<{ type: string; reason: string; session_id: string }>("SELECT type, reason, session_id FROM auth_events WHERE user_id = ? AND type LIKE 'member.%' ORDER BY seq", twoOp.userId);
-  assert.deepEqual(log.map((r) => [r.type, r.reason]), [["member.invited", "role=operator"], ["member.role_changed", "operator->viewer"], ["member.removed", "was viewer"]]);
-  assert.ok(log.every((r) => r.session_id === two.id), "recorded with the session that made the change");
+  const log = await db.all<{ type: string; reason: string; session_id: string | null }>("SELECT type, reason, session_id FROM auth_events WHERE user_id = ? AND type LIKE 'member.%' ORDER BY seq", twoOp.userId);
+  assert.deepEqual(log.map((r) => [r.type, r.reason.replace(/inv_\w+ /, "")]), [["member.joined", "role=operator"], ["member.role_changed", "operator->viewer"], ["member.removed", "was viewer"]]);
+  assert.ok(log.slice(1).every((r) => r.session_id === two.id), "changes are recorded with the session that made them");
+  const invitedLog = await db.get<{ reason: string }>("SELECT reason FROM auth_events WHERE user_id = ? AND type = 'member.invited'", two.userId);
+  assert.match(invitedLog!.reason, /^inv_\w+ role=operator email=[0-9a-f]{12}$/, "the invitation is recorded against the inviter, the address only as a hash");
   // disabling one member of a shared workspace leaves the others' agent keys alone (only the last active member takes them along)
   assert.equal((await sees(db, two))!.role, "owner");
 });

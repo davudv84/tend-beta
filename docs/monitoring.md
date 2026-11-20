@@ -20,9 +20,9 @@ and policy changes.
 | --- | --- | --- | --- | --- |
 | auth_failures | failed/blocked sign-ins | 25 in 5 min | high | check the source addresses; consider blocking at the edge |
 | auth_failures_account | failed sign-ins, one account | 10 in 15 min | medium | tell the account owner; suggest two-step sign-in |
-| mfa_failures | wrong codes after a right password, one account | 5 in 15 min | high | the password is probably known: reset it, check sessions |
+| mfa_failures | wrong codes after a right password, one account | 3 in 15 min | high | the password is probably known: reset it, check sessions |
 | suspicious_api_keys | unknown/revoked agent keys | 50 in 5 min | medium | a leaked or old key in use somewhere; find the client |
-| repeated_denials | refused operator requests, one session/address | 30 in 5 min | medium | probing for other tenants' ids or for rights; SEV-2 if from a member |
+| repeated_denials | refused requests from one authenticated session or agent (requests before authentication are not counted) | 30 in 5 min | medium | probing for other tenants' ids or for rights; SEV-2 if from a member |
 | tenant_isolation_failure | start-up refused isolation | 1 | critical | SEV-1 until explained: the database roles changed |
 | audit_integrity | audit chain did not verify | 1 | critical | SEV-1: preserve evidence, compare with the kept checkpoint |
 | enforcement_error | 5xx on authorization/gateway routes | 3 in 5 min | high | agents fail closed (actions refused); restore service |

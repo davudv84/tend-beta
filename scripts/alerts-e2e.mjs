@@ -15,7 +15,7 @@ const hook = `http://127.0.0.1:${rx.address().port}/tend-alerts`;
 const root = path.resolve(import.meta.dirname, "..");
 const server = await startIsolatedServer({ root, env: { TEND_ADMIN_TOKEN: `al_${randomBytes(24).toString("hex")}`, TEND_DATA_DIR: mkdtempSync(path.join(tmpdir(), "tend-alerts-")), TEND_ALERT_WEBHOOK_URL: hook } });
 let passed = 0, failed = 0;
-const check = (ok, t, ev = "") => { ok ? passed++ : failed++; console.log(`${ok ? "ok  " : "FAIL"} ${t}${ok ? "" : `  (${ev})`}`); };
+const check = (ok, t, ev = "") => { if (ok) passed++; else failed++; console.log(`${ok ? "ok  " : "FAIL"} ${t}${ok ? "" : `  (${ev})`}`); };
 try {
   const email = `victim-${randomBytes(3).toString("hex")}@example.com`;
   for (let i = 0; i < 30; i++)

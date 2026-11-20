@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { passwordSignIn, register } from "./accounts.ts";
 import { memoryDb } from "./db.ts";
 import { route, HttpError } from "./http.ts";
+import { setActor } from "./db-context.ts";
 import { deliverAlert, redact, securityEvent, _testHooks, type Alert } from "./security-events.ts";
 
 process.env.TEND_ADMIN_TOKEN = "t".repeat(8) + "0123456789abcdefghijklmnop";
@@ -51,9 +52,12 @@ test("MON-3 the real code paths emit events: wrong passwords (per account), refu
   assert.equal(failed.length, 10);
   assert.ok(!JSON.stringify(failed).includes("mon3@example.com") && !JSON.stringify(failed).includes("wrong password"), "neither the address nor the password is logged");
   assert.ok(sent.some((a) => a.rule === "auth_failures_account"), "10 failures on one account: alert");
-  const denied = route(async () => { throw new HttpError(404, "agent_not_found", "No such agent."); });
+  const denied = route(async () => { setActor("sess_probe"); throw new HttpError(404, "agent_not_found", "No such agent."); });
+  const anonymous = route(async () => { throw new HttpError(403, "bad_origin", "x"); });
+  for (let i = 0; i < 40; i++) await anonymous(new Request("http://tend.test/api/v1/agents/ag_x/policy"), {});
+  assert.ok(!sent.some((a) => a.rule === "repeated_denials"), "refusals before authentication are not counted (no shared counter for everyone)");
   for (let i = 0; i < 30; i++) await denied(new Request("http://tend.test/api/v1/agents/ag_abc123/policy", { headers: { "x-forwarded-for": "10.7.7.7" } }), {});
-  assert.ok(sent.some((a) => a.rule === "repeated_denials"), "30 'not found' answers to one address: probing alert");
+  assert.ok(sent.some((a) => a.rule === "repeated_denials"), "30 'not found' answers to one session: probing alert");
   const crash = route(async () => { throw new Error("boom"); });
   const saved = console.error; console.error = () => {};
   try { for (let i = 0; i < 3; i++) await crash(new Request("http://tend.test/api/v1/authorizations"), {}); } finally { console.error = saved; }

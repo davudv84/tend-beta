@@ -1,6 +1,6 @@
 // Postgres everywhere, so there is one SQL dialect: a hosted database in production (DATABASE_URL),
 // an embedded PGlite on disk for local development, and an in-memory PGlite for tests.
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { config } from "./config.ts";
@@ -500,6 +500,27 @@ export const MIGRATIONS: string[] = [
    ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected',
      'account.registered', 'account.verified', 'account.approved', 'account.disabled', 'account.reset_requested', 'account.password_reset',
      'member.invited', 'member.role_changed', 'member.removed', 'mfa.enabled', 'mfa.disabled'));`,
+  // Invitations are records of their own (src/server/members.ts): no account exists until the invitee accepts, so an invitation can neither
+  // claim an address nor, when withdrawn, block it. One-time link, stored as a hash.
+  `CREATE TABLE invitations (
+     id TEXT PRIMARY KEY,
+     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+     email TEXT NOT NULL CHECK (email = lower(email)),
+     role TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'operator', 'viewer')),
+     token_hash TEXT NOT NULL UNIQUE,
+     invited_by TEXT NOT NULL,
+     created_at BIGINT NOT NULL,
+     expires_at BIGINT NOT NULL,
+     accepted_at BIGINT,
+     revoked_at BIGINT
+   );
+   CREATE INDEX invitations_workspace ON invitations(workspace_id);
+   ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant ON invitations USING ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace())) WITH CHECK ((SELECT tend_ctx_system()) OR workspace_id = (SELECT tend_ctx_workspace()));
+   ALTER TABLE auth_events DROP CONSTRAINT auth_events_type_check;
+   ALTER TABLE auth_events ADD CONSTRAINT auth_events_type_check CHECK (type IN ('signin.succeeded', 'signin.failed', 'signin.blocked', 'session.signed_out', 'session.revoked_all', 'session.rejected', 'log.suppressed', 'agentkey.rejected',
+     'account.registered', 'account.verified', 'account.approved', 'account.disabled', 'account.reset_requested', 'account.password_reset',
+     'member.invited', 'member.role_changed', 'member.removed', 'member.joined', 'member.invite_revoked', 'mfa.enabled', 'mfa.disabled'));`,
 ];
 
 /** For the rest of this transaction, historical events may be deleted. Demo retention and reset only; never a request path. */
@@ -551,7 +572,7 @@ export async function installContextKey(owner: Q) {
 
 /** The tables row-level security covers (migration 18). The start-up check and the tests read this list. */
 export const RLS_TABLES = ["workspaces", "agents", "central_policies", "users", "notifications", "events", "reviews", "asks", "authorizations", "verification_runs",
-  "operator_sessions", "auth_events", "user_tokens", "onboarding", "push_subscriptions", "notification_prefs", "user_mfa"] as const;
+  "operator_sessions", "auth_events", "user_tokens", "onboarding", "push_subscriptions", "notification_prefs", "user_mfa", "invitations"] as const;
 
 /**
  * Turns tenant isolation on for a PostgreSQL pool, or refuses to start. Two cases:
@@ -582,11 +603,18 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
   if (config.contextKey && config.contextKey.length < 32) throw new Error("TEND_CONTEXT_KEY must be at least 32 characters of random data");
   db.isolation.on = true;
   // Self-test, as the application will run: the effective role and the tables, read inside an isolated transaction.
-  const t = await db.tx((q) => q.get<{ who: string; login: string; sup: boolean; bypass: boolean; createrole: boolean; privileged: boolean; temp: boolean; loginEscalates: boolean; owns: boolean; missing: string | null; loose: string | null }>(
+  const t = await db.tx((q) => q.get<{ who: string; login: string; sup: boolean; bypass: boolean; createrole: boolean; privileged: boolean; temp: boolean; logWrite: boolean; schemaOwner: boolean; fnOwner: boolean; serverFiles: boolean; loginEscalates: boolean; owns: boolean; missing: string | null; loose: string | null }>(
     `SELECT current_user AS who, session_user AS login, r.rolsuper AS sup, r.rolbypassrls AS bypass, r.rolcreaterole AS createrole,
             -- role attributes are not inherited, but a member can SET ROLE to the role: membership in a privileged role is that privilege
             EXISTS (SELECT 1 FROM pg_roles p WHERE p.oid <> r.oid AND (p.rolsuper OR p.rolbypassrls OR p.rolcreaterole) AND pg_has_role(current_user, p.oid, 'MEMBER')) AS privileged,
             has_database_privilege(current_user, current_database(), 'TEMPORARY') AS temp,
+            -- rights that defeat the guarantees without being superuser or owner: rewriting the logs (a stray grant, pg_write_all_data),
+            -- owning the schema (drop others' tables) or TEND's context functions (replace them), running programs or reading files as the server
+            (SELECT bool_or(has_table_privilege(current_user, 'public.' || t, 'UPDATE') OR has_table_privilege(current_user, 'public.' || t, 'DELETE') OR has_table_privilege(current_user, 'public.' || t, 'TRUNCATE'))
+               FROM unnest(ARRAY['events', 'auth_events', 'verification_runs']) AS t) AS "logWrite",
+            pg_has_role(current_user, (SELECT nspowner FROM pg_namespace WHERE nspname = 'public'), 'MEMBER') AS "schemaOwner",
+            EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'tend\\_%' AND pg_has_role(current_user, p.proowner, 'MEMBER')) AS "fnOwner",
+            EXISTS (SELECT 1 FROM pg_roles p WHERE p.rolname IN ('pg_execute_server_program', 'pg_read_server_files', 'pg_write_server_files') AND pg_has_role(current_user, p.oid, 'MEMBER')) AS "serverFiles",
             -- the LOGIN, not only the effective role: SQL in the session can RESET ROLE to it (owner login, RLS-5)
             (SELECT s.rolsuper OR s.rolbypassrls OR s.rolcreaterole FROM pg_roles s WHERE s.rolname = session_user)
               OR EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p') AND pg_has_role(session_user, c.relowner, 'MEMBER'))
@@ -604,11 +632,14 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
   const problem = !t ? "could not read the effective role" : t.sup ? `the effective role ${t.who} is a superuser` : t.bypass ? `the effective role ${t.who} has BYPASSRLS`
     : t.owns ? `the effective role ${t.who} owns tables, or is a member of a role that does (owners are exempt from row-level security)`
     : t.createrole ? `the effective role ${t.who} has CREATEROLE (it could grant itself other roles)` : t.privileged ? `the effective role ${t.who} is a member of a superuser, BYPASSRLS or CREATEROLE role`
+    : t.logWrite ? `the effective role ${t.who} may update, delete or truncate the audit log tables (a stray grant or pg_write_all_data)`
+    : t.schemaOwner ? `the effective role ${t.who} owns schema public, or is a member of its owner` : t.fnOwner ? `the effective role ${t.who} owns TEND's context functions (it could replace them)`
+    : t.serverFiles ? `the effective role ${t.who} may run programs or read or write files as the database server`
     : t.missing ? `row-level security is off on: ${t.missing}`
     : t.loose ? `unexpected row-level security policies: ${t.loose}`
     : strict && t.loginEscalates && !config.dbAllowOwnerLogin ? `the database login ${t.login} owns the tables or can become a privileged role, so SQL injection could RESET ROLE past row-level security. In production use a restricted login (DATABASE_URL) and the owner only for migrations (DATABASE_MIGRATE_URL); see docs/database-roles.md. TEND_DB_ALLOW_OWNER_LOGIN=1 accepts the risk explicitly`
-    : strict && !config.contextKey && !config.dbAllowOwnerLogin ? "TEND_CONTEXT_KEY is not set: in production the tenant context must be signed"
-    : strict && t.temp && !config.dbAllowOwnerLogin ? `the runtime role ${t.who} can create temporary tables (run REVOKE TEMPORARY ON DATABASE <db> FROM PUBLIC as the owner; DATABASE_MIGRATE_URL start-up does it)` : "";
+    : strict && !config.contextKey && !(config.dbAllowOwnerLogin && t.loginEscalates) ? "TEND_CONTEXT_KEY is not set: in production the tenant context must be signed"
+    : strict && t.temp && !(config.dbAllowOwnerLogin && t.loginEscalates) ? `the runtime role ${t.who} can create temporary tables (run REVOKE TEMPORARY ON DATABASE <db> FROM PUBLIC as the owner; DATABASE_MIGRATE_URL start-up does it)` : "";
   // A context key installed in the database means every context must be signed with one of its keys: this server's key must be one of them,
   // or every request would see nothing. Checked through the same function the policies use.
   const signed = problem ? undefined : await db.tx((q) => q.get<{ ok: boolean }>("SELECT tend_ctx_valid() AS ok"));
@@ -703,10 +734,16 @@ export async function postgres(url: string): Promise<DB> {
   const settings = (c: ReturnType<typeof contextSettings>, signed?: { nonce: string; kid: string; mac: string }) => // validated identifiers and hex/digits only: safe as literals
     `SELECT set_config('tend.workspace', '${c.workspace}', true), set_config('tend.system', '${c.system}', true)`
     + (signed ? `, set_config('tend.ctx_nonce', '${signed.nonce}', true), set_config('tend.ctx_kid', '${signed.kid}', true), set_config('tend.ctx_mac', '${signed.mac}', true)` : "");
+  // Session state SQL in the transaction may have left behind, removed before the connection goes back to the pool (DB-1, RLS-13): session
+  // advisory locks (one on the event lock would stall every tenant's writes), and every session-level setting (read-only default, lock and
+  // memory limits, search_path, tend.*). pg_temp objects cannot be created (TEMPORARY is revoked) and would be searched last anyway.
+  const CLEAN = "SELECT pg_advisory_unlock_all(); RESET ALL";
   const tx: DB["tx"] = async (fn) => {
     const client = await pool.connect();
+    let clean = false;
     try {
-      const start = `BEGIN; SET LOCAL statement_timeout = ${limit}; SET LOCAL idle_in_transaction_session_timeout = ${limit * 2}`;
+      // READ WRITE explicitly: a session default left behind (SET SESSION CHARACTERISTICS … READ ONLY) must not decide it.
+      const start = `BEGIN READ WRITE; SET LOCAL statement_timeout = ${limit}; SET LOCAL idle_in_transaction_session_timeout = ${limit * 2}`;
       const c = isolation.on ? contextSettings() : undefined;
       if (!c) await client.query(start);
       else if (!contextKey()) await client.query(`${start}; ${setup(c)}${settings(c)}`);
@@ -718,13 +755,15 @@ export async function postgres(url: string): Promise<DB> {
         await client.query(settings(c, contextSignature(c.workspace, c.system, binding)));
       }
       const out = await fn(queries(client, (sql) => client.query(sql)));
-      await client.query("COMMIT");
+      await client.query(`COMMIT; ${CLEAN}`);
+      clean = true;
       return out;
     } catch (e) {
-      await client.query("ROLLBACK").catch(() => {});
+      await client.query(`ROLLBACK; ${CLEAN}`).then(() => { clean = true; }, () => {});
       throw e;
     } finally {
-      client.release();
+      // A connection whose session state could not be cleaned is closed, not reused (its backend ends, and with it any lock it holds).
+      client.release(clean ? undefined : true);
     }
   };
   // With isolation on, a statement outside a transaction becomes a transaction of its own, so it too carries the role and the context.

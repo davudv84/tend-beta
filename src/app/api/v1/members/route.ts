@@ -11,11 +11,11 @@ export const GET = route(async (req) => {
   return json({ members: await listMembers(db, s.workspace), you: { id: s.userId, role: s.role } });
 });
 
-/** Invites someone: { email, role }. Admins and owners; nobody gives a role above their own. The invitation mail goes out after the answer. */
+/** Invites someone: { email, role }. Admins and owners; nobody gives a role above their own. The same answer whether or not the address has an account. */
 export const POST = route(async (req) => {
   const db = await getDb();
   const s = await requireOperator(req, db, "members");
-  const { member, outbox } = await inviteMember(db, req, s, await readJson(req, 1_000));
+  const { invitation, outbox } = await inviteMember(db, req, s, await readJson(req, 1_000));
   after(() => deliver(outbox));
-  return json({ member }, 201);
+  return json({ invitation }, 202);
 });

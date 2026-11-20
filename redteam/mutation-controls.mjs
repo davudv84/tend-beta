@@ -42,6 +42,7 @@ const unit = [
     { id: "M-16", why: "a signed tenant context is no longer bound to its transaction (captured settings can be replayed in later transactions)", file: "src/server/db.ts", find: "     IF nonce <> ${TX_BINDING} THEN RETURN false; END IF;\n", to: "", tests: ["src/server/rls.test.ts"] },
     { id: "M-17", why: "transactions no longer pin search_path, so a temp table left by injected SQL shadows a real table in later requests", file: "src/server/db.ts", find: "=> `SET LOCAL search_path = public, pg_temp; ${isolation.role", to: "=> `${isolation.role", tests: ["src/server/rls.test.ts"] },
     { id: "M-18", why: "production no longer refuses a database login that can regain owner rights", file: "src/server/db.ts", find: "    : strict && t.loginEscalates && !config.dbAllowOwnerLogin ?", to: "    : false as boolean ?", tests: ["src/server/rls.test.ts"] },
+    { id: "M-23", why: "session state left by injected SQL (advisory locks, settings) survives on the pooled connection", file: "src/server/db.ts", find: "  const CLEAN = \"SELECT pg_advisory_unlock_all(); RESET ALL\";", to: "  const CLEAN = \"SELECT 1\";", tests: ["src/server/rls.test.ts"] },
   ] : []),
 ];
 const routes = [
