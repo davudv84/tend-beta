@@ -114,8 +114,9 @@ jobs:
         env:
           DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: |
-          sudo apt-get install -y --no-install-recommends postgresql-client-16 >/dev/null
-          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          # the runner image's own client (a newer pg_dump/pg_restore works against the PostgreSQL 16 service; there is no -16 package)
+          command -v pg_dump >/dev/null || { sudo apt-get update -q >/dev/null; sudo apt-get install -y --no-install-recommends postgresql-client >/dev/null; }
+          pg_dump --version
           node --no-warnings scripts/ops/backup-restore-drill.mjs
           node --no-warnings scripts/ops/context-key-rotation-drill.mjs
       - name: Production build

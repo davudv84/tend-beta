@@ -9,7 +9,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
-const T = (...f) => ["--no-warnings", "--test", ...f];
+// TAP always: newer Node versions print the spec format even when not on a terminal, and a mutation only counts as detected by failing TESTS.
+const T = (...f) => ["--no-warnings", "--test", "--test-reporter=tap", ...f];
 const U = "src/server/enforcement-verify.test.ts", P = "src/server/policy.test.ts";
 const unit = [
   { id: "M-01", why: "numeric rule: a wrong-typed value is 'no match' again", file: "src/server/policy.ts", find: '  if (wrongType) return "unknown";', to: "", tests: [U, P] },
@@ -80,7 +81,12 @@ if (process.argv.includes("--routes")) {
   const base = run([U, P, "src/server/hardening.test.ts", "src/server/config-hardening.test.ts"]);
   if (base.status !== 0) { console.log("The unmutated tree already fails these tests; fix that first.\n" + base.stdout.split("\n").filter((l) => /^not ok/.test(l)).join("\n")); process.exit(2); }
   const only = (process.argv.find((a) => a.startsWith("--only="))?.slice(7) ?? "").split(",").filter(Boolean);
-  for (const m of unit.filter((x) => !only.length || only.includes(x.id))) await mutate(m, async () => { const r = run(m.tests); return r.status !== 0 ? `DETECTED (${(r.stdout.match(/^not ok .*/gm) ?? []).length} test(s) fail)` : "UNDETECTED: the tests still pass"; });
+  for (const m of unit.filter((x) => !only.length || only.includes(x.id))) await mutate(m, async () => {
+    const r = run(m.tests);
+    const failing = (r.stdout.match(/^not ok .*/gm) ?? []).length;
+    // A run that fails without a failing test (a crash, a missing database) proves nothing about the mutated check.
+    return r.status !== 0 && failing > 0 ? `DETECTED (${failing} test(s) fail)` : r.status !== 0 ? "INVALID: the run failed without any failing test (crash or setup error)" : "UNDETECTED: the tests still pass";
+  });
 }
 for (const f of [...unit, ...routes].map((m) => m.file)) if (!sameAsGit(f) && !process.env.MUTATION_ALLOW_DIRTY) { /* a file may legitimately differ from git if it has uncommitted work */ }
 console.log("\n" + results.map(([id, v, why]) => `${id.padEnd(6)} ${v.padEnd(44)} ${why}`).join("\n"));
