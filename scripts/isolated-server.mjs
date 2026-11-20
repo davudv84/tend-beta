@@ -8,7 +8,7 @@
 // It also checks what it started: the database must be the embedded one, and the process holding the port must be this server (not a stale
 // one from an earlier run answering for it). stop() ends the whole process tree, including the renamed `next-server` child that a plain kill leaves behind.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -90,15 +90,20 @@ export async function startIsolatedServer({ root, env, database = "embedded", po
   const nextBin = path.join(root, "node_modules/.bin/next");
   if (confine && !canConfine()) throw new Error("Confinement needs macOS with /usr/bin/sandbox-exec. Not starting the server unconfined.");
   const [cmd, args] = confine ? ["/usr/bin/sandbox-exec", ["-p", buildServerProfile({ root, ...confine }), nextBin, ...nextArgs]] : [nextBin, nextArgs];
+  // The server writes its output to a file, not a pipe: Node writes to pipes synchronously on Linux, so a server whose pipe the test does not
+  // drain (a test busy in spawnSync, say) would block in console.warn once 64 KB wait, and its requests would hang.
+  const logPath = path.join(dir, "server.log");
+  const logFd = openSync(logPath, "a");
   const child = spawn(cmd, args, {
-    cwd: dir, stdio: ["ignore", "pipe", "pipe"],
+    cwd: dir, stdio: ["ignore", logFd, logFd],
     env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TMPDIR: process.env.TMPDIR ?? "", LC_ALL: "C", NODE_ENV: "production", TEND_DEMO: "0", TEND_PUBLIC: "0", TEND_LOCAL_HTTP: "1", // a local server: lets Safari keep the sign-in cookie over http://127.0.0.1 (see src/server/session.ts)
      ...Object.fromEntries(BLANK.map((k) => [k, ""])), ...env },
   });
-  let output = "";
-  child.stdout.on("data", (b) => (output += b));
-  child.stderr.on("data", (b) => (output += b));
+  closeSync(logFd); // the child has its own copy
+  let kept = "";
+  const read = () => { try { return (kept = readFileSync(logPath, "utf8")); } catch { return kept; } };
   const stop = async () => {
+    read(); // kept for output() after the folder is gone
     const pids = processTree(child.pid);
     for (const p of pids) try { process.kill(p, "SIGTERM"); } catch {}
     await sleep(300);
@@ -109,8 +114,8 @@ export async function startIsolatedServer({ root, env, database = "embedded", po
   try {
     let health;
     for (let i = 0; ; i++) {
-      if (child.exitCode !== null) throw new Error(`The isolated server exited: ${output.slice(-400)}`);
-      if (i > 120) throw new Error(`The isolated server did not start within 60s: ${output.slice(-400)}`);
+      if (child.exitCode !== null) throw new Error(`The isolated server exited: ${read().slice(-400)}`);
+      if (i > 120) throw new Error(`The isolated server did not start within 60s: ${read().slice(-400)}`);
       health = await fetch(`${url}/api/health`).then((r) => (r.ok ? r.json() : null), () => null);
       if (health) break;
       await sleep(500);
@@ -119,7 +124,7 @@ export async function startIsolatedServer({ root, env, database = "embedded", po
     const mine = new Set(processTree(child.pid));
     const others = listeners(port).filter((p) => !mine.has(p));
     if (others.length) throw new Error(`Port ${port} is held by another process (pid ${others.join(", ")}), not this server. Refusing to continue: it could be a stale server with a different database.`);
-    return { url, port, dir, health, stop, output: () => output, pids: () => processTree(child.pid) };
+    return { url, port, dir, health, stop, output: read, pids: () => processTree(child.pid) };
   } catch (e) {
     await stop();
     throw e;
