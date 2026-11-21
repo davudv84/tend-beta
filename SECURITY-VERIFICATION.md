@@ -596,3 +596,71 @@ Not 8, because:
 - there is no human review.
 
 Verdict: **CONTROLLED BETA** (unchanged).
+
+## 17. Round 7: CodeQL and ZAP findings, security headers, agent-key transport
+
+Scope: every CodeQL result and every OWASP ZAP baseline warning on `security/verification`, the response headers, and how agent keys travel.
+All of it was done and tested by me (an AI assistant). It is **not** an external review or penetration test.
+
+### 17.1 Findings resolved
+
+| # | Source | Finding | Fix | Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | CodeQL `js/file-system-race` (**high**, 7.7) | `examples/hooks/tend-hooks.mjs`: the installer checked, read and then rewrote the host's settings file by path, so the file could be swapped between those steps (for example, for a link to another file). | The file is opened once with `O_NOFOLLOW`, then read, truncated, written, chowned and chmodded through that descriptor. A new file is created with `O_EXCL`, and the backup is written with `O_NOFOLLOW`. A settings file that is a symbolic link is refused. | The CodeQL run on `59398e5` no longer reports it (24 results, down from 26). A test shows the previous code wrote through a planted link and the new code refuses it (negative control run). |
+| 2 | Review of the same pattern (found while fixing 1) | Same file: the agent key file and the installed script were written with `writeFileSync`/`copyFileSync`/`chmodSync`/`chownSync` by path, all following links. A link planted where the key file goes would have received the agent key; in a managed (administrator) install, a root-owned write could be redirected. `readConfig` ran `lstat` and then read by path. | Both files are written through one descriptor that is not a link (`O_NOFOLLOW`, `fchown`, `fchmod`). Managed folders that are links are refused. `readConfig` checks the owner and mode with `fstat` on the descriptor it then reads. | Test: a link at the key file's place is refused and its target is untouched (the previous code wrote the key into it, negative control). The key file is 0600. `claude-hooks-e2e` 27/27, `claude-managed-e2e` (as root) 15/15, `claude-coverage-e2e` 19/19. |
+| 3 | CodeQL `js/file-system-race` (7.7) | `scripts/beta-local.mjs` (a file holding an admin token), `scripts/real-agent-setup.mjs` (a temporary key file and a sandbox file), `scripts/tester-export.mjs` (secret scan), `scripts/verify-integrations.mjs`: check-then-use on files. | Secrets files are created new (`O_EXCL` or `wx`) and private from the start through one descriptor. The export opens each file once without following links and scans through that descriptor. There is no separate exists check before reading. | `beta-local`, `tester-kit`, `agent-keys` and `db-tls` tests pass. CodeQL re-run: §17.4. |
+| 4 | CodeQL `js/incomplete-sanitization` (7.8) | `quickstart.test.mjs:85`: a regular expression built from a version string escaped only dots. | All regex special characters are escaped. (The inputs were constants in a test, so this was never exploitable.) | Test passes. |
+| 5 | Requirement 8 | Agent keys could be sent over plain http to another computer: the SDK and the example agents accepted any `http://` address, and the hooks adapter only checked at install time. | Every client (the JS SDK `connectTend`, the Python `Gate`, both example agents, and the hooks adapter at run time) refuses an http address other than `localhost`/`127.0.0.1`/`[::1]` before sending anything. The hooks then deny the tool call (fail closed). | Tests in `tend-hooks.test.mjs`, `quickstart.test.mjs` (JS and Python) and `gate.test.mjs` assert that nothing is sent. The SDK's public interface is unchanged; https and localhost http keep working. |
+| 6 | ZAP 10038, 10055 (CSP) | Style elements were allowed with `'unsafe-inline'`, and the stylesheet was inlined without a nonce. | `style-src`/`style-src-elem`: the request's nonce plus two exact SHA-256 hashes (the toast library's runtime CSS and the empty string). `'unsafe-inline'` remains **only** for `style-src-attr` (React's server-rendered `style=""` attributes, which cannot load anything or run script). The stylesheet is no longer inlined. Scripts were already strict: nonce plus `'strict-dynamic'`, no `'unsafe-inline'` or `'unsafe-eval'` in production. | ZAP 10038/10055 PASS. `csp.test.ts` recomputes the library hash from `node_modules`, so an upgrade fails the test. `redteam/live/csp-browser.mjs` in Chromium: 12 pages signed out and in, 0 violations, styles applied, 5/5. Negative control: with the hashes removed, 2 FAIL. It now also runs on CI. |
+| 7 | ZAP 90004 (Spectre site isolation) | No COEP/CORP. | `Cross-Origin-Embedder-Policy: require-corp` and `Cross-Origin-Resource-Policy: same-origin` on every response. COOP `same-origin` was already set. | ZAP 90004 PASS. The browser test shows nothing the app loads is blocked. |
+| 8 | ZAP 10019 (Content-Type missing) | Next's trailing-slash 308 had no Content-Type. | `src/proxy.ts` sends the redirect itself (absolute same-site location, `text/plain`); `skipTrailingSlashRedirect`. | ZAP 10019 PASS. Open-redirect probes (`//evil.example/`, …) stay on the same site. |
+| 9 | Requirement 7 | API error responses, including 404 for unknown `/api/...` paths, had the page CSP or none. | `/api` and `/api/:path*`: `default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; sandbox` and `Cache-Control: no-store`, set in `next.config.ts`, so they apply also to errors and unknown paths. nosniff, X-Frame-Options, COOP/COEP/CORP and Referrer-Policy also apply. | Checked on 401 (`/api/v1/state`), 404 (`/api`, `/api/nope`). |
+
+### 17.2 Findings remaining, with justification
+
+CodeQL (security-extended) on `59398e5`, 24 results. None of them is dismissed by me: dismissals are done by the repository owner in the
+Security tab, with these reasons.
+
+| Rule | Where | Assessment |
+| --- | --- | --- |
+| `js/insufficient-password-hash` (8.1) | `src/server/auth.ts:14` | **False positive.** What is hashed is an agent API key: 192 random bits from `randomBytes(24)`, not a password. A slow password hash protects low-entropy secrets against guessing; a 192-bit random value cannot be guessed, so a fast hash such as SHA-256 is sufficient (no salt is needed either: every key is unique). Changing it would invalidate every stored key. |
+| `js/file-access-to-http` (6.5) | `examples/hooks/tend-hooks.mjs:173,175` and its copy `public/sdk/tend-hooks.mjs` | **By design.** The adapter reads the agent key from its own config file (owner-only, not a link, checked on the descriptor) and sends it to the TEND address from the same file. That address must now be https (or localhost). This is the adapter's purpose. |
+| `js/file-access-to-http` (6.5) | `redteam/live/lib.mjs`, `rbac-matrix.mjs`, `tenant-matrix.mjs`, `scripts/*-e2e.mjs`, `scripts/onboarding-test.mjs` | **Test harnesses.** They read throwaway tokens of a server they started themselves on 127.0.0.1 and call it. Not shipped. |
+| `js/http-to-file-access` (6.3) | `scripts/benchmark.mjs`, `scripts/onboarding-test.mjs` | **Test harnesses.** They save the SDK downloaded from the local test server (the thing under test) into a temporary folder, and write benchmark results into `docs/`. Not shipped. |
+| `js/file-system-race` (7.7) | `src/server/tester-kit.test.ts:26` | **Test code**: checks a file's mode and then reads it, in a temporary folder the test created. No security effect. |
+
+ZAP baseline (run `44891338821` on `59398e5`): 0 FAIL, 65 PASS, 3 WARN. The three are now listed in `.zap/rules.tsv` as **INFO** (still
+printed in every run, not IGNORE):
+
+- **10049 Non-Storable Content** (Informational): pages carry a fresh CSP nonce on each response and API answers depend on who asks, so they
+  are not cacheable on purpose.
+- **10096 Timestamp Disclosure** (Low): a false positive. The matched number, `1905286922`, is a GitHub comment id in an icon's source URL
+  (`issuecomment-1905286922`), found in public static JavaScript.
+- **10109 Modern Web Application** (Informational): a hint for crawling, not a weakness.
+
+The ZAP image is now pinned to the digest of that reviewed run.
+
+Other limits that stay:
+- `'unsafe-inline'` for `style-src-attr`. Removing it would need every server-rendered `style=""` attribute removed from the UI. The
+  remaining risk is CSS-only (no script, no loads); a CSS-injection attack would still need an HTML-injection bug, and the strict script
+  policy holds even then.
+- The baseline scan is passive and unauthenticated. ZAP's active scan has not been run.
+- `scripts/browser-e2e.mjs` (UI flows in WebKit and Chromium) was **not run**: WebKit is not installed here. The security-relevant browser
+  tests (two-step sign-in, CSP) ran in Chromium.
+
+### 17.3 Tests on the final code (local, this container)
+
+| Suite | Result |
+| --- | --- |
+| `npm test` (unit and integration, embedded database) | 629 tests: 584 pass, 0 fail, 45 skipped (40 need PostgreSQL, run below; 5 need macOS `sandbox-exec`) |
+| PostgreSQL 16 integration (`postgres`, `postgres-verify`, `rls`) | 40/40 |
+| `npm run lint`, `npm run typecheck`, `eslint` on the changed files | clean |
+| Agent-escape suite (`redteam/live/run-all.mjs`) | HELD 231, BROKEN/INCONCLUSIVE 0 |
+| e2e: authz 26/26, gateway 11/11, connect 8/8, accounts 30/30, open beta 41/41, onboarding 38/38 | all pass |
+| Tenant matrix (9,752 requests), RBAC matrix (HELD 36, BROKEN 0), MCP proxy | all HELD |
+| Real browser, Chromium: two-step sign-in 9/9, CSP 5/5 (12 pages, 0 violations) | pass |
+| Claude Code install flows: hooks 27/27, managed install as root 15/15, coverage 19/19 | pass |
+| Hooks adapter unit tests (incl. the new link and key-file tests, each with a negative control against the previous code) | 18/18 |
+| `scripts/browser-e2e.mjs` (UI flows, WebKit + Chromium) | **NOT RUN**: WebKit is not installed here |
+
+The server-side suites ran on `5191d5e`. Nothing under `src/`, `next.config.ts` or the package files changed after it (`git diff --stat 5191d5e..ed34a24` is empty for them). Later commits touched only the hooks adapter, local scripts, tests, CI and docs, and those were re-run on the final code.
