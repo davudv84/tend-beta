@@ -135,6 +135,11 @@ const ownedByYou = (st) => (st.mode & 0o077) === 0 && (typeof process.getuid !==
  */
 const managedFile = (st, dir) => typeof process.getuid === "function" && st.uid === 0 && (st.mode & 0o037) === 0 && dir.isDirectory() && dir.uid === 0 && (dir.mode & 0o022) === 0;
 
+/** Copies `file` to its backup if it exists, in one step (no exists-then-copy race). */
+function backup(file) {
+  try { copyFileSync(file, `${file}.before-tend`); } catch (e) { if (e.code !== "ENOENT") throw e; }
+}
+
 async function tend(cfg, p, body, headers = {}) {
   const res = await fetch(cfg.url + p, {
     method: body ? "POST" : "GET",
@@ -314,6 +319,8 @@ async function install(host) {
   const yes = process.argv.includes("--yes");
   const url = (arg("--url") ?? process.env.TEND_URL ?? "").replace(/\/$/, "");
   if (!/^https?:\/\/[A-Za-z0-9.:[\]-]+$/.test(url)) fail("Give TEND's address: --url https://your-tend.example");
+  // The agent key travels with every tool call: plain http only to this computer itself, never across a network.
+  if (url.startsWith("http://") && !["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname)) fail("TEND's address must start with https:// (plain http only for localhost). The agent key would otherwise cross the network unencrypted.");
   const key = process.env.TEND_AGENT_KEY || (process.stdin.isTTY ? await ask("Paste the agent key from TEND (it is not shown): ", { hidden: true }) : "");
   if (!/^tend_sk_[A-Za-z0-9_-]{24,64}$/.test(key)) fail("That is not a TEND agent key (it starts with tend_sk_). Copy it from TEND and run this again.");
   let check;
@@ -342,7 +349,7 @@ async function install(host) {
   const self = fileURLToPath(import.meta.url);
   if (path.resolve(self) !== path.join(HOME, "tend-hooks.mjs")) copyFileSync(self, path.join(HOME, "tend-hooks.mjs"));
   mkdirSync(path.dirname(file), { recursive: true });
-  if (existsSync(file)) copyFileSync(file, `${file}.before-tend`);
+  backup(file);
   writeFileSync(file, JSON.stringify(merge(host, current, hooks), null, 2) + "\n");
   console.error(`\nDone. TEND recognised this computer as "${check.body.agentId}".`);
   console.error(host === "claude-code" ? "Start (or restart) Claude Code; TEND sees it start and checks each tool call from now on." : "Restart Cursor; TEND checks each agent tool call from now on.");
@@ -360,7 +367,7 @@ function installManaged(host, { managed, file, hooks, current, url, key, check }
   chownSync(cfg, 0, gid); chmodSync(cfg, 0o640);
   copyFileSync(fileURLToPath(import.meta.url), script);
   chownSync(script, 0, 0); chmodSync(script, 0o755);
-  if (existsSync(file)) copyFileSync(file, `${file}.before-tend`);
+  backup(file);
   writeFileSync(file, JSON.stringify({ ...merge(host, current, hooks), allowManagedHooksOnly: true }, null, 2) + "\n", { mode: 0o644 });
   chownSync(file, 0, 0); chmodSync(file, 0o644);
   console.error(`\nDone. TEND recognised this computer as "${check.body.agentId}". Start (or restart) Claude Code.`);
@@ -373,8 +380,9 @@ async function uninstall(host) {
   if (managed && typeof process.getuid === "function" && process.getuid() !== 0) fail("Removing a managed install needs administrator rights (run it with sudo). Nothing was changed.");
   const project = arg("--project") ? path.resolve(arg("--project")) : undefined;
   const { file } = plan(host, { project, managed });
-  if (!existsSync(file)) return console.error(`Nothing to remove: ${file} does not exist.`);
-  const current = JSON.parse(readFileSync(file, "utf8"));
+  let text;
+  try { text = readFileSync(file, "utf8"); } catch (e) { if (e.code === "ENOENT") return console.error(`Nothing to remove: ${file} does not exist.`); throw e; }
+  const current = JSON.parse(text);
   if (!process.argv.includes("--yes") && (!process.stdin.isTTY || !/^y(es)?$/i.test(await ask(`Remove TEND's hooks from ${file}? [y/N] `)))) fail("Nothing was changed.");
   const rest = merge(host, current, {});
   if (managed) delete rest.allowManagedHooksOnly;

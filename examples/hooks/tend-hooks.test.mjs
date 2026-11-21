@@ -252,3 +252,18 @@ test("a managed install is refused unless run as an administrator, and cannot be
   assert.match(r.stderr, /administrator/);
   assert.equal(existsSync(dir), false, "nothing was written");
 });
+
+test("install refuses a plain-http TEND address that is not this computer: the agent key would cross the network unencrypted", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const home = mkdtempSync(path.join(tmpdir(), "tend-hooks-http-"));
+  for (const url of ["http://tend.example.com", "http://10.0.0.5:3000", "http://127.0.0.1.example.net"]) {
+    const r = spawnSync(process.execPath, [path.join(import.meta.dirname, "tend-hooks.mjs"), "install", "claude-code", "--project", home, "--url", url, "--yes"],
+      { env: { ...process.env, HOME: home, TEND_AGENT_KEY: "tend_sk_" + "a".repeat(32) }, encoding: "utf8" });
+    assert.notEqual(r.status, 0, url);
+    assert.match(r.stderr, /must start with https:\/\//, url);
+  }
+  assert.equal(existsSync(path.join(home, ".claude", "settings.json")), false, "nothing was written");
+});

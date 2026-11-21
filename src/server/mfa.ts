@@ -2,7 +2,7 @@
 // the algorithm. What this module adds: the secret encrypted at rest (AES-256-GCM, TEND_MFA_KEY), replay protection (a code's time step is
 // spent once), one-time recovery codes stored as hashes, and the audit trail. Sign-in asks for the code after the password and before the
 // failed-attempt budget is given back, so knowing the password does not open unlimited guessing of codes.
-import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { generateSecret, generateURI, verify } from "otplib";
 import { config } from "./config.ts";
 import { HttpError } from "./http.ts";
@@ -16,7 +16,8 @@ const sha = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 function key(): Buffer | undefined {
   const raw = config.mfaKey;
-  return raw ? createHash("sha256").update(raw, "utf8").digest() : undefined;
+  // A key-derivation function, not a bare hash: HKDF-SHA256 with a fixed purpose label (TEND_MFA_KEY is already 32+ random characters).
+  return raw ? Buffer.from(hkdfSync("sha256", Buffer.from(raw, "utf8"), "tend-mfa-v1", "totp-secret-seal", 32)) : undefined;
 }
 /** Production needs TEND_MFA_KEY: a TOTP secret in the database is as good as the second factor itself. Development may store it as is. */
 function seal(secret: string) {
