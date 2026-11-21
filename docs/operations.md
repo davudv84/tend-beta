@@ -104,8 +104,11 @@ TEND emits redacted security events and raises alerts to `TEND_ALERT_WEBHOOK_URL
 
 ## Vulnerability management
 
-- CI (`.github/workflows/security.yml`): `npm audit` (production dependencies at any severity, all at critical), Semgrep,
-  eslint-plugin-security, secretlint, the security test suites on embedded and real PostgreSQL, mutation controls. No CodeQL, no dynamic
-  scanner (ZAP) and no git-history secret scan are configured. **CI has not been run on GitHub yet** (it was written and run locally, piece by piece).
+- CI on GitHub Actions, on every pull request and on pushes to `main` and `security/**` (`docs/ci.md`): `security.yml` (types, lint,
+  eslint-plugin-security, Semgrep, `npm audit` (production dependencies at any severity, all at critical), secretlint, the security suites on
+  embedded and real PostgreSQL, mutation controls, drills), `codeql.yml` (security-extended queries), `secret-history.yml` (gitleaks over the
+  whole history) and `zap.yml` (OWASP ZAP baseline against a local production build; security branches only until it is on `main`).
+- CodeQL alerts are triaged in the repository's Security tab. An alert is dismissed only with a written reason that is also recorded in
+  `SECURITY-VERIFICATION.md`; ZAP rule overrides live in `.zap/rules.tsv`, each with its reason.
 - Dependencies: review `npm audit` weekly; patch critical/high within the SLA in SECURITY.md.
 - Every fixed vulnerability gets a regression test named after it (see `SECURITY-VERIFICATION.md` for the pattern).

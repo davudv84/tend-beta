@@ -106,7 +106,8 @@ async function main() {
     for (const d of DRIVERS) { const m = d.sameAs ? [] : await d.requires(); console.log(`${d.id.padEnd(17)} ${d.sameAs ? `uses the ${d.sameAs} run` : m.length ? `BLOCKED: ${m.join("; ")}` : "ready"}  (${d.label})`); }
     return;
   }
-  const previous = existsSync(REPORT) ? JSON.parse(readFileSync(REPORT, "utf8")) : { integrations: {} };
+  let previous = { integrations: {} };
+  try { previous = JSON.parse(readFileSync(REPORT, "utf8")); } catch (e) { if (e.code !== "ENOENT") throw e; }
   const report = { suite: "npm run verify:integrations", generatedAt: new Date().toISOString(), integrations: { ...previous.integrations } };
   const dir = mkdtempSync(path.join(tmpdir(), "tend-verify-"));
   const server = await startIsolatedServer({ root, env: { TEND_ADMIN_TOKEN: ADMIN, TEND_DATA_DIR: dir, TEND_GATEWAY_SANDBOX_DIR: dir } });

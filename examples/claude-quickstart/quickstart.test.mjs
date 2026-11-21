@@ -82,7 +82,7 @@ test("an unsupported Node version stops the command-line tools with one clear se
   for (const v of ["18.19.0", "20.11.1", "16.0.0"]) {
     const r = run(v);
     assert.equal(r.status, 2, v);
-    assert.match(r.stderr, new RegExp(`needs Node 20\\.12 or newer, and this is Node ${v.replace(/\./g, "\\.")}`));
+    assert.match(r.stderr, new RegExp(`needs Node 20\\.12 or newer, and this is Node ${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   }
   for (const v of ["20.12.0", "20.19.5", "22.1.0", "24.0.0"]) assert.equal(run(v).status, 0, v);
 });

@@ -12,7 +12,7 @@
 //   5. starts a fresh git history (one commit, authored with this repository's git identity) so no old commit or old author leaks.
 // Then it PRINTS the commands to create the private repository and invite testers. It does not run them.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export const DENY = [
@@ -63,8 +63,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const problems = [];
   for (const f of files) {
     const src = path.join(root, f);
-    if (lstatSync(src).isSymbolicLink()) problems.push(`${f}: is a symbolic link`);
-    else if (!/\.(png|jpe?g|gif|webp|ico|woff2?)$/i.test(f)) for (const what of scan(readFileSync(src, "utf8"))) problems.push(`${f}: contains ${what}`);
+    // Opened once without following links, and scanned through that descriptor: a link is reported, never read.
+    let fd;
+    try { fd = openSync(src, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); } catch (e) { if (e.code === "ELOOP") { problems.push(`${f}: is a symbolic link`); continue; } throw e; }
+    try { if (!/\.(png|jpe?g|gif|webp|ico|woff2?)$/i.test(f)) for (const what of scan(readFileSync(fd, "utf8"))) problems.push(`${f}: contains ${what}`); } finally { closeSync(fd); }
   }
   for (const [f, text] of Object.entries(extra)) for (const what of scan(text)) problems.push(`${f}: contains ${what}`);
   if (problems.length) die(`Nothing was written. Found:\n  ${problems.join("\n  ")}`);

@@ -8,7 +8,7 @@ Status labels: **VERIFIED** (tested here, evidence named), **IMPLEMENTED BUT UNV
 | --- | --- | --- |
 | Account (e-mail + password, scrypt) | `/account/sign-in` | TOTP, optional per account (below) |
 | Platform admin | `TEND_ADMIN_TOKEN` (one shared secret, 32+ characters) | **none**; keep the token in a secret store and rotate it (`docs/operations.md`) |
-| Agent | API key (`tend_sk_…`), one per agent, optional expiry | n/a |
+| Agent | API key (`tend_sk_…`), one per agent, optional expiry. Sent only over https: every TEND client (SDK for JS and Python, hooks adapter, example agents) refuses a plain-http address other than `localhost`/`127.0.0.1`/`[::1]` before sending anything, and the hooks then block the tool call (**VERIFIED**, client tests) | n/a |
 
 Sessions: server-side rows, cookie `__Host-` prefixed in production, 12 h for the admin token and 7 days for accounts, ended by sign-out, "sign out everywhere", a password
 reset, turning on two-step sign-in (other sessions), account removal or disabling, and a changed admin token. **VERIFIED** (session tests, e2e).
