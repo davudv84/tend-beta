@@ -9,7 +9,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "pretest": "node scripts/node-check.mjs --tests",
-    "test": "node --no-warnings --test src/lib/*.test.ts src/server/*.test.ts src/sanctuary/*.test.ts src/i18n/*.test.ts src/ui/*.test.ts examples/claude-agent/*.test.mjs examples/claude-quickstart/*.test.mjs scripts/verify/*.test.mjs examples/adapters/*.test.mjs examples/hooks/*.test.mjs",
+    "test": "node --no-warnings --test src/lib/*.test.ts src/server/*.test.ts src/sanctuary/*.test.ts src/i18n/*.test.ts src/ui/*.test.ts src/design-system/*.test.ts examples/claude-agent/*.test.mjs examples/claude-quickstart/*.test.mjs scripts/verify/*.test.mjs examples/adapters/*.test.mjs examples/hooks/*.test.mjs",
     "test:postgres": "sh scripts/test-postgres.sh",
     "security:lint": "eslint -c eslint.security.config.mjs src/server src/app/api src/lib src/proxy.ts",
     "security:secrets": "git ls-files -z | xargs -0 secretlint",
