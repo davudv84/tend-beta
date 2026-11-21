@@ -1,4 +1,4 @@
-# Release readiness: controlled-beta MVP (backend freeze `backend-freeze-mvp-1`)
+# Release readiness: controlled-beta MVP (backend freeze point)
 
 Date: 2026-11-21. Branch `security/verification`. Assessed by an AI assistant from tests it ran and CI it read. **Not an independent
 penetration test, not a certification.** Every result below names how it was produced; anything not run is marked **NOT VERIFIED**.
@@ -73,7 +73,7 @@ On GitHub Actions: `security` (4 jobs), `codeql`, `secret-history` (gitleaks ove
 | Secure headers | pass | ZAP baseline 0 WARN, CSP browser test, prod-config |
 | Dependency vulnerabilities | pass | `npm audit` |
 | Database access controls | pass (local PostgreSQL 16) | restricted login, `REVOKE TEMPORARY`, owner-only key table, negative controls |
-| Authenticated active scan | see `SECURITY-VERIFICATION.md` §18 | `zap-active` workflow, against a throwaway local build (not a preview) |
+| Authenticated active scan | pass: 0 FAIL, 141 rules PASS, 0 server errors; 1 WARN reviewed (10044, no user data) | `zap-active` run 44900001086, against a throwaway build on the CI runner (not a preview); `SECURITY-VERIFICATION.md` §18 |
 
 ## Remaining risks (accepted for a controlled beta, documented)
 
@@ -111,3 +111,19 @@ On GitHub Actions: `security` (4 jobs), `codeql`, `secret-history` (gitleaks ove
       Automation). With those I can run `scripts/hosted-check.mjs` and the checklist's §4 checks against the preview.
 4. **Before the next production deploy** (after merging): the same database roles and variables for **Production**, or production will
    refuse to start. That refusal is the intended fail-closed behaviour.
+
+## Backend freeze point
+
+The freeze point is the commit titled **"Backend freeze point for the controlled-beta MVP"** on `security/verification`. Tag it once it is
+merged (or now), so the design phase has a fixed reference:
+
+```bash
+git tag -a backend-freeze-mvp-1 -m "Backend freeze for the controlled-beta MVP" <that commit>
+```
+```bash
+git push origin backend-freeze-mvp-1
+```
+
+From here, `docs/dashboard-api.md` lists what the frontend may use and change. Any change to a frozen file is a security change: its own
+branch, CI green, reviewed by a second person. A regression check for design work: `npm run build`, then
+`node --no-warnings redteam/live/csp-browser.mjs` and `npm run e2e:journey`.

@@ -10,3 +10,8 @@
 10096	INFO	(Timestamp Disclosure: false positive, a GitHub comment id in a public icon source URL)
 # 10109 Modern Web Application (ZAP risk: Informational). Says the app is script-driven so the AJAX spider would crawl it better; not a weakness.
 10109	INFO	(Modern Web Application: crawling hint, not a vulnerability)
+# 10044 Big Redirect Detected (ZAP risk: Low; seen by the authenticated active scan only). A signed-in visitor of / is sent to /home by a
+# server-side redirect() (src/app/page.tsx); Next sends its redirect shell page with the 307. Checked on a production build: the 16 KB body
+# carries only the framework shell and the site's public metadata (no session, workspace id, e-mail, key or agent data), the same for
+# every signed-in user. Not a leak; kept visible.
+10044	INFO	(Big Redirect: Next's redirect shell with public metadata only, no user data; reviewed 2026-11-21)

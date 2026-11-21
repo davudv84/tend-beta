@@ -1,6 +1,6 @@
 # Dashboard and website: what the frontend may use (backend freeze contract)
 
-Frozen at tag `backend-freeze-mvp-1` (see `docs/release-readiness.md`). The design phase changes how things look and move, not what the server
+Frozen at the commit "Backend freeze point for the controlled-beta MVP" on `security/verification` (see `docs/release-readiness.md`). The design phase changes how things look and move, not what the server
 does or accepts. Anything that needs a backend change goes through a separate, reviewed security change.
 
 ## Use these, not raw `fetch`

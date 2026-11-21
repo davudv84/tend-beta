@@ -695,3 +695,47 @@ All required GitHub jobs pass on the final code. Every CodeQL and ZAP result was
 or weakened. The remaining open item before merging is the owner's review and dismissal of the §17.2 CodeQL alerts. Merging is reasonable
 **only after** that review and with branch protection on. Production is still blocked by 17.5 items 3 and 4. The status stays
 **CONTROLLED BETA**. This is my own assessment, not a certification.
+
+## 18. Round 8: release verification for the controlled-beta MVP
+
+Full report: `docs/release-readiness.md`; frontend contract: `docs/dashboard-api.md`. Work by an AI assistant. **Not an independent penetration test.**
+
+### 18.1 New evidence
+
+- **Whole user journey** (`npm run e2e:journey`, new): sign-up in the browser, mailed confirmation, beta approval, sign-in, the
+  workspace, agent and custom policy. Then a real Claude Code session (Haiku) through TEND's hooks:
+  - an allowed command runs;
+  - a prohibited command is refused before it runs (the file it would write never appears);
+  - the refusal shows on the timeline in the browser;
+  - a command that needs approval waits, the person clicks "Allow once" on the dashboard, and it runs exactly once;
+  - the events and the audit chain verify.
+
+  21/21 on PostgreSQL with the restricted login and RLS. Negative control (deny rules removed): the 4 enforcement checks fail.
+- **Authenticated active scan** (`.github/workflows/zap-active.yml`, new): ZAP full scan (spider plus active rules), with a platform-admin
+  session cookie and an agent key on every request, against a throwaway production build on the runner. **Not against a deployed
+  preview** (none exists). Run 44900001086 on `7009aee`:
+  - 0 FAIL, 141 rules PASS (SQL injection incl. PostgreSQL time-based, XSS reflected/persistent/DOM, SSRF, path traversal, OS command
+    injection, SSTI, XXE, Log4Shell, Spring4Shell, CORS, Bypassing 403, …);
+  - 0 unhandled server errors during the scan;
+  - one WARN: 10044 Big Redirect on `/` when signed in. Reproduced: a server-side `redirect()` sends Next's 16 KB shell page carrying only
+    public metadata (no session, workspace, e-mail, key or agent data). Recorded as reviewed INFO in `.zap/rules.tsv`.
+
+  Limit: ZAP's spider finds pages and links, not JSON request bodies. The API routes' hostile-input coverage is
+  `redteam/live/dynamic-scan.mjs` (every route, hostile verbs, bodies and headers: 6 HELD).
+- Local re-runs on the final code:
+  - module attacks: 29 HELD;
+  - production config: 9 HELD;
+  - dynamic scan: 6 HELD;
+  - hooks fail-closed: 11 HELD;
+  - `npm audit`: production 0, all 12 moderate, 0 critical.
+- Browser bundles: no key, token or database URL (grep of `.next/static`); the code reads no `NEXT_PUBLIC_` variables.
+
+### 18.2 Verified facts that block GREEN
+
+- `main` is **not protected** (GitHub API: `protected: false`). Manual steps: `docs/release-readiness.md`.
+- This session's Vercel access cannot read the project's environment variables (403), and it has no Neon access. So no preview was
+  deployed: one could have connected to production data. `vercel.json` disables Git deployments on every branch; production deploys are manual.
+- Merging this branch does not deploy it. The next production deploy refuses to start until the restricted database login and
+  `TEND_CONTEXT_KEY` are set (`db.ts:640`, by design).
+- CodeQL: 11 results, unchanged in substance (§17.2). `auth.ts:14` re-checked: `hashKey` receives only `randomBytes(24)` agent keys and
+  `randomBytes(32)` approval tokens; passwords use scrypt (`accounts.ts`). Still for human review in the Security tab.
