@@ -11,6 +11,7 @@ import { distance, duration, ease } from "../motion/tokens";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icons";
 import { StatusBadge } from "../ui/data";
+import { ScrollRegion } from "../ui/scroll-region";
 import type { Tone } from "../ui/feedback";
 
 /* ============================================================================================================
@@ -174,7 +175,7 @@ export function ApprovalRequest({ data, className, onResolve }: { data: Approval
     }, 650);
   };
   return (
-    <section aria-label="Approval request" className={cx("overflow-hidden rounded-t-lg border border-t-line bg-t-surface shadow-t-1", className)}>
+    <section role="group" aria-label="Approval request" className={cx("overflow-hidden rounded-t-lg border border-t-line bg-t-surface shadow-t-1", className)}>
       <AnimatePresence mode="wait" initial={false}>
         {state === null ? (
           <motion.div
@@ -194,9 +195,9 @@ export function ApprovalRequest({ data, className, onResolve }: { data: Approval
               </div>
               <StatusBadge tone="warn">Requires review</StatusBadge>
             </div>
-            <pre className="t-scroll overflow-x-auto rounded-t-md bg-t-code-bg p-3 font-t-mono text-t-code text-t-ink">
+            <ScrollRegion as="pre" label="Requested command" className="t-scroll overflow-x-auto rounded-t-md bg-t-code-bg p-3 font-t-mono text-t-code text-t-ink">
               <code>{data.resource}</code>
-            </pre>
+            </ScrollRegion>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-t-small">
               <dt className="text-t-muted">Matched policy</dt>
               <dd className="text-t-ink">{data.policy}</dd>
@@ -251,7 +252,7 @@ export function PolicySummary({ data, className }: { data: PolicySummaryData; cl
     { key: "denied", title: "Never allowed", items: data.denied },
   ];
   return (
-    <section aria-label={`Policy: ${data.name}`} className={cx("flex flex-col gap-6", className)}>
+    <section role="group" aria-label={`Policy: ${data.name}`} className={cx("flex flex-col gap-6", className)}>
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
         <div className="flex flex-col gap-1">
           <h3 className="text-t-h3 text-t-ink">{data.name}</h3>

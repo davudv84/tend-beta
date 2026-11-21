@@ -21,7 +21,7 @@ export const buttonStyles = cva(
         primary: "bg-t-accent text-t-accent-fg shadow-t-button hover:bg-t-accent-hover active:bg-t-accent-press",
         secondary: "border border-t-line-strong bg-t-surface text-t-ink shadow-t-1 hover:bg-t-sunken active:bg-t-sunken",
         ghost: "text-t-text hover:bg-t-sunken hover:text-t-ink active:bg-t-line",
-        destructive: "bg-t-danger text-white shadow-t-button hover:bg-t-danger-hover",
+        destructive: "bg-t-danger text-t-danger-fg shadow-t-button hover:bg-t-danger-hover",
       },
       size: {
         sm: "h-8 px-3 text-t-label",

@@ -596,6 +596,7 @@
   --color-t-warn-line: var(--t-warn-line);
   --color-t-danger: var(--t-danger);
   --color-t-danger-hover: var(--t-danger-hover);
+  --color-t-danger-fg: var(--t-danger-fg);
   --color-t-danger-soft: var(--t-danger-soft);
   --color-t-danger-ink: var(--t-danger-ink);
   --color-t-danger-line: var(--t-danger-line);

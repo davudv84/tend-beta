@@ -4,11 +4,12 @@ import { Brand, Colors, Overview, Typography } from "./chapters-a";
 import { Buttons, Forms, Spacing, Surfaces } from "./chapters-b";
 import { Data, Navigation, Tend } from "./chapters-c";
 import { Compositions, Motion, Themes } from "./chapters-d";
+import type { ThemePref } from "../theme";
 import { Shell } from "./shell";
 
-export function DesignSystem() {
+export function DesignSystem({ initialTheme }: { initialTheme: ThemePref }) {
   return (
-    <Shell>
+    <Shell initialTheme={initialTheme}>
       <Overview />
       <Brand />
       <Colors />

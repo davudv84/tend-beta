@@ -48,14 +48,14 @@ export function Overview() {
         {principles.map(([t, b], i) => (
           <Reveal key={t} delay={i * 0.07} className="flex flex-col gap-3">
             <p className="t-num text-t-caption text-t-accent-text">{String(i + 1).padStart(2, "0")}</p>
-            <h3 className="text-t-h3 text-t-ink">{t}</h3>
+            <h2 className="text-t-h3 text-t-ink">{t}</h2>
             <p className="text-t-small text-t-muted [text-wrap:pretty]">{b}</p>
           </Reveal>
         ))}
       </div>
 
       <div className="mt-16 grid gap-x-12 gap-y-8 border-t border-t-line pt-10 md:grid-cols-[1fr_1.4fr]">
-        <h3 className="text-t-h4 text-t-ink">What is real here, and what is not</h3>
+        <h2 className="text-t-h4 text-t-ink">What is real here, and what is not</h2>
         <ul className="flex flex-col gap-3 text-t-small text-t-muted [text-wrap:pretty]">
           <li className="flex gap-3"><Icon icon={Check} size="md" className="mt-0.5 text-t-ok" /><span>Tokens, components and motion are real, reusable code under <code className="font-t-mono text-t-code text-t-ink">src/design-system</code>.</span></li>
           <li className="flex gap-3"><Icon icon={Check} size="md" className="mt-0.5 text-t-ok" /><span>Integration names, logos and status words come from TEND’s own catalogue and product vocabulary.</span></li>
@@ -224,7 +224,7 @@ function PairRow({ fg, bg, label }: { fg: string; bg: string; label: string }) {
   return (
     <tr>
       <td className="py-3 pr-4">
-        <span className="inline-flex h-9 min-w-24 items-center justify-center rounded-t-md border border-t-line px-3 text-t-label" style={{ color: `var(--t-${fg})`, background: `var(--t-${bg})` }}>
+        <span aria-hidden className="inline-flex h-9 min-w-24 items-center justify-center rounded-t-md border border-t-line px-3 text-t-label" style={{ color: `var(--t-${fg})`, background: `var(--t-${bg})` }}>
           Aa
         </span>
       </td>

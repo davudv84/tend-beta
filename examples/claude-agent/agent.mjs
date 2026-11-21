@@ -77,15 +77,23 @@ export function tendHttp(url, key, { timeoutMs = 10_000 } = {}) {
   if (!u || !(u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname))))
     throw new Error("TEND_URL must start with https:// (plain http only for localhost): the agent key would otherwise cross the network unencrypted. Nothing was sent.");
   return async (path, body, headers = {}) => {
-    const res = await fetch(url + path, {
-      method: body ? "POST" : "GET",
-      headers: { Authorization: `Bearer ${key}`, ...(body && { "Content-Type": "application/json" }), ...bypass(), ...headers },
-      body: body && JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(`Tend ${res.status} ${data.error}: ${data.message}`), { status: res.status, code: data.error, body: data });
-    return data;
+    // An ordinary timer, cleared when the call ends. `AbortSignal.timeout()` would do the same job, but its timer is unref'd: it does
+    // not keep the process alive, so a call that hangs with nothing else pending ends the whole process (or the test run) instead of timing out.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")), timeoutMs);
+    try {
+      const res = await fetch(url + path, {
+        method: body ? "POST" : "GET",
+        headers: { Authorization: `Bearer ${key}`, ...(body && { "Content-Type": "application/json" }), ...bypass(), ...headers },
+        body: body && JSON.stringify(body),
+        signal: ctl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(`Tend ${res.status} ${data.error}: ${data.message}`), { status: res.status, code: data.error, body: data });
+      return data;
+    } finally {
+      clearTimeout(timer);
+    }
   };
 }
 

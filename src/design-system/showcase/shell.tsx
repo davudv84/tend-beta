@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Menu, Monitor, Moon, Sun } from "lucide-react";
 import { cx } from "../cx";
-import { Scope, useReducedMotionPref, type ThemeName } from "../scope";
+import { Scope, useReducedMotionPref } from "../scope";
+import { THEME_COOKIE, type ThemePref } from "../theme";
 import { spring } from "../motion/tokens";
 import { IconButton } from "../ui/button";
 import { Icon } from "../ui/icons";
@@ -31,31 +32,7 @@ export const CHAPTERS = [
   { id: "compositions", label: "Compositions" },
 ] as const;
 
-type Pref = "light" | "dark" | "system";
-const STORE = "tend-ds-theme";
-
-/* The theme preference lives in localStorage and the system setting in matchMedia; both are external stores. */
-const prefListeners = new Set<() => void>();
-const subscribePref = (cb: () => void) => { prefListeners.add(cb); return () => { prefListeners.delete(cb); }; };
-function readPref(): Pref {
-  try {
-    const v = localStorage.getItem(STORE);
-    return v === "light" || v === "dark" || v === "system" ? v : "light";
-  } catch {
-    return "light";
-  }
-}
-function writePref(p: Pref) {
-  try { localStorage.setItem(STORE, p); } catch {}
-  prefListeners.forEach((l) => l());
-}
-const subscribeSystem = (cb: () => void) => {
-  const mq = matchMedia("(prefers-color-scheme: dark)");
-  mq.addEventListener("change", cb);
-  return () => mq.removeEventListener("change", cb);
-};
-const readSystem = (): ThemeName => (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-
+type Pref = ThemePref;
 function useScrollSpy(ids: readonly string[]) {
   const [active, setActive] = useState(ids[0]);
   useEffect(() => {
@@ -100,6 +77,7 @@ function ThemeSwitch({ pref, onChange }: { pref: Pref; onChange: (p: Pref) => vo
             type="button"
             role="radio"
             aria-checked={on}
+            aria-label={o.label}
             onClick={() => onChange(o.v)}
             className={cx(
               "relative flex h-8 items-center gap-1.5 rounded-[6px] px-2.5 text-t-label transition-colors duration-(--t-dur-fast) ease-t-out",
@@ -140,7 +118,7 @@ function Nav({ active, onPick }: { active: string; onPick: (id: string) => void 
                   on ? "bg-t-sunken font-medium text-t-ink" : "text-t-muted hover:text-t-ink",
                 )}
               >
-                <span className={cx("t-num w-5 text-t-caption", on ? "text-t-accent-text" : "text-t-subtle")}>{String(i + 1).padStart(2, "0")}</span>
+                <span className={cx("t-num w-5 text-t-caption", on ? "text-t-accent-text" : "text-t-muted")}>{String(i + 1).padStart(2, "0")}</span>
                 {c.label}
               </a>
             </li>
@@ -153,14 +131,17 @@ function Nav({ active, onPick }: { active: string; onPick: (id: string) => void 
 
 const IDS = CHAPTERS.map((c) => c.id);
 
-export function Shell({ children }: { children: ReactNode }) {
-  const pref = useSyncExternalStore(subscribePref, readPref, () => "light" as Pref);
-  const system = useSyncExternalStore(subscribeSystem, readSystem, () => "light" as ThemeName);
+export function Shell({ children, initialTheme }: { children: ReactNode; initialTheme: ThemePref }) {
+  // The server read the cookie and rendered this theme, so the first client render is the same: nothing to correct after hydration.
+  const [pref, setPref] = useState<Pref>(initialTheme);
   const [reduced, setReduced] = useState(false);
   const [active, setActive] = useScrollSpy(IDS);
   const [menu, setMenu] = useState(false);
-  const choose = useCallback((p: Pref) => writePref(p), []);
-  const theme: ThemeName = pref === "system" ? system : pref;
+  const choose = useCallback((p: Pref) => {
+    setPref(p);
+    document.cookie = `${THEME_COOKIE}=${p}; path=/; max-age=31536000; samesite=lax`;
+  }, []);
+  const theme = pref;
 
   return (
     <Scope theme={theme} density="app" reducedMotion={reduced} className="min-h-dvh">
@@ -204,7 +185,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   <ThemeSwitch pref={pref} onChange={choose} />
                 </div>
               </header>
-              <main id="main" className="px-5 pb-32 sm:px-8 lg:px-12">
+              <main id="main" tabIndex={-1} className="px-5 pb-32 outline-none sm:px-8 lg:px-12">
                 <div className="mx-auto max-w-[62rem]">{children}</div>
               </main>
             </div>

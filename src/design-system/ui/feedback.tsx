@@ -85,7 +85,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={value}>
       {children}
-      <div aria-live="polite" aria-label="Notifications" className="pointer-events-none fixed right-4 bottom-4 z-[60] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 sm:right-6 sm:bottom-6">
+      <div role="region" aria-live="polite" aria-label="Notifications" className="pointer-events-none fixed right-4 bottom-4 z-[60] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 sm:right-6 sm:bottom-6">
         <AnimatePresence initial={false}>
           {items.map((t) => (
             <ToastView key={t.id} item={t} onDismiss={() => dismiss(t.id)} />
