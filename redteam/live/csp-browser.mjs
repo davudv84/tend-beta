@@ -9,7 +9,8 @@ import path from "node:path";
 import { startIsolatedServer } from "../../scripts/isolated-server.mjs";
 
 const chromium = (() => { try { return createRequire(import.meta.url)("playwright").chromium; } catch { return undefined; } })();
-if (!chromium) { console.log("SKIP playwright is not installed"); process.exit(0); }
+// On CI a missing browser is a failure, never a silent pass.
+if (!chromium) { console.log(process.env.CI ? "FAIL playwright is not installed (required on CI)" : "SKIP playwright is not installed"); process.exit(process.env.CI ? 1 : 0); }
 const root = path.resolve(import.meta.dirname, "../..");
 const ADMIN = `csp_${randomBytes(24).toString("hex")}`;
 const server = await startIsolatedServer({ root, env: { TEND_ADMIN_TOKEN: ADMIN, TEND_DATA_DIR: mkdtempSync(path.join(tmpdir(), "tend-csp-")) } });

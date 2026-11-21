@@ -142,13 +142,14 @@ jobs:
           node --no-warnings redteam/live/mcp-proxy.mjs
           node --no-warnings redteam/live/rbac-matrix.mjs
           node --no-warnings scripts/alerts-e2e.mjs
-      - name: Two-step sign-in in a real browser (Chromium) on PostgreSQL
+      - name: Two-step sign-in and the Content-Security-Policy in a real browser (Chromium)
         env:
           TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.63.0
           npx playwright install --with-deps chromium
           node --no-warnings scripts/mfa-e2e.mjs
+          node --no-warnings redteam/live/csp-browser.mjs
       - name: Defence in depth - with a route's workspace check removed, row-level security must still hold the tenant matrix
         env:
           TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
