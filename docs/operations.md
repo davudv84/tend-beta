@@ -57,7 +57,8 @@ recovery (Neon, RDS, …) **and** periodic logical dumps kept elsewhere:
 pg_dump --format=custom --no-owner --file tend-$(date +%F).dump "$DATABASE_MIGRATE_URL"
 ```
 
-Restore into a new database, never over the live one:
+Use `pg_dump`/`pg_restore` of the **same major version as the server**: a newer `pg_restore` (18) writes settings an older server (16) rejects,
+which the drill on GitHub Actions caught. Restore into a new database, never over the live one:
 
 ```bash
 createdb tend_restore
