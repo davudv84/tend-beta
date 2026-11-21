@@ -2,8 +2,10 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { pageTitle } from "@/i18n/server";
 import { getDb } from "@/server/db";
+import { describeError } from "@/server/http";
 import { shouldOnboard } from "@/server/onboarding";
 import { currentSession } from "@/server/session";
+import { bindWorkspace, withRequestContext } from "@/server/db-context";
 import View from "./view";
 
 export const generateMetadata = pageTitle("home");
@@ -12,9 +14,15 @@ export const generateMetadata = pageTitle("home");
 async function needsGuide() {
   try {
     const db = await getDb();
-    const s = await currentSession(db, new Request("http://localhost/home", { headers: await headers() }));
-    return !!s && (await shouldOnboard(db, s));
-  } catch {
+    const h = await headers();
+    return await withRequestContext(async () => {
+      const s = await currentSession(db, new Request("http://localhost/home", { headers: h }));
+      if (!s) return false;
+      bindWorkspace(s.workspace); // the database shows this page only the signed-in account's own workspace
+      return shouldOnboard(db, s);
+    });
+  } catch (e) {
+    console.error("[tend] the setup-guide check failed:", describeError(e));
     return false; // the database is unreachable: Home itself says so
   }
 }

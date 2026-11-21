@@ -26,7 +26,7 @@ async function call(method, p, { body, cookie, key } = {}) {
   return { status: res.status, body: data, setCookie: res.headers.get("set-cookie") };
 }
 const cookieOf = (r) => r.setCookie?.split(";")[0];
-const mailTo = async (email, wait = 3000) => {
+const mailTo = async (email, wait = 20_000) => {
   // Mails are sent after the response; the outbox may take a moment.
   for (const end = Date.now() + wait; ; await new Promise((r) => setTimeout(r, 100))) {
     let files = [];

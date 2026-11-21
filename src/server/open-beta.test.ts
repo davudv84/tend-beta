@@ -87,7 +87,7 @@ test("without the admin: the token cannot sign in, an earlier admin session ends
   const adminReq = new Request("http://tend.test/api/admin/users", { headers: { host: "tend.test", cookie: `${sessionCookieName()}=${before.value}` } });
   assert.equal(await code(requireAdmin(adminReq, db)), "not_found");
   assert.equal(await code(requireAdmin(new Request("http://tend.test/api/admin/users"), db)), "not_found");
-  assert.equal(await code(requireOperator(new Request("http://tend.test/api/v1/state"), db)), "operator_required", "signed out, the dashboard is still refused");
+  assert.equal(await code(requireOperator(new Request("http://tend.test/api/v1/state"), db, "view")), "operator_required", "signed out, the dashboard is still refused");
   const v = await viewerOf(db, new Request("http://tend.test/"));
   assert.deepEqual([v.role, v.canAct, v.public, v.operatorAvailable, v.admin, v.approval], ["visitor", false, false, false, false, false]);
   delete process.env.TEND_ADMIN;

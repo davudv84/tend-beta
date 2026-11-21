@@ -3,7 +3,7 @@
 // it proves the guard is called in the handler, not that the guard is correct (that is tested in audit.test.ts and
 // server.test.ts, and end to end by scripts/authz-e2e.mjs).
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
@@ -22,6 +22,13 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
   "operator/session:DELETE": "public", // ends the caller's own session, and only with that session's own secret
   "operator/sessions:GET": "operator",
   "operator/sessions:DELETE": "operator",
+  "account/invitation:POST": "account",
+  "account/mfa:GET": "operator",
+  "account/mfa:POST": "operator",
+  "v1/members:GET": "operator",
+  "v1/members:POST": "operator",
+  "v1/members/[id]:PATCH": "operator",
+  "v1/members/[id]:DELETE": "operator",
   "v1/state:GET": "viewer",
   "v1/events:GET": "viewer",
   "v1/events:POST": "agent",
@@ -80,9 +87,9 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
 function handlers() {
   const out: { key: string; body: string }[] = [];
   const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const full = path.join(dir, name);
-      if (statSync(full).isDirectory()) walk(full);
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const name = entry.name, full = path.join(dir, name);
+      if (entry.isDirectory()) walk(full);
       else if (name === "route.ts") {
         const src = readFileSync(full, "utf8");
         const rel = path.relative(ROOT, path.dirname(full)).split(path.sep).join("/");
@@ -107,6 +114,29 @@ test("every API handler is classified, and calls the guard its class requires", 
   }
 });
 
+// The workspace role each operator route requires (src/server/rbac.ts). A new operator route must be added here with its need.
+const NEED: Record<string, string> = {
+  "operator/sessions:GET": "self", "operator/sessions:DELETE": "self",
+  "account/mfa:GET": "self", "account/mfa:POST": "self",
+  "v1/members:GET": "view", "v1/members:POST": "members", "v1/members/[id]:PATCH": "members", "v1/members/[id]:DELETE": "members",
+  "v1/agents:POST": "manage", "v1/agents/[id]/verification:GET": "operate", "v1/agents/[id]/verification:POST": "operate",
+  "v1/agents/[id]/policy:GET": "view", "v1/agents/[id]/policy:POST": "manage", "v1/agents/[id]/check-in-requests:POST": "operate",
+  "v1/agents/[id]/control:POST": "operate", "v1/agents/[id]/keys:POST": "manage", "v1/agents/[id]/keys:DELETE": "manage",
+  "v1/reviews/[id]:POST": "operate", "v1/central-policies:GET": "view", "v1/central-policies:POST": "manage", "v1/central-policies/[id]:POST": "manage",
+  "v1/central-policies/[id]/assignments:POST": "manage", "v1/sample-agent:POST": "manage", "v1/notifications:GET": "self", "v1/notifications/test:POST": "operate",
+  "v1/notifications/preferences:GET": "self", "v1/notifications/preferences:POST": "self", "v1/notifications/read:POST": "operate",
+  "v1/notifications/subscriptions:POST": "self", "v1/notifications/subscriptions:DELETE": "self", "v1/policy-simulations:POST": "view",
+  "v1/integrations/status:GET": "view", "v1/onboarding:GET": "self", "v1/onboarding:POST": "self",
+};
+test("every operator route requires exactly its workspace role, and every call to requireOperator names one", () => {
+  for (const h of handlers()) {
+    const needs = [...h.body.matchAll(/requireOperator\(req, db, "(\w+)"\)/g)].map((m) => m[1]);
+    assert.equal((h.body.match(/requireOperator\(/g) ?? []).length, needs.length, `${h.key}: every requireOperator call names a need`);
+    if (EXPECTED[h.key] === "operator") assert.deepEqual([...new Set(needs)], [NEED[h.key]], `${h.key} requires ${NEED[h.key]}`);
+  }
+  assert.deepEqual(Object.keys(NEED).sort(), Object.keys(EXPECTED).filter((k) => EXPECTED[k] === "operator").sort());
+});
+
 test("operator routes never take an agent key as authority, and agent routes never take an operator session", () => {
   for (const h of handlers()) {
     const cls = EXPECTED[h.key];
@@ -120,7 +150,8 @@ test("operator routes stay inside the caller's workspace: an id in the path is c
     if (EXPECTED[h.key] !== "operator") continue;
     const path = h.key.split(":")[0];
     if (/\/\[id\]/.test(path)) {
-      const check = path.startsWith("v1/agents/") ? "agentInWorkspace(" : path.startsWith("v1/reviews/") ? "reviewInWorkspace(" : path.startsWith("v1/central-policies/") ? "centralInWorkspace(" : "?";
+      // members: setMemberRole/removeMember take the whole session and find the id among the session workspace's locked members only
+      const check = path.startsWith("v1/agents/") ? "agentInWorkspace(" : path.startsWith("v1/reviews/") ? "reviewInWorkspace(" : path.startsWith("v1/central-policies/") ? "centralInWorkspace(" : path.startsWith("v1/members/") ? "(db, s, id" : "?";
       const at = h.body.indexOf(check);
       assert.ok(at > 0, `${h.key} must call ${check}`);
       // Nothing that reads or changes the object may come before the check.

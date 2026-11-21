@@ -22,6 +22,9 @@ import { clientIp, HttpError } from "./http.ts";
 import { spend } from "./limits.ts";
 import { ensureDemoAccount } from "./demo-account.ts";
 import { allAgents, revokeKey } from "./repo.ts";
+import { mfaStatus, secondFactor } from "./mfa.ts";
+const MFA_LOCK_AFTER = 10;
+const DAY = 24 * 3_600_000;
 import { audit, createSession, signOut } from "./session.ts";
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number, opts: object) => Promise<Buffer>;
@@ -54,7 +57,7 @@ export async function checkPassword(pw: string, stored: string) {
 let dummy: Promise<string> | undefined;
 const dummyHash = () => (dummy ??= hashPassword(randomBytes(16).toString("hex")));
 
-const cleanEmail = (v: unknown) => {
+export const cleanEmail = (v: unknown) => {
   const e = typeof v === "string" ? v.trim().toLowerCase() : "";
   if (e.length > 254 || !EMAIL.test(e)) throw new HttpError(422, "invalid_email", "Enter a valid e-mail address.");
   return e;
@@ -71,7 +74,7 @@ interface UserRow { id: string; email: string; password_hash: string; workspace_
 const userByEmail = (q: Q, email: string) => q.get<UserRow>("SELECT * FROM users WHERE email = ?", email);
 
 /** Where links in mails point. Configured in production (config.appUrl), never read from the request there; locally the request's own origin. */
-function base(req?: Request) {
+export function base(req?: Request) {
   if (config.appUrl) return config.appUrl;
   if ((process.env.NODE_ENV === "production" && !config.localHttp) || !req) throw new HttpError(503, "accounts_disabled", "Accounts are not configured on this server.");
   return new URL(req.url).origin;
@@ -81,10 +84,10 @@ function requireAccounts() {
 }
 
 /** A fresh one-time token for this user and purpose; any older unused one of the same purpose stops working. */
-async function issueToken(q: Q, userId: string, purpose: "verify" | "reset", now: number) {
+export async function issueToken(q: Q, userId: string, purpose: "verify" | "reset", now: number, ttl = TOKEN_TTL[purpose]) {
   const token = randomBytes(32).toString("base64url");
   await q.run("UPDATE user_tokens SET used_at = ? WHERE user_id = ? AND purpose = ? AND used_at IS NULL", now, userId, purpose);
-  await q.run("INSERT INTO user_tokens (hash, user_id, purpose, created_at, expires_at) VALUES (?, ?, ?, ?, ?)", sha(token), userId, purpose, now, now + TOKEN_TTL[purpose]);
+  await q.run("INSERT INTO user_tokens (hash, user_id, purpose, created_at, expires_at) VALUES (?, ?, ?, ?, ?)", sha(token), userId, purpose, now, now + ttl);
   return token;
 }
 /** Spends a token: the user it belongs to, or a 400. Malformed, unknown, used and expired tokens all get the same answer. */
@@ -104,6 +107,9 @@ const mails = {
   waiting: (to: string, who: string, link: string): Mail => ({ to, subject: "A TEND account is waiting for approval", text: `${who} confirmed their e-mail address and is waiting for beta access.\n\nApprove or decline: ${link}/admin/users` }),
 };
 export type Outbox = Mail[];
+/** Told to the account whenever its second factor changes: a change the owner did not make is an attack in progress. */
+export const mfaMail = (to: string, on: boolean, by = "you"): Mail => ({ to, subject: on ? "Two-step sign-in was turned on for your TEND account" : "Two-step sign-in was turned off for your TEND account",
+  text: `Two-step sign-in was turned ${on ? "on" : "off"} for your TEND account by ${by}.\n\nIf this was not you, reset your password now (${on ? "and contact the TEND admin, who can remove a second factor you do not control" : "and turn two-step sign-in on again"}).` });
 
 /** Mails go out after the answer is decided (the route sends them after responding), so how long a request takes says nothing about the address. */
 export async function deliver(outbox: Outbox, send: Send = sendMail) {
@@ -206,7 +212,7 @@ export async function resendVerification(db: DB, req: Request, input: unknown, n
 export async function passwordSignIn(db: DB, req: Request, input: unknown, now = Date.now()) {
   requireAccounts();
   const client = clientIp(req);
-  const o = (input ?? {}) as { email?: unknown; password?: unknown };
+  const o = (input ?? {}) as { email?: unknown; password?: unknown; code?: unknown };
   const email = typeof o.email === "string" ? o.email.trim().toLowerCase().slice(0, 254) : "";
   const password = typeof o.password === "string" ? o.password.slice(0, PASSWORD.max) : "";
   const perClient = await spend(db, `account:fail:${client}`, LIMITS.signInFailuresPerMinute, { now });
@@ -223,7 +229,21 @@ export async function passwordSignIn(db: DB, req: Request, input: unknown, now =
     await audit(db, "signin.failed", { client, reason: "invalid_credentials", ...(u && { userId: u.id }), now });
     throw new HttpError(401, "invalid_credentials", "That e-mail address and password don’t match an account.");
   }
-  // The password was right: give the failures back.
+  // Two-step sign-in, when the account has it: checked BEFORE the failures are given back, so guessing codes spends the same budget as
+  // guessing passwords. Only someone who knew the password learns that a code is needed.
+  // After MFA_LOCK_AFTER wrong codes in a day, the second factor is locked until the owner resets the password by e-mail: someone who knows
+  // the password gets a bounded number of guesses, not 20 an hour forever (about 3 codes in a million are valid at a time).
+  const lockKey = `mfa:lock:${u.id}`;
+  if (!(await spend(db, lockKey, MFA_LOCK_AFTER - 1, { windowMs: DAY, now, cost: 0 })).ok && (await mfaStatus(db, u.id)).enabled)
+    throw new HttpError(429, "mfa_locked", "Too many wrong codes. Reset your password by e-mail to sign in again.", { retryAfter: 86_400 });
+  const factor = await secondFactor(db, u.id, typeof o.code === "string" ? o.code.slice(0, 40) : undefined, now);
+  if (factor === "missing") throw new HttpError(401, "mfa_required", "Enter the code from your authenticator app (or a recovery code).");
+  if (factor === "invalid") {
+    await spend(db, lockKey, MFA_LOCK_AFTER, { windowMs: DAY, now });
+    await audit(db, "signin.failed", { client, reason: "mfa_invalid", userId: u.id, now });
+    throw new HttpError(401, "mfa_invalid", "That code is not right. Use the current code from your authenticator app, or a recovery code.");
+  }
+  // The password (and the code) were right: give the failures back.
   await spend(db, `account:fail:${client}`, LIMITS.signInFailuresPerMinute, { now, cost: -1 });
   await spend(db, `account:fail:${email}`, LIMITS.failuresPerAccountPerHour, { windowMs: HOUR, now, cost: -1 });
   if (u.disabled_at !== null || (u.read_only && u.email !== config.demoAccount?.email)) throw new HttpError(403, "account_disabled", "This account has been disabled. Contact the TEND admin.");
@@ -296,7 +316,7 @@ export async function resetPassword(db: DB, input: unknown, now = Date.now()) {
     await q.run("UPDATE user_tokens SET used_at = ? WHERE user_id = ? AND purpose = 'reset' AND used_at IS NULL", now, userId);
     await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", now, userId);
     // Failed sign-ins counted against the account end with the reset: someone guessing must not keep the owner out of the new password.
-    await q.run("DELETE FROM rate_limits WHERE key = ?", `account:fail:${u.email}`);
+    await q.run("DELETE FROM rate_limits WHERE key = ? OR key = ?", `account:fail:${u.email}`, `mfa:lock:${userId}`);
     await audit(q, "account.password_reset", { userId, now });
     // A reset proves the mailbox as a confirmation link does, so without admin approval the account is ready after it, as after confirming.
     if (!config.approvalRequired) await autoApprove(q, userId, now);
@@ -313,7 +333,7 @@ export async function listUsers(q: Q) {
 
 /** Approve (the user is mailed), disable (every session ends and every agent key of the workspace is revoked, at once), or enable again (keys stay revoked: the user issues new ones). */
 export async function setAccess(db: DB, req: Request, userId: string, action: unknown, by: string, now = Date.now()) {
-  if (!["approve", "disable", "enable"].includes(action as string)) throw new HttpError(422, "invalid_action", "action must be approve, disable or enable.");
+  if (!["approve", "disable", "enable", "reset_mfa"].includes(action as string)) throw new HttpError(422, "invalid_action", "action must be approve, disable, enable or reset_mfa.");
   const result = await db.tx(async (q) => {
     const u = await q.get<UserRow>("SELECT * FROM users WHERE id = ? FOR UPDATE", userId);
     if (!u) throw new HttpError(404, "user_not_found", "No account with that id.");
@@ -329,9 +349,18 @@ export async function setAccess(db: DB, req: Request, userId: string, action: un
       await q.run("UPDATE users SET disabled_at = COALESCE(disabled_at, ?) WHERE id = ?", now, userId);
       await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", now, userId);
       await audit(q, "account.disabled", { userId, sessionId: by, now });
+    } else if (action === "reset_mfa") {
+      // For an owner who lost their phone and recovery codes: the platform admin removes the second factor, on record, and the account is told.
+      if (await q.run("DELETE FROM user_mfa WHERE user_id = ?", userId)) {
+        await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", now, userId);
+        await audit(q, "mfa.disabled", { userId, sessionId: by, reason: "admin_reset", now });
+        outbox.push(mfaMail(u.email, false, "the TEND admin"));
+      }
     } else await q.run("UPDATE users SET disabled_at = NULL WHERE id = ?", userId);
-    return { user: (await listUsers(q)).find((x) => x.id === userId), outbox, workspace: u.workspace_id };
+    // The workspace's agent keys go with its last active member: other members of a shared workspace keep their agents working.
+    const othersActive = !!(await q.get("SELECT 1 FROM users WHERE workspace_id = ? AND id <> ? AND disabled_at IS NULL", u.workspace_id, userId));
+    return { user: (await listUsers(q)).find((x) => x.id === userId), outbox, workspace: u.workspace_id, othersActive };
   });
-  if (action === "disable") for (const a of await allAgents(db, result.workspace)) if (a.origin === "connected") await revokeKey(db, a.id, by);
+  if (action === "disable" && !result.othersActive) for (const a of await allAgents(db, result.workspace)) if (a.origin === "connected") await revokeKey(db, a.id, by);
   return { user: result.user, outbox: result.outbox };
 }

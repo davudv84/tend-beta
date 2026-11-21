@@ -5,7 +5,17 @@
 // a missing or rejected setting, or a TEND that is not running, produces a sentence saying what to do, never a stack trace.
 import { createGate } from "../claude-agent/gate.mjs";
 
+/** The agent key goes with every request: plain http only to this computer itself, https everywhere else. */
+export function keySafeUrl(url) {
+  let u;
+  try { u = new URL(url); } catch { return false; }
+  return u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname));
+}
+
 export function connectTend({ url = process.env.TEND_URL ?? "http://localhost:3000", key = process.env.TEND_AGENT_KEY, onPending, log, ...options } = {}) {
+  if (!keySafeUrl(url)) {
+    throw new Error(`TEND_URL must start with https:// (plain http only for localhost). With ${String(url).split("/").slice(0, 3).join("/")} the agent key would cross the network unencrypted, so nothing was sent.`);
+  }
   if (!key) {
     throw new Error(`TEND_AGENT_KEY is not set, so this agent has no identity at TEND.
 Register the agent once (this also writes its key to .env.agent):

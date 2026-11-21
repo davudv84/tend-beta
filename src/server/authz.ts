@@ -18,8 +18,8 @@ import type { Agent } from "../lib/types";
 import { hashKey } from "./auth.ts";
 import type { DB, Q } from "./db.ts";
 import { HttpError } from "./http.ts";
-import { evaluateEffective, fingerprint, ID, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
-import { agentBudget, agentRow, centralOf, insertEvent, keyRevoked, toAgent } from "./repo.ts";
+import { evaluateEffective, fingerprint, ID, INVISIBLE, mixesAlphabets, parseAuthRequest, ruleBehind, type AuthRequest } from "./policy.ts";
+import { agentBudget, agentRow, centralOf, insertEvent, keyRevoked, toAgent, workspaceOf } from "./repo.ts";
 
 export const TTL = { request: 10 * 60_000, approval: 5 * 60_000, token: 60_000 };
 export const MAX_PENDING = 20;
@@ -44,6 +44,35 @@ const exactOf = (r: AuthRequest) => {
   const v = ["command", "path", "url"].map((k) => r.args?.[k]).find((x) => typeof x === "string" && x.length > 0) as string | undefined;
   return v ? { exact: v } : {};
 };
+/**
+ * Every argument the request carries except the one already shown as the exact command, path or address, as `name: value` lines for the person
+ * deciding. The policy (and the fingerprint the approval is bound to) look at ALL arguments, so the person must be able to see them too: an
+ * amount or a recipient that decided the rule is not left out because the agent's one-line `detail` does not mention it. Characters that render
+ * as nothing or reverse text are shown as <U+XXXX> instead of acting, so what is read is what is there. Long values are cut and say so.
+ */
+export const VISIBLE_LIMIT = { entries: 12, value: 300, total: 1200 };
+const visible = (s: string) => s.replace(/\r?\n/g, " ↵ ").replace(/\t/g, " ⇥ ").replace(new RegExp(INVISIBLE.source, "gu"), (c) => `<U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}>`);
+const argsTextOf = (r: AuthRequest, primary?: string) => {
+  if (!r.args) return {};
+  const rows = Object.entries(r.args).filter(([k]) => k !== primary);
+  // The exact text box scrolls; say how long what is in it really is, so a command with its tail far below the fold is not mistaken for a short one.
+  const exact = primary ? (r.args[primary] as string) : "";
+  const size = exact.split("\n").length > 1 || exact.length > 300 ? [`${primary} (the exact text above): ${exact.split("\n").length} lines, ${exact.length} characters in all`] : [];
+  if (!rows.length && !size.length) return {};
+  const line = ([k, v]: [string, unknown]) => {
+    // A value an adapter replaced by its hash and length (MCP proxy, long values): the person cannot read it, and is told so rather than shown a hash as if it were content.
+    if (v && typeof v === "object" && !Array.isArray(v) && typeof (v as { sha256?: unknown }).sha256 === "string" && Object.keys(v).every((x) => x === "sha256" || x === "length"))
+      return `${visible(k)}: ⚠ NOT SHOWN IN FULL: ${(v as { length?: unknown }).length ?? "many"} characters, fingerprint ${String((v as { sha256: string }).sha256).slice(0, 12)}… The approval covers exactly this content.`;
+    const raw = typeof v === "string" ? v : JSON.stringify(v) ?? String(v);
+    const shown = visible(raw);
+    const warn = mixesAlphabets(raw) || mixesAlphabets(k) ? " ⚠ mixes alphabets in one word (look-alike letters)" : "";
+    return `${visible(k)}: ${shown.length > VISIBLE_LIMIT.value ? `${shown.slice(0, VISIBLE_LIMIT.value)}… (${raw.length} characters in all)` : shown}${warn}`;
+  };
+  let text = [...size, ...rows.slice(0, VISIBLE_LIMIT.entries).map(line)].join("\n");
+  if (rows.length > VISIBLE_LIMIT.entries) text += `\n… and ${rows.length - VISIBLE_LIMIT.entries} more arguments`;
+  return { argsText: text.length > VISIBLE_LIMIT.total ? `${text.slice(0, VISIBLE_LIMIT.total)}…` : text };
+};
+const exactKey = (r: AuthRequest) => ["command", "path", "url"].find((k) => typeof r.args?.[k] === "string" && (r.args[k] as string).length > 0);
 const bound = (r: Pick<AuthRequest, "tool" | "action" | "resource" | "detail">) => ({ tool: r.tool, action: r.action, ...(r.resource && { resource: r.resource }), ...(r.detail && { detail: r.detail }) });
 
 /** What an agent may see about an authorization. Never the fingerprint or token hash. */
@@ -98,7 +127,7 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
   if (idemKey !== null && !ID.test(idemKey)) throw new HttpError(422, "invalid_idempotency_key", "Idempotency-Key must be 1–64 characters of letters, digits, _ . : -");
   const r = parsed.request, fp = fingerprint(agent.id, r);
   await sweepExpired(db, now); // committed on its own: the checks below may throw and roll their transaction back
-  await agentBudget(db, agent.id, "authorizations"); // denials are stored too, so they count: a refused flood must not fill the table
+  await agentBudget(db, agent.id, "authorizations", 1, workspaceOf(agent)); // denials are stored too, so they count: a refused flood must not fill the table
   return db.tx(async (q) => {
     await q.lockEvents();
     await expireStale(q, now);
@@ -136,7 +165,7 @@ export async function requestAuthorization(db: DB, agent: Agent, body: unknown, 
     const stored = (await q.get<Row>("SELECT * FROM authorizations WHERE id = ?", id))!;
     await insertEvent(q, status === "denied"
       ? { agentId: agent.id, type: "authorization.denied", actor: "system", at: now, data: { authorizationId: id, ...bound(r), ...why } }
-      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), ...(status === "pending" && exactOf(r)), status: status === "consumed" ? "approved" : status, approval: status === "pending", expiresAt: view(stored).expiresAt, ...why } });
+      : { agentId: agent.id, type: "authorization.requested", actor: "agent", at: now, data: { authorizationId: id, ...bound(r), ...(status === "pending" && { ...exactOf(r), ...argsTextOf(r, exactKey(r)) }), status: status === "consumed" ? "approved" : status, approval: status === "pending", expiresAt: view(stored).expiresAt, ...why } });
     if (status === "consumed") await insertEvent(q, { agentId: agent.id, type: "authorization.consumed", actor: "system", at: now, data: { authorizationId: id, ...bound(r) } });
     return { view: view(stored), created: true };
   });

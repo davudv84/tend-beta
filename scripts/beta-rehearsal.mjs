@@ -43,7 +43,7 @@ try {
   const sandbox = mkdtempSync(path.join(tmpdir(), "tend-rehearsal-sb-"));
   for (const n of names) {
     const c = configs[n];
-    servers.push({ name: n, token: c.TEND_ADMIN_TOKEN, server: await startIsolatedServer({ root, database: "postgres", env: { TEND_ADMIN_TOKEN: c.TEND_ADMIN_TOKEN, TEND_GATEWAY_PAYMENTS_KEY: c.TEND_GATEWAY_PAYMENTS_KEY, TEND_GATEWAY_SANDBOX_DIR: sandbox, DATABASE_URL: `postgres://tend_test@127.0.0.1:${pgPort}/tend_${n}`, TEND_LOCAL_HTTP: "", TEND_PUBLIC: c.TEND_PUBLIC, TEND_DEMO: c.TEND_DEMO } }) });
+    servers.push({ name: n, token: c.TEND_ADMIN_TOKEN, server: await startIsolatedServer({ root, database: "postgres", env: { TEND_ADMIN_TOKEN: c.TEND_ADMIN_TOKEN, TEND_GATEWAY_PAYMENTS_KEY: c.TEND_GATEWAY_PAYMENTS_KEY, TEND_GATEWAY_SANDBOX_DIR: sandbox, DATABASE_URL: `postgres://tend_test@127.0.0.1:${pgPort}/tend_${n}`, TEND_LOCAL_HTTP: "", TEND_DB_ALLOW_OWNER_LOGIN: "1" /* single superuser URL: the legacy setup, accepted explicitly */, TEND_PUBLIC: c.TEND_PUBLIC, TEND_DEMO: c.TEND_DEMO } }) });
   }
   const results = await liveCheck({ allowHttp: true, instances: servers.map((s) => ({ name: s.name, url: s.server.url, token: s.token })) });
   for (const r of results) console.log(`${r.ok ? "ok  " : "FAIL"} [${r.instance}] ${r.text}`);

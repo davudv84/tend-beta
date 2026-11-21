@@ -48,7 +48,7 @@ node ~/.tend/tend-hooks.mjs uninstall claude-code          # add --project /path
 - It checks every tool call Claude Code makes **while TEND's hooks are installed**: commands, file reads and edits, web and MCP tools. A call
   is refused when TEND says no, when TEND cannot be reached, when nobody decides within 9 minutes, or when the hook itself fails.
 - It does not see anything Claude Code does without the hooks: if they are removed, disabled in a settings file, or Claude Code is started
-  in a way that skips them. Claude Code's bypass-permissions mode has not been tested with TEND.
+  in a way that skips them. Claude Code's bypass-permissions mode does not skip the hooks (tested 2026-11-18); its --bare mode was not tested.
 - Rules match the text of a command. A command written to avoid a rule (an alias, a script) can get past it. Balanced is a safety net, not a
   sandbox.
 - More detail: `docs/assistant-integrations.md`.

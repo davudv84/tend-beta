@@ -260,15 +260,23 @@ test("tendHttp: errors keep status and code but never the key or request body; a
   const key = "tend_sk_secretsecretsecret";
   try {
     globalThis.fetch = async () => Response.json({ error: "not_approved", message: "nope", status: "rejected" }, { status: 403 });
-    const e = await tendHttp("http://tend.test", key)("/x", { token: "tend_az_SECRET" }).catch((x) => x);
+    const e = await tendHttp("https://tend.test", key)("/x", { token: "tend_az_SECRET" }).catch((x) => x);
     assert.deepEqual([e.status, e.code, e.body.status], [403, "not_approved", "rejected"]);
     assert.equal(JSON.stringify({ m: e.message, b: e.body, s: e.stack?.split("\n")[0] }).match(/tend_sk_|tend_az_/), null);
 
     globalThis.fetch = async () => { throw new TypeError("fetch failed"); };
-    assert.equal((await tendHttp("http://tend.test", key)("/x").catch((x) => x)).status, undefined);
+    assert.equal((await tendHttp("https://tend.test", key)("/x").catch((x) => x)).status, undefined);
 
+    // AbortSignal.timeout() uses an unref'd timer, and this mock holds no socket: with nothing else alive the runner sees an empty event loop
+    // and fails the test ("Promise resolution is still pending"), and every test after it in the file. A real fetch holds a socket. Hold
+    // the loop open the way a real connection would, until the timeout has fired.
+    const hold = setTimeout(() => {}, 30_000);
     globalThis.fetch = (_url, init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
-    assert.equal((await tendHttp("http://tend.test", key, { timeoutMs: 20 })("/x").catch((x) => x)).status, undefined);
+    try {
+      assert.equal((await tendHttp("https://tend.test", key, { timeoutMs: 20 })("/x").catch((x) => x)).status, undefined);
+    } finally {
+      clearTimeout(hold);
+    }
   } finally {
     globalThis.fetch = real;
   }
@@ -403,4 +411,9 @@ test("one round trip: a spend is bound to the arguments, policy changes before i
     assert.deepEqual([out.executed, s.ran()], [false, 0], name);
     await s.db.close();
   }
+});
+
+test("tendHttp refuses plain http to another computer before anything is sent", () => {
+  for (const url of ["http://tend.test", "http://10.1.2.3:3000"]) assert.throws(() => tendHttp(url, "tend_sk_" + "a".repeat(32)), /must start with https:\/\//, url);
+  for (const url of ["https://tend.test", "http://localhost:3000", "http://127.0.0.1:9"]) assert.doesNotThrow(() => tendHttp(url, "tend_sk_" + "a".repeat(32)), url);
 });

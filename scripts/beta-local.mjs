@@ -13,7 +13,7 @@
 // it can write only to its own folders and cannot read your credentials, other instances' folders or this repository's secrets.
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, constants, existsSync, fchmodSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync, writeSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as nodeUtil from "node:util";
@@ -36,7 +36,6 @@ export function provision(work, names) {
   for (const name of names) {
     if (!NAME.test(name)) throw new Error(`"${name}" is not a usable instance name (lowercase letters, digits and hyphens).`);
     const d = instanceDirs(work, name);
-    if (existsSync(d.env)) throw new Error(`${name} already has a local.env; refusing to overwrite its secrets.`);
     while (used.has(port)) port++;
     used.add(port);
     mkdirSync(path.dirname(d.env), { recursive: true, mode: 0o700 });
@@ -44,8 +43,11 @@ export function provision(work, names) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       chmodSync(dir, 0o700);
     }
-    writeFileSync(d.env, `# Beta instance "${name}" (local hosting). Secrets: keep private; git-ignored.\nPORT=${port}\nTEND_ADMIN_TOKEN=${randomBytes(32).toString("base64url")}\nTEND_GATEWAY_PAYMENTS_KEY=${randomBytes(24).toString("base64url")}\n`, { mode: 0o600 });
-    chmodSync(d.env, 0o600);
+    // The secrets file is written and made private through one descriptor that is not a symbolic link (not by path, twice); O_EXCL: never over an existing file.
+    let fd;
+    try { fd = openSync(d.env, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600); }
+    catch (e) { if (e.code === "EEXIST" || e.code === "ELOOP") throw new Error(`${name} already has a local.env; refusing to overwrite its secrets.`); throw e; }
+    try { fchmodSync(fd, 0o600); writeSync(fd, `# Beta instance "${name}" (local hosting). Secrets: keep private; git-ignored.\nPORT=${port}\nTEND_ADMIN_TOKEN=${randomBytes(32).toString("base64url")}\nTEND_GATEWAY_PAYMENTS_KEY=${randomBytes(24).toString("base64url")}\n`); } finally { closeSync(fd); }
     writeFileSync(path.join(d.sandbox, "hello.txt"), "Hello from your TEND test sandbox. This file is disposable.\n", { flag: "wx" });
     made.push({ name, port });
     port++;

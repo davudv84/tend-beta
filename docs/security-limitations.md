@@ -11,8 +11,9 @@ Read this before you put anything real behind TEND. This beta is for controlled 
 - **One policy for many agents.** A central policy applies to every agent assigned to it from the moment it changes, including requests already
   waiting or approved. An agent's own rules can make a centrally governed action stricter, never looser.
 - **Looks at arguments.** A rule can depend on what the tool is called with (`when`: e.g. an email only to `example.com` addresses, a refund up
-  to 50, a file only inside `/data/reports`). The approval is bound to those exact arguments; a missing or malformed argument never satisfies a
-  condition, so "allow when … + deny everything else" fails closed.
+  to 50, a file only inside `/data/reports`). The approval is bound to those exact arguments; a missing, wrongly typed or empty argument is treated as unknown (not as "no match"): a deny or approve rule that might match applies, an allow rule
+  does not, so "allow when … + deny everything else" fails closed and "approve when amount > 50" cannot be stepped around by sending `"5000"` or leaving `amount` out.
+  Text rules (`contains`, `startsWith` …) on a deny list are still easy to rephrase (`rm  -rf`); write allow-lists, not deny-lists.
 - **Runs each authorized call at most once.** Allowed calls are authorized and spent in one step; a retry after a lost answer, or the same
   tool-call id delivered twice, is refused rather than run again.
 - **Keeps a record.** Requests, decisions, policy changes and revocations are written to an append-only log in the same transaction as the change.
@@ -49,6 +50,19 @@ Read this before you put anything real behind TEND. This beta is for controlled 
 - **No independent security review, no availability guarantees, no notifications.** The dashboard must be open to see what waits for you.
 - **Measured locally only.** Latency and throughput figures (docs/benchmark.md) come from one machine with an embedded database; a hosted TEND
   adds a network round trip per request (two per protected call, three after an approval).
+
+## Added by the security verification (see SECURITY-VERIFICATION.md)
+
+- **Approvers see every argument.** A pending request now lists all of its arguments (names and values, hidden or direction-changing characters
+  shown as `<U+XXXX>`, long values cut and marked), not only the agent's one-line description. The description is still agent-written text.
+- **A list that disagrees with itself is unknown.** `amount: [5000, 1]` against "approve when amount > 50" asks for approval (a tool that uses any
+  one element must not get around a rule).
+- **Agent keys can expire** (optional): `keyExpiresInDays` when registering or rotating a key, and `TEND_KEY_MAX_AGE_DAYS` as a server-wide cap. An expired key is
+  refused like a revoked one, including for approvals it had in flight. Default: no expiry, as before.
+- **Claude Code hooks installed per user or project can be switched off by the repository you open** (`disableAllHooks` in its own settings,
+  or `--setting-sources user`; tested with real Claude Code). `install claude-code --managed` (administrator rights) puts them in Claude Code's
+  organization settings, which a repository and the flags tried here cannot override (tested, 15 checks). `--bare` is untested and treated as a
+  bypass. TEND cannot see an agent whose hooks are off: it is silent, not alarmed.
 
 ## If you find a problem
 

@@ -54,6 +54,7 @@ export function RequestCard({ request, now, onAnswered }: { request: HomeRequest
       sentence={sentence}
       meta={<>{h.asked(timeAgo(auth.createdAt, now))} · {h.lapsesIn(minutes)}</>}
       // For a hook request, the whole command, path or URL the approval is bound to: the detail line stops at 200 characters.
+      args={auth.argsText ? { label: h.rows.args, text: auth.argsText } : undefined}
       exact={(showsContent(kind) || hook) && auth.detail ? { label: h.exact, text: hook ? auth.exact ?? auth.detail : auth.detail, mono: hook } : undefined}
       item={auth.resource && !hook ? { label: h.rows.item, value: auth.resource } : undefined}
       why={why ? { label: h.why, value: why } : undefined}

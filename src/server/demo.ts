@@ -2,6 +2,8 @@
 // this file, are stored with actor "simulation", and are labelled simulated everywhere they appear.
 // It advances lazily — each read catches up on the time since the last one — so no background job is needed.
 // Several server instances may read at once: an advisory lock lets exactly one of them advance the clock.
+import { asOwner } from "./db-context.ts";
+import { HttpError } from "./http.ts";
 import type { EventType } from "../lib/projection.ts";
 import { createSeed, simulateCheckIn } from "../lib/seed.ts";
 import type { Agent } from "../lib/types";
@@ -47,6 +49,9 @@ const ms = (t: number) => Math.round(t);
 
 /** Inserts the demo agents and a 30-day history, once, whichever instance gets there first. */
 export async function seedDemo(db: DB, now: number) {
+  return asOwner(() => seedDemoAsOwner(db, now));
+}
+async function seedDemoAsOwner(db: DB, now: number) {
   if (!config.demo || (await meta.get(db, "demo.seeded"))) return;
   await db.tx(async (q) => {
     await q.get("SELECT pg_advisory_xact_lock(?)", LOCK.DEMO);
@@ -86,6 +91,9 @@ interface Phase { phase: "idle" | "working"; until: number; taskId?: string; sum
 /** Generates the demo agents' events between the last read and `now`, then records the new tick. */
 export async function advanceDemo(db: DB, now: number) {
   if (!config.demo) return;
+  return asOwner(() => advanceDemoAsOwner(db, now));
+}
+async function advanceDemoAsOwner(db: DB, now: number) {
   await seedDemo(db, now);
   if (now - Number((await meta.get(db, "demo.tick")) ?? now) < 1500) return;
   await db.tx(async (q) => {
@@ -151,8 +159,16 @@ export async function advanceDemo(db: DB, now: number) {
     }
 
     if (now - Number((await meta.get(q, "demo.pruned")) ?? 0) > 3600 * S) {
-      await allowEventRemoval(q);
-      await q.run("DELETE FROM events WHERE actor = 'simulation' AND at < ?", ms(now - RETENTION));
+      // Retention needs DELETE on the log, which a restricted database role does not have (by design): then the demo keeps its history.
+      await q.exec("SAVEPOINT demo_prune");
+      try {
+        await allowEventRemoval(q);
+        await q.run("DELETE FROM events WHERE actor = 'simulation' AND at < ?", ms(now - RETENTION));
+        await q.exec("RELEASE SAVEPOINT demo_prune");
+      } catch (e) {
+        if ((e as { code?: string }).code !== "42501") throw e;
+        await q.exec("ROLLBACK TO SAVEPOINT demo_prune");
+      }
       await meta.set(q, "demo.pruned", String(now));
     }
     await meta.set(q, "demo.tick", String(now));
@@ -171,6 +187,12 @@ async function checkIn(q: Q, agent: Agent, at: number, requested: boolean) {
 
 /** Removes all demo agents and their history, then seeds them again. Connected agents are untouched. */
 export async function resetDemo(db: DB, now: number) {
+  return asOwner(() => resetDemoAsOwner(db, now)).catch((e) => {
+    if ((e as { code?: string }).code === "42501") throw new HttpError(409, "demo_reset_unavailable", "Resetting the demo needs the database owner's rights, which this server's restricted database role does not have.");
+    throw e;
+  });
+}
+async function resetDemoAsOwner(db: DB, now: number) {
   await db.tx(async (q) => {
     await q.get("SELECT pg_advisory_xact_lock(?)", LOCK.DEMO);
     await q.lockEvents();

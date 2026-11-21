@@ -23,7 +23,7 @@ test("waiting for confirmation: repeated checks get 'not confirmed yet', never a
   // An hour of the page's checks, compressed: far more than any failure budget (10 a minute per address, 20 an hour per account).
   for (let i = 0; i < 60; i++) assert.equal(await code(passwordSignIn(db, req(), { email: "ana@example.com", password: PW })), "email_unverified", `check ${i}`);
   assert.equal((await db.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM operator_sessions"))!.n, 0, "no session exists for an unconfirmed account");
-  assert.equal(await code(requireOperator(new Request("http://tend.test/api/v1/agents", { method: "POST", headers: { host: "tend.test" } }), db)), "operator_required", "protected routes refuse it");
+  assert.equal(await code(requireOperator(new Request("http://tend.test/api/v1/agents", { method: "POST", headers: { host: "tend.test" } }), db, "view")), "operator_required", "protected routes refuse it");
   await verifyEmail(db, req(), { token: tokenIn(r.outbox), password: PW });
   const s = await passwordSignIn(db, req(), { email: "ana@example.com", password: PW });
   const session = await currentSession(db, new Request("http://tend.test/", { headers: { host: "tend.test", cookie: `${sessionCookieName()}=${s.value}` } }));

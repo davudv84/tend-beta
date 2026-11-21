@@ -71,6 +71,11 @@ export const bypass = () => ({
 });
 
 export function tendHttp(url, key, { timeoutMs = 10_000 } = {}) {
+  // The agent key goes with every request: plain http only to this computer itself, https everywhere else.
+  let u;
+  try { u = new URL(url); } catch { u = undefined; }
+  if (!u || !(u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname))))
+    throw new Error("TEND_URL must start with https:// (plain http only for localhost): the agent key would otherwise cross the network unencrypted. Nothing was sent.");
   return async (path, body, headers = {}) => {
     const res = await fetch(url + path, {
       method: body ? "POST" : "GET",

@@ -1,0 +1,190 @@
+name: security
+
+# Every job must pass for a pull request to be green. Nothing here is allowed to fail silently: there is no continue-on-error, no skipped
+# step, and failing runs upload their logs. See SECURITY-VERIFICATION.md for what each job proves and what it does not.
+on:
+  workflow_dispatch: # run by hand from the Actions tab, on any branch
+  pull_request:
+  push:
+    branches: [main, "security/**"] # security branches run the full suite before any pull request
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  static:
+    name: Types, lint, static analysis, dependencies, secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # no token left in .git/config for later steps
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Static security analysis (eslint-plugin-security)
+        run: npx eslint -c eslint.security.config.mjs src/server src/app/api src/lib src/proxy.ts
+      # Semgrep on the runner's default Python (3.14) ended with exit code 2 (a fatal error, no findings printed); 3.12 is what it supports.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Static security analysis (Semgrep, pinned public rules, ERROR severity)
+        run: |
+          python -m venv "$RUNNER_TEMP/semgrep" && "$RUNNER_TEMP/semgrep/bin/pip" install --quiet semgrep==1.186.0
+          git clone --quiet https://github.com/semgrep/semgrep-rules.git "$RUNNER_TEMP/semgrep-rules"
+          git -C "$RUNNER_TEMP/semgrep-rules" checkout --quiet a5ad1714f00c9f7fde980cab0ea1d6dc6d414fd2
+          "$RUNNER_TEMP/semgrep/bin/semgrep" scan --metrics=off --disable-version-check --severity ERROR --error \
+            --config "$RUNNER_TEMP/semgrep-rules/typescript" --config "$RUNNER_TEMP/semgrep-rules/javascript" \
+            --exclude '*.test.*' src/app src/server src/lib src/ui src/components src/proxy.ts
+      - name: Dependency audit (production dependencies, any severity)
+        run: npm audit --omit=dev --audit-level=low
+      # Build and lint tooling currently carries high-severity advisories with no patched release (picomatch ReDoS, reached through shadcn,
+      # eslint and secretlint; it only parses file globs from this repository, never attacker input, and none of it is installed in
+      # production). Critical anywhere still fails the build; production dependencies must be clean at every severity (previous step).
+      - name: Dependency audit (all dependencies, critical)
+        run: npm audit --audit-level=critical
+      - name: Secret scan (secretlint, working tree)
+        run: git ls-files -z | xargs -0 npx secretlint
+
+  test:
+    name: Unit and integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # no token left in .git/config for later steps
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Production build (the isolated-server tests need it)
+        run: npm run build
+      - name: npm test
+        run: npm test
+      - name: Negative controls for roles and two-step sign-in (each removed check must be caught)
+        run: node redteam/mutation-controls.mjs --only=M-19,M-20,M-21,M-22
+
+  postgres:
+    name: Concurrency guarantees on real PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # no token left in .git/config for later steps
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: PostgreSQL integration tests (replay, races, revocation, audit atomicity, agent cap, row-level security)
+        env:
+          TEND_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: node --no-warnings --test src/server/postgres.test.ts src/server/postgres-verify.test.ts src/server/rls.test.ts
+      - name: Negative controls for the database layer (context freshness, search_path pinning must be caught when removed)
+        env:
+          TEND_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: node redteam/mutation-controls.mjs --only=M-16,M-17,M-18,M-23
+      - name: Operations drills (backup and restore with audit-checkpoint verification, context-key rotation)
+        env:
+          DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          # Client tools must match the server: pg_restore 18 (the runner's default) emits settings PostgreSQL 16 does not know, and the
+          # runner's package sources have no 16 client. So pg_dump/pg_restore run from the same postgres:16 image as the service.
+          mkdir -p "$RUNNER_TEMP/pg16"
+          for t in pg_dump pg_restore; do
+            printf '#!/bin/sh\nexec docker run --rm --network host -v /tmp:/tmp postgres:16 %s "$@"\n' "$t" > "$RUNNER_TEMP/pg16/$t"
+            chmod +x "$RUNNER_TEMP/pg16/$t"
+          done
+          export PATH="$RUNNER_TEMP/pg16:$PATH"
+          pg_dump --version
+          node --no-warnings scripts/ops/backup-restore-drill.mjs
+          node --no-warnings scripts/ops/context-key-rotation-drill.mjs
+      - name: Production build
+        run: npm run build
+      - name: End-to-end suites and tenant matrix on PostgreSQL with row-level security on (production default)
+        env:
+          TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          set -e
+          # production default (owner migrates, restricted login serves, signed context), then the legacy single-owner-URL setup
+          for mode in "" "1"; do
+            export TEND_E2E_OWNER_LOGIN="$mode"
+            for s in e2e:authz e2e:gateway e2e:connect e2e:accounts e2e:open-beta e2e:onboarding; do npm run --silent "$s"; done
+          done
+          unset TEND_E2E_OWNER_LOGIN
+          node --no-warnings redteam/live/tenant-matrix.mjs
+          node --no-warnings redteam/live/mcp-proxy.mjs
+          node --no-warnings redteam/live/rbac-matrix.mjs
+          node --no-warnings scripts/alerts-e2e.mjs
+      - name: Two-step sign-in and the Content-Security-Policy in a real browser (Chromium)
+        env:
+          TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+          node --no-warnings scripts/mfa-e2e.mjs
+          node --no-warnings redteam/live/csp-browser.mjs
+      - name: Defence in depth - with a route's workspace check removed, row-level security must still hold the tenant matrix
+        env:
+          TEND_E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: node redteam/mutation-controls.mjs --routes
+
+  enforcement:
+    name: Production build and isolated enforcement tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # no token left in .git/config for later steps
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Production build
+        run: npm run build
+      - name: Module-level attacks (in-memory database)
+        run: node --no-warnings redteam/attacks.ts
+      - name: Agent-escape suite over HTTP + policy fuzzing
+        run: node redteam/live/run-all.mjs
+      - name: Production configuration (HSTS, cookies, CSP, weak admin token)
+        run: node --no-warnings redteam/live/prod-config.mjs
+      - name: Tenant isolation matrix (tenant B against every route and every object of tenant A)
+        run: node --no-warnings redteam/live/tenant-matrix.mjs
+      - name: Dynamic scan of every API route and page (hostile verbs, bodies, headers)
+        run: node --no-warnings redteam/live/dynamic-scan.mjs
+      - name: MCP proxy in front of a real MCP server (deny, approval, replay, fail-closed)
+        run: node --no-warnings redteam/live/mcp-proxy.mjs
+      - name: Real hooks adapter fails closed when TEND goes away
+        run: node --no-warnings redteam/live/hook-failclosed.mjs
+      - name: Offline end-to-end suites (authorization, gateway, connect, accounts, open beta, onboarding)
+        run: |
+          set -e
+          for s in e2e:authz e2e:gateway e2e:connect e2e:accounts e2e:open-beta e2e:onboarding; do npm run --silent "$s"; done

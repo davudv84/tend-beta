@@ -212,3 +212,128 @@ test("a key file that others can read, or a link to one, is not used", () => {
   symlinkSync(real, key);
   assert.match(run(), /not set up/, "a symlink: refused");
 });
+
+test("managed status trusts nothing a normal user could have changed: a folder or file that is not root-owned and write-protected is reported", async () => {
+  const { managedStatus } = await import("./tend-hooks.mjs");
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const none = managedStatus("claude-code", path.join(tmpdir(), "no-such-managed-dir"));
+  assert.equal(none.present, false);
+  assert.match(none.problems.join(" "), /no managed enforcement/);
+  // a folder anyone can write is not tamper-proof, whatever it contains
+  const dir = mkdtempSync(path.join(tmpdir(), "tend-managed-"));
+  mkdirSync(path.join(dir, "tend"));
+  writeFileSync(path.join(dir, "managed-settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: 'node "/x/tend-hooks.mjs" hook claude-code pre' }] }] }, allowManagedHooksOnly: true }));
+  const s = managedStatus("claude-code", dir);
+  assert.equal(s.tendHooks, true);
+  assert.equal(s.managedOnly, true);
+  if (typeof process.getuid === "function" && process.getuid() !== 0) {
+    assert.equal(s.folderRootOnly, false, "a user-owned folder is not root-owned");
+    assert.match(s.problems.join(" "), /writable by someone other than root/);
+  }
+  assert.match(s.problems.join(" "), /script is missing/);
+  assert.match(s.problems.join(" "), /key file is missing or not root-owned/);
+  writeFileSync(path.join(dir, "managed-settings.json"), JSON.stringify({ hooks: {}, disableAllHooks: true }));
+  assert.match(managedStatus("claude-code", dir).problems.join(" "), /disableAllHooks: true, so hooks are OFF/);
+  writeFileSync(path.join(dir, "managed-settings.json"), "{ not json");
+  assert.match(managedStatus("claude-code", dir).problems.join(" "), /not valid JSON/);
+});
+
+test("a managed install is refused unless run as an administrator, and cannot be combined with --project", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  if (typeof process.getuid !== "function" || process.getuid() === 0) return; // as root the refusal path cannot be exercised; scripts/claude-managed-e2e.mjs covers root
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), "tend-managed-")), "m");
+  const r = spawnSync(process.execPath, [path.join(import.meta.dirname, "tend-hooks.mjs"), "install", "claude-code", "--managed", "--managed-dir", dir, "--url", "http://127.0.0.1:9", "--yes"], { env: { ...process.env, TEND_AGENT_KEY: "tend_sk_" + "a".repeat(32) }, encoding: "utf8" });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /administrator/);
+  assert.equal(existsSync(dir), false, "nothing was written");
+});
+
+test("install refuses a plain-http TEND address that is not this computer: the agent key would cross the network unencrypted", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const home = mkdtempSync(path.join(tmpdir(), "tend-hooks-http-"));
+  for (const url of ["http://tend.example.com", "http://10.0.0.5:3000", "http://127.0.0.1.example.net"]) {
+    const r = spawnSync(process.execPath, [path.join(import.meta.dirname, "tend-hooks.mjs"), "install", "claude-code", "--project", home, "--url", url, "--yes"],
+      { env: { ...process.env, HOME: home, TEND_AGENT_KEY: "tend_sk_" + "a".repeat(32) }, encoding: "utf8" });
+    assert.notEqual(r.status, 0, url);
+    assert.match(r.stderr, /must start with https:\/\//, url);
+  }
+  assert.equal(existsSync(path.join(home, ".claude", "settings.json")), false, "nothing was written");
+});
+
+test("a stored plain-http address to another computer is refused at run time: the tool call is blocked and nothing (no key) is sent", async () => {
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (...a) => { sent.push(a); throw new Error("no network in this test"); };
+  try {
+    for (const url of ["http://tend.example.com", "http://192.168.1.20:3000"]) {
+      let o = "";
+      await runHook("claude-code", { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: "/a" }, tool_use_id: "toolu_http" }, { out: (s) => (o += s), cfg: { url, key: "tend_sk_" + "a".repeat(32) } });
+      assert.equal(JSON.parse(o).hookSpecificOutput.permissionDecision, "deny", url);
+      assert.match(o, /plain http to another machine/);
+    }
+    assert.equal(sent.length, 0, "nothing was sent anywhere");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("install writes the settings it read through the same open file: a symbolic link is refused, the original is kept as a backup, other settings stay", async () => {
+  const { spawn } = await import("node:child_process");
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, statSync, chmodSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  // a TEND that accepts the key (the installer checks it first); the installer runs as a separate process so this one keeps answering
+  const server = createServer((req, res) => { res.setHeader("content-type", "application/json"); res.end("{}"); });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const run = (project) => new Promise((resolve) => {
+    const c = spawn(process.execPath, [path.join(import.meta.dirname, "tend-hooks.mjs"), "install", "claude-code", "--project", project, "--url", url, "--yes"],
+      { env: { ...process.env, HOME: project, PATH: "/nonexistent", TEND_AGENT_KEY: "tend_sk_" + "a".repeat(32) } });
+    let stderr = "";
+    c.stderr.on("data", (d) => (stderr += d));
+    c.on("close", (status) => resolve({ status, stderr }));
+  });
+  try {
+    // the settings file is a link to another file: refused, the target untouched
+    const p1 = mkdtempSync(path.join(tmpdir(), "tend-link-")), elsewhere = path.join(p1, "elsewhere.json");
+    mkdirSync(path.join(p1, ".claude"));
+    writeFileSync(elsewhere, '{"keep":true}\n');
+    symlinkSync(elsewhere, path.join(p1, ".claude", "settings.local.json"));
+    const r1 = await run(p1);
+    assert.notEqual(r1.status, 0);
+    assert.match(r1.stderr, /symbolic link/);
+    assert.equal(readFileSync(elsewhere, "utf8"), '{"keep":true}\n', "the link's target was not written");
+    // an ordinary file: hooks added, other settings kept, the original saved next to it, its permissions unchanged
+    const p2 = mkdtempSync(path.join(tmpdir(), "tend-file-")), f = path.join(p2, ".claude", "settings.local.json");
+    mkdirSync(path.join(p2, ".claude"));
+    writeFileSync(f, '{"theme":"dark"}\n');
+    chmodSync(f, 0o640);
+    const r2 = await run(p2);
+    assert.equal(r2.status, 0, r2.stderr);
+    const after = JSON.parse(readFileSync(f, "utf8"));
+    assert.equal(after.theme, "dark");
+    assert.ok(after.hooks?.PreToolUse, "hooks added");
+    assert.equal(readFileSync(`${f}.before-tend`, "utf8"), '{"theme":"dark"}\n');
+    assert.equal(statSync(f).mode & 0o777, 0o640, "the file's own permissions are kept");
+    // a new file (none there yet) is created
+    const p3 = mkdtempSync(path.join(tmpdir(), "tend-new-"));
+    const r3 = await run(p3);
+    assert.equal(r3.status, 0, r3.stderr);
+    assert.ok(JSON.parse(readFileSync(path.join(p3, ".claude", "settings.local.json"), "utf8")).hooks.PreToolUse);
+    assert.equal(statSync(path.join(p3, ".tend", "claude-code.json")).mode & 0o777, 0o600, "the key file is readable only by its owner");
+    // the key file's place is a link planted to another file: the key is not written there
+    const p4 = mkdtempSync(path.join(tmpdir(), "tend-keylink-")), bait = path.join(p4, "bait.txt");
+    mkdirSync(path.join(p4, ".tend"));
+    writeFileSync(bait, "untouched\n");
+    symlinkSync(bait, path.join(p4, ".tend", "claude-code.json"));
+    const r4 = await run(p4);
+    assert.notEqual(r4.status, 0);
+    assert.equal(readFileSync(bait, "utf8"), "untouched\n", "the agent key was not written through the link");
+  } finally { server.close(); }
+});

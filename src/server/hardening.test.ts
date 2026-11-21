@@ -49,13 +49,30 @@ test("an operator request that the browser says came from another site is refuse
   try {
     const me = await signedIn(db);
     const req = (extra: Record<string, string>) => me.request(extra, "http://tend.test/api/v1/x");
-    assert.ok(await requireOperator(req({}), db), "no fetch metadata (a script, curl): allowed with a session");
-    assert.ok(await requireOperator(req({ "sec-fetch-site": "same-origin" }), db));
-    assert.ok(await requireOperator(req({ "sec-fetch-site": "none" }), db));
+    assert.ok(await requireOperator(req({}), db, "view"), "no fetch metadata (a script, curl): allowed with a session");
+    assert.ok(await requireOperator(req({ "sec-fetch-site": "same-origin" }), db, "view"));
+    assert.ok(await requireOperator(req({ "sec-fetch-site": "none" }), db, "view"));
     for (const site of ["cross-site", "same-site"])
-      await assert.rejects(() => requireOperator(req({ "sec-fetch-site": site }), db), (e) => e instanceof HttpError && e.status === 403 && e.code === "bad_origin", site);
-    await assert.rejects(() => requireOperator(req({ origin: "http://evil.example" }), db), (e) => e instanceof HttpError && e.code === "bad_origin");
+      await assert.rejects(() => requireOperator(req({ "sec-fetch-site": site }), db, "view"), (e) => e instanceof HttpError && e.status === 403 && e.code === "bad_origin", site);
+    await assert.rejects(() => requireOperator(req({ origin: "http://evil.example" }), db, "view"), (e) => e instanceof HttpError && e.code === "bad_origin");
   } finally {
     await db.close();
   }
+});
+
+test("agent-written text loses invisible and direction-changing characters but keeps emoji joiners and newlines", async () => {
+  const { cleanText } = await import("../lib/clean.ts");
+  assert.equal(cleanText("pay‮ 5​0⁠ EUR­ㅤ⠀﻿\u{e0041}"), "pay 50 EUR");
+  assert.equal(cleanText("a\nb\tc"), "a\nb\tc");
+  assert.equal(cleanText("👨‍👩‍👧 क्‍ष"), "👨‍👩‍👧 क्‍ष", "joiners (U+200D) are kept for emoji and scripts");
+});
+
+test("an unhandled error is logged without the database detail, parameters or request that came with it", async () => {
+  const { describeError } = await import("./http.ts");
+  const e = Object.assign(new Error('duplicate key value violates unique constraint "users_email_key"'), { code: "23505", detail: "Key (email)=(victim@example.com) already exists.", parameters: ["victim@example.com", "tend_sk_secretsecretsecretsecret"], query: "INSERT INTO users …" });
+  const text = describeError(e);
+  assert.match(text, /^Error \[23505\]: duplicate key value/);
+  assert.ok(!/victim@example\.com|tend_sk_|INSERT INTO/.test(text), text);
+  assert.ok(describeError("x".repeat(5000)).length <= 200);
+  assert.ok(describeError(new Error("m".repeat(5000))).length < 1500);
 });

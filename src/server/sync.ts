@@ -29,9 +29,9 @@ export async function snapshot(db: DB, v: Viewer, now = Date.now()) {
   // So the dashboard shows an authorization as expired once it is, not when the agent next calls.
   await sweepExpired(db, now);
   // Read the cursor first: anything committed after it arrives with the next poll, never lost.
-  const seq = await lastSeq(db);
   const agents = await visible(db, v);
   const ids = new Set(agents.map((a) => a.id));
+  const seq = await lastSeq(db, [...ids]); // this viewer's own cursor: never the platform-wide one
   const events = visibleTo((await recentEvents(db, now - WINDOW, 12_000, [...ids])).filter((e) => e.seq <= seq), v, agents);
   return {
     viewer: v,
@@ -50,7 +50,7 @@ export async function since(db: DB, v: Viewer, seq: number, now = Date.now()) {
   await sweepExpired(db, now);
   const agents = await visible(db, v);
   const ids = new Set(agents.map((a) => a.id));
-  const batch = await eventsAfter(db, seq, 500);
+  const batch = await eventsAfter(db, seq, 500, [...ids]);
   return {
     seq: batch.length ? batch[batch.length - 1].seq : seq,
     more: batch.length === 500,
