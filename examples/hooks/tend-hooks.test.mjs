@@ -267,3 +267,18 @@ test("install refuses a plain-http TEND address that is not this computer: the a
   }
   assert.equal(existsSync(path.join(home, ".claude", "settings.json")), false, "nothing was written");
 });
+
+test("a stored plain-http address to another computer is refused at run time: the tool call is blocked and nothing (no key) is sent", async () => {
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (...a) => { sent.push(a); throw new Error("no network in this test"); };
+  try {
+    for (const url of ["http://tend.example.com", "http://192.168.1.20:3000"]) {
+      let o = "";
+      await runHook("claude-code", { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: "/a" }, tool_use_id: "toolu_http" }, { out: (s) => (o += s), cfg: { url, key: "tend_sk_" + "a".repeat(32) } });
+      assert.equal(JSON.parse(o).hookSpecificOutput.permissionDecision, "deny", url);
+      assert.match(o, /plain http to another machine/);
+    }
+    assert.equal(sent.length, 0, "nothing was sent anywhere");
+  } finally { globalThis.fetch = realFetch; }
+});

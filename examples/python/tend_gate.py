@@ -14,6 +14,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -57,6 +58,10 @@ def to_request(name, args):
 class Gate:
     def __init__(self, url=None, key=None, approval_timeout=120.0, poll=2.0, retries=2):
         self.url = (url or os.environ.get("TEND_URL") or "http://localhost:3000").rstrip("/")
+        # The agent key goes with every request: plain http only to this computer itself, https everywhere else.
+        parts = urllib.parse.urlsplit(self.url)
+        if not (parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in ("localhost", "127.0.0.1", "::1"))):
+            raise RuntimeError("TEND_URL must start with https:// (plain http only for localhost); the agent key would otherwise cross the network unencrypted, so nothing was sent.")
         self.key = key or os.environ.get("TEND_AGENT_KEY")
         if not self.key:
             raise RuntimeError("TEND_AGENT_KEY is not set, so this agent has no identity at TEND. Register it once: npm run tester:agent")

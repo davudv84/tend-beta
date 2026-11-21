@@ -125,6 +125,8 @@ export function readConfig(host) {
     return { url: String(c.url).replace(/\/$/, ""), key: String(c.key) };
   } catch { return null; }
 }
+/** The agent key goes with every request: plain http only to this computer itself (an older install may have written another address). */
+const keySafeUrl = (url) => { try { const u = new URL(url); return u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)); } catch { return false; } };
 
 /** A key file you own that nobody else can read or write. */
 const ownedByYou = (st) => (st.mode & 0o077) === 0 && (typeof process.getuid !== "function" || st.uid === process.getuid());
@@ -141,6 +143,8 @@ function backup(file) {
 }
 
 async function tend(cfg, p, body, headers = {}) {
+  // Nothing (no key) goes over plain http to another computer, whatever the caller: a refusal here fails closed like an unreachable TEND.
+  if (!keySafeUrl(cfg.url)) throw new Error("insecure TEND address");
   const res = await fetch(cfg.url + p, {
     method: body ? "POST" : "GET",
     headers: { authorization: `Bearer ${cfg.key}`, ...(body && { "content-type": "application/json" }), ...headers },
@@ -171,6 +175,7 @@ function sweepState(host) {
  * answer that is not an explicit yes (a refusal, an error, TEND unreachable, nobody deciding in time) is a no.
  */
 export async function decide(cfg, request, { idempotencyKey, waitMs = 540_000, pollMs = 2_000, onWait } = {}) {
+  if (!keySafeUrl(cfg.url)) return { allow: false, reason: "TEND's address on this computer is plain http to another machine, so the agent key would travel unencrypted. Nothing ran and nothing was sent. Install the hooks again with an https:// address." };
   let r;
   try {
     r = await tend(cfg, "/api/v1/authorize", request, idempotencyKey && ID.test(idempotencyKey) ? { "idempotency-key": idempotencyKey } : {});
