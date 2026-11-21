@@ -1,10 +1,12 @@
 name: zap-baseline
 
 # OWASP ZAP baseline (passive) scan against a TEND production build started inside this job on localhost: never against a deployed
-# instance. Run by hand (Actions → zap-baseline → Run workflow). Fails on any WARN-level finding not listed in .zap/rules.tsv.
+# instance. Runs on pushes to security/** branches, and by hand once it is on main (Actions → zap-baseline → Run workflow). Fails on any WARN-level finding not listed in .zap/rules.tsv.
 # The image tag :stable floats: after the first reviewed run, pin it to the digest that run used (docker inspect), like the other pinned tools.
 on:
   workflow_dispatch:
+  push:
+    branches: ["security/**"] # manual runs need the workflow on main; security branches run it on push
 
 permissions:
   contents: read
