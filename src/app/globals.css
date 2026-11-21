@@ -558,3 +558,231 @@
     animation: none;
   }
 }
+
+/* ============================================================================================================
+   The homepage (components/marketing/home): the passage's 3D scene on pure black, then sections that alternate between a dark
+   and a light tone. Section colours are variables (--ink, --ink-2, --ink-3, --kick, --rule, --panel, --v-*), set by the tone.
+   ============================================================================================================ */
+.mk.mk-home {
+  --background: #000;
+  --ink: #f2f4f6;
+  --ink-2: #a3acb5;
+  --ink-3: #6f7a85;
+  --kick: #8fa3ba;
+  --faint: #2b333c;
+  --rule: rgb(255 255 255 / 0.09);
+  --panel: #0b0d10;
+  --v-allow: #7cc4a4;
+  --v-ask: #e0b36c;
+  --v-never: #d9917e;
+  --diagram: 220 232 246;
+}
+:root:has(.mk-home),
+:root:has(.mk-home) body {
+  background: #000;
+}
+.mk-home > header > div:first-child {
+  background-color: rgb(0 0 0 / 0.72);
+}
+.mk-home > a + div {
+  background-color: #050506;
+}
+/* A light section: paper, ink, darker verdict colours; the shared links and buttons follow. */
+.mk-home .tone-light {
+  --ink: #111316;
+  --ink-2: #4b525a;
+  --ink-3: #6e747b;
+  --kick: #4f6377;
+  --faint: #d2d0c8;
+  --rule: rgb(0 0 0 / 0.11);
+  --panel: #f8f7f3;
+  --v-allow: #1d7a54;
+  --v-ask: #9a6410;
+  --v-never: #b0472f;
+  --diagram: 24 28 34;
+  --foreground: #111316;
+  --muted-foreground: #5d636a;
+  background: #ecebe6;
+  color: var(--ink);
+  color-scheme: light;
+}
+.mk-home .tone-light .mk-press.border {
+  border-color: rgb(0 0 0 / 0.16);
+}
+.mk-home .tone-light .mk-press.border:hover {
+  background: rgb(0 0 0 / 0.05);
+}
+.mk-home .tone-dark { background: #000; }
+.mk-home .tone-ink { background: #0a0b0d; }
+
+/* ——— The passage ——— */
+.mk-home .ps-stage {
+  --k: 0.9;
+  perspective: 1250px;
+  perspective-origin: 50% 46%;
+  overflow: hidden;
+}
+.mk-home .ps-world {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.mk-home .ps-layer {
+  position: absolute;
+  border-radius: 14px;
+  will-change: transform, opacity;
+}
+.mk-home .ps-layer-image {
+  overflow: hidden;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.35);
+}
+.mk-home .ps-img {
+  position: absolute;
+  inset: 0;
+}
+.mk-home .ps-img img { opacity: 0.84; }
+.mk-home .ps-audit {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.05));
+}
+.mk-home .ps-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.mk-home .ps-svg text { font-family: var(--font-mono); }
+.mk-home .ps-frame { fill: none; stroke: rgb(255 255 255 / 0.62); stroke-width: 1; }
+.mk-home .ps-trace { fill: none; stroke: rgb(255 255 255 / 0.5); stroke-width: 1; }
+.mk-home .ps-dot { fill: none; stroke: rgb(255 255 255 / 0.55); stroke-width: 1; }
+.mk-home .ps-tick { stroke: rgb(255 255 255 / 0.4); stroke-width: 1; }
+.mk-home .ps-focus { fill: none; stroke: #fff; stroke-width: 1.4; }
+.mk-home .ps-node { fill: #000; stroke: #fff; stroke-width: 1.2; }
+.mk-home .ps-node-ring { fill: #000; stroke: rgb(255 255 255 / 0.8); stroke-width: 1; }
+.mk-home .ps-wire { fill: none; stroke: rgb(255 255 255 / 0.6); stroke-width: 1; }
+.mk-home .ps-tag { fill: rgb(0 0 0 / 0.72); stroke: #fff; stroke-width: 1; }
+.mk-home .ps-tag-dot { fill: #fff; }
+.mk-home .ps-tag-text { fill: #fff; font-size: 11.5px; }
+.mk-home .ps-label { fill: rgb(255 255 255 / 0.62); font-size: 11.5px; white-space: pre; }
+.mk-home .ps-value { fill: #fff; font-size: 13px; }
+
+/* The hero picture: darkened enough for the headline, and shrunk by the engine into the image layer. */
+.mk-home .ps-hero {
+  transform-origin: 50% 50%;
+  will-change: transform, clip-path, opacity;
+}
+.mk-home .ps-hero-shade {
+  background:
+    radial-gradient(70% 60% at 50% 50%, rgb(0 0 0 / 0.45), rgb(0 0 0 / 0.15) 70%),
+    linear-gradient(180deg, rgb(0 0 0 / 0.35), transparent 30%, transparent 70%, rgb(0 0 0 / 0.45));
+}
+.mk-home .ps-hint-box {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  font-size: 11px;
+}
+.mk-home .ps-kick {
+  width: 6px;
+  height: 6px;
+  border-left: 1px solid currentColor;
+  border-top: 1px solid currentColor;
+}
+
+/* The captions sit on the open side of the stack, or under it. */
+.mk-home .ps-cap { width: min(340px, 26vw); }
+.mk-home .ps-cap-left { left: max(28px, calc(50vw - 600px)); top: 50%; margin-top: -90px; }
+.mk-home .ps-cap-right { right: max(28px, calc(50vw - 600px)); top: 50%; margin-top: -90px; }
+.mk-home .ps-cap-center { left: 50%; bottom: 6vh; width: min(520px, 90vw); margin-left: max(-260px, -45vw); text-align: center; }
+.mk-home .ps-cap-center .ps-kick, .mk-home .ps-cap-center > p:first-child { justify-content: center; }
+@media (max-width: 767px) {
+  .mk-home .ps-cap,
+  .mk-home .ps-cap-left,
+  .mk-home .ps-cap-right,
+  .mk-home .ps-cap-center {
+    left: 20px;
+    right: 20px;
+    top: auto;
+    bottom: max(24px, env(safe-area-inset-bottom));
+    width: auto;
+    margin: 0;
+    text-align: left;
+  }
+  .mk-home .ps-cap-center > p:first-child { justify-content: flex-start; }
+}
+@keyframes ps-rise {
+  from { opacity: 0; transform: translateY(14px); }
+}
+.mk-home .ps-rise {
+  animation: ps-rise 0.9s var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-home .ps-rise { animation: none; }
+}
+
+/* The reach diagram (sections.tsx, Problem): spokes draw in once seen; "With TEND" puts a gate on each. Colours follow the tone. */
+.mk-home .pb-reach svg text { font-family: var(--font-mono); }
+.mk-home .pb-ring-faint { fill: none; stroke: rgb(var(--diagram) / 0.12); stroke-dasharray: 2 6; }
+.mk-home .pb-core { fill: var(--panel); stroke: rgb(var(--diagram) / 0.7); }
+.mk-home .pb-core-label { fill: var(--ink); font-size: 13px; font-family: var(--font-sans) !important; }
+.mk-home .pb-gate-ring {
+  fill: none;
+  stroke: rgb(var(--diagram) / 0.6);
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 1.2s var(--ease-out);
+}
+.mk-home .pb-gate-label { fill: var(--ink); font-size: 11px; opacity: 0; transition: opacity 0.6s 0.5s; }
+.mk-home .pb-in, .mk-home .pb-out {
+  stroke: rgb(var(--diagram) / 0.6);
+  stroke-width: 1;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0.9s var(--ease-out) calc(var(--i) * 90ms), stroke 0.5s, opacity 0.5s;
+}
+.mk-home .pb-out { transition-delay: calc(var(--i) * 90ms + 0.35s), 0s, 0s; }
+.mk-home .pb-end { fill: rgb(var(--diagram) / 0.85); opacity: 0; transition: opacity 0.4s calc(var(--i) * 90ms + 0.9s), fill 0.5s; }
+.mk-home .pb-tool { fill: var(--ink); font-size: 12.5px; opacity: 0; transition: opacity 0.5s calc(var(--i) * 90ms + 0.6s); }
+.mk-home .pb-target { fill: var(--ink-3); font-size: 11px; opacity: 0; transition: opacity 0.5s calc(var(--i) * 90ms + 0.7s); }
+.mk-home .pb-verdict { fill: var(--c); font-size: 11px; opacity: 0; transition: opacity 0.5s; }
+.mk-home .pb-gate { opacity: 0; transform-box: fill-box; transform-origin: center; transform: scale(0.4); transition: opacity 0.4s, transform 0.5s var(--ease-out); }
+.mk-home .pb-gate circle:first-child { fill: var(--panel); stroke: var(--c); }
+.mk-home .pb-gate .pb-gate-dot { fill: var(--c); stroke: none; }
+.mk-home .is-seen .pb-in, .mk-home .is-seen .pb-out { stroke-dashoffset: 0; }
+.mk-home .is-seen .pb-end, .mk-home .is-seen .pb-tool, .mk-home .is-seen .pb-target { opacity: 1; }
+.mk-home .is-with .pb-gate-ring { stroke-dashoffset: 0; }
+.mk-home .is-with .pb-gate-label { opacity: 1; }
+.mk-home .is-with .pb-gate { opacity: 1; transform: none; transition-delay: calc(var(--i) * 70ms + 0.3s); }
+.mk-home .is-with .pb-verdict { opacity: 1; transition-delay: calc(var(--i) * 70ms + 0.5s); }
+.mk-home .is-with .pb-never .pb-out { opacity: 0.12; }
+.mk-home .is-with .pb-never .pb-end { fill: rgb(var(--diagram) / 0.2); }
+.mk-home .is-with .pb-ask .pb-out { stroke: var(--v-ask); stroke-dasharray: 0.02 0.015; }
+.mk-home .is-with .pb-allow .pb-out { stroke: var(--v-allow); }
+
+/* The protocol sequence (HowItWorks): messages appear in order once seen. */
+.mk-home .hw-seq svg text { font-family: var(--font-mono); }
+.mk-home .hw-lane { stroke: rgb(var(--diagram) / 0.18); stroke-dasharray: 3 5; }
+.mk-home .hw-lane-box { fill: var(--panel); stroke: rgb(var(--diagram) / 0.25); }
+.mk-home .hw-lane-tend { stroke: rgb(var(--diagram) / 0.7); }
+.mk-home .hw-lane-label { fill: var(--ink); font-size: 12.5px; font-family: var(--font-sans) !important; }
+.mk-home .hw-arrow { stroke: rgb(var(--diagram) / 0.65); stroke-width: 1; }
+.mk-home .hw-arrow-run { stroke: var(--v-allow); }
+.mk-home .hw-text { fill: var(--ink-2); font-size: 12px; }
+.mk-home .hw-amber { fill: var(--v-ask); }
+.mk-home .hw-green { fill: var(--v-allow); }
+.mk-home .hw-msg { opacity: 0; transform: translateX(-6px); transition: opacity 0.5s var(--ease-out), transform 0.6s var(--ease-out); transition-delay: calc(var(--i) * 140ms + 0.1s); }
+.mk-home .hw-seq.is-seen .hw-msg { opacity: 1; transform: none; }
+
+/* The closing: the painting again, the page's last word over it. */
+.mk-home .cl-shade {
+  background:
+    linear-gradient(180deg, #000 0%, rgb(0 0 0 / 0.55) 30%, rgb(0 0 0 / 0.35) 60%, rgb(0 0 0 / 0.75) 100%);
+}
