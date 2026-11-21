@@ -558,3 +558,121 @@
     animation: none;
   }
 }
+
+/* ============================================================================================================
+   TEND Design System 2.0: Tailwind mapping (additive).
+   Utilities only: `bg-t-canvas`, `text-t-ink`, `rounded-t-md`, `text-t-small`… The values live in
+   src/design-system/tokens.css and apply only inside a `.tds` scope, so nothing above changes.
+   ============================================================================================================ */
+@theme inline {
+  --color-t-canvas: var(--t-canvas);
+  --color-t-sunken: var(--t-sunken);
+  --color-t-surface: var(--t-surface);
+  --color-t-raised: var(--t-raised);
+  --color-t-scrim: var(--t-scrim);
+  --color-t-inverse: var(--t-inverse);
+  --color-t-inverse-text: var(--t-inverse-text);
+  --color-t-ink: var(--t-ink);
+  --color-t-text: var(--t-text);
+  --color-t-muted: var(--t-muted);
+  --color-t-subtle: var(--t-subtle);
+  --color-t-line: var(--t-line);
+  --color-t-line-strong: var(--t-line-strong);
+  --color-t-focus: var(--t-focus);
+  --color-t-accent: var(--t-accent);
+  --color-t-accent-hover: var(--t-accent-hover);
+  --color-t-accent-press: var(--t-accent-press);
+  --color-t-accent-fg: var(--t-accent-fg);
+  --color-t-accent-soft: var(--t-accent-soft);
+  --color-t-accent-line: var(--t-accent-line);
+  --color-t-accent-text: var(--t-accent-text);
+  --color-t-ok: var(--t-ok);
+  --color-t-ok-soft: var(--t-ok-soft);
+  --color-t-ok-ink: var(--t-ok-ink);
+  --color-t-ok-line: var(--t-ok-line);
+  --color-t-warn: var(--t-warn);
+  --color-t-warn-soft: var(--t-warn-soft);
+  --color-t-warn-ink: var(--t-warn-ink);
+  --color-t-warn-line: var(--t-warn-line);
+  --color-t-danger: var(--t-danger);
+  --color-t-danger-hover: var(--t-danger-hover);
+  --color-t-danger-soft: var(--t-danger-soft);
+  --color-t-danger-ink: var(--t-danger-ink);
+  --color-t-danger-line: var(--t-danger-line);
+  --color-t-info: var(--t-info);
+  --color-t-info-soft: var(--t-info-soft);
+  --color-t-info-ink: var(--t-info-ink);
+  --color-t-info-line: var(--t-info-line);
+  --color-t-code-bg: var(--t-code-bg);
+
+  --radius-t-xs: var(--t-radius-xs);
+  --radius-t-sm: var(--t-radius-sm);
+  --radius-t-md: var(--t-radius-md);
+  --radius-t-lg: var(--t-radius-lg);
+  --radius-t-xl: var(--t-radius-xl);
+
+  --shadow-t-1: var(--t-shadow-1);
+  --shadow-t-2: var(--t-shadow-2);
+  --shadow-t-3: var(--t-shadow-3);
+  --shadow-t-button: var(--t-shadow-button);
+
+  --ease-t-out: var(--t-ease-out);
+  --ease-t-in: var(--t-ease-in);
+  --ease-t-inout: var(--t-ease-inout);
+
+  --font-t-sans: var(--t-font-sans);
+  --font-t-mono: var(--t-font-mono);
+}
+
+/* The type scale. One utility carries size, line height, tracking and weight. Display sizes scale fluidly; running text is
+   fixed so measure and rhythm stay predictable. Nothing under 13px. */
+@theme {
+  --text-t-display: clamp(3rem, 1.4rem + 6.4vw, 6rem);
+  --text-t-display--line-height: 0.98;
+  --text-t-display--letter-spacing: -0.055em;
+  --text-t-display--font-weight: 500;
+  --text-t-hero: clamp(2.5rem, 1.5rem + 3.9vw, 4.5rem);
+  --text-t-hero--line-height: 1.02;
+  --text-t-hero--letter-spacing: -0.045em;
+  --text-t-hero--font-weight: 500;
+  --text-t-h1: clamp(2rem, 1.45rem + 2.2vw, 3rem);
+  --text-t-h1--line-height: 1.08;
+  --text-t-h1--letter-spacing: -0.036em;
+  --text-t-h1--font-weight: 500;
+  --text-t-h2: clamp(1.5rem, 1.25rem + 1vw, 2rem);
+  --text-t-h2--line-height: 1.15;
+  --text-t-h2--letter-spacing: -0.028em;
+  --text-t-h2--font-weight: 500;
+  --text-t-h3: clamp(1.25rem, 1.15rem + 0.45vw, 1.5rem);
+  --text-t-h3--line-height: 1.25;
+  --text-t-h3--letter-spacing: -0.022em;
+  --text-t-h3--font-weight: 500;
+  --text-t-h4: 1.125rem;
+  --text-t-h4--line-height: 1.35;
+  --text-t-h4--letter-spacing: -0.016em;
+  --text-t-h4--font-weight: 560;
+  --text-t-lead: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+  --text-t-lead--line-height: 1.6;
+  --text-t-lead--letter-spacing: -0.014em;
+  --text-t-lead--font-weight: 400;
+  --text-t-body: 1rem;
+  --text-t-body--line-height: 1.625;
+  --text-t-body--letter-spacing: -0.008em;
+  --text-t-body--font-weight: 400;
+  --text-t-small: 0.875rem;
+  --text-t-small--line-height: 1.5;
+  --text-t-small--letter-spacing: -0.004em;
+  --text-t-small--font-weight: 400;
+  --text-t-label: 0.875rem;
+  --text-t-label--line-height: 1.25rem;
+  --text-t-label--letter-spacing: -0.004em;
+  --text-t-label--font-weight: 500;
+  --text-t-caption: 0.8125rem;
+  --text-t-caption--line-height: 1.4;
+  --text-t-caption--letter-spacing: 0;
+  --text-t-caption--font-weight: 400;
+  --text-t-code: 0.8125rem;
+  --text-t-code--line-height: 1.65;
+  --text-t-code--letter-spacing: 0;
+  --text-t-code--font-weight: 400;
+}
