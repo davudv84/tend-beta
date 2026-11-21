@@ -3,7 +3,7 @@
 // it proves the guard is called in the handler, not that the guard is correct (that is tested in audit.test.ts and
 // server.test.ts, and end to end by scripts/authz-e2e.mjs).
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
@@ -87,9 +87,9 @@ const EXPECTED: Record<string, keyof typeof GUARD> = {
 function handlers() {
   const out: { key: string; body: string }[] = [];
   const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const full = path.join(dir, name);
-      if (statSync(full).isDirectory()) walk(full);
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const name = entry.name, full = path.join(dir, name);
+      if (entry.isDirectory()) walk(full);
       else if (name === "route.ts") {
         const src = readFileSync(full, "utf8");
         const rel = path.relative(ROOT, path.dirname(full)).split(path.sep).join("/");
