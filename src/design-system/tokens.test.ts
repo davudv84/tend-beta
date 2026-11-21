@@ -23,7 +23,7 @@ const PAIRS: [string, string, number][] = [
   ["accent-text", "canvas", 4.5], ["accent-fg", "accent", 4.5], ["accent-fg", "accent-hover", 4.5],
   ["ok-ink", "ok-soft", 4.5], ["warn-ink", "warn-soft", 4.5], ["danger-ink", "danger-soft", 4.5], ["info-ink", "info-soft", 4.5],
   ["ok-ink", "canvas", 4.5], ["warn-ink", "canvas", 4.5], ["danger-ink", "canvas", 4.5],
-  ["inverse-text", "inverse", 4.5], ["code-key", "code-bg", 4.5], ["code-string", "code-bg", 4.5], ["code-number", "code-bg", 4.5], ["code-comment", "code-bg", 4.5],
+  ["danger-fg", "danger", 4.5], ["danger-fg", "danger-hover", 4.5], ["inverse-text", "inverse", 4.5], ["code-key", "code-bg", 4.5], ["code-string", "code-bg", 4.5], ["code-number", "code-bg", 4.5], ["code-comment", "code-bg", 4.5],
   ["focus", "canvas", 3], ["line-strong", "canvas", 1.4],
 ];
 
@@ -41,4 +41,12 @@ test("dark theme defines every semantic token the light theme does", () => {
   const semantic = (o: Record<string, string>) => Object.keys(o).filter((k) => !/-(\d+)$|space|radius|dur|ease|move|font|w-|control|row|pad|gap|section|drawer/.test(k)).sort();
   const d = vars(/^\.tds\[data-theme="dark"\]$/);
   for (const k of semantic(vars(/^\.tds,\s*\.tds\[data-theme="light"\]$/))) assert.ok(k in d, `dark is missing ${k}`);
+});
+
+test('the "system" theme (a media query) carries exactly the dark theme\'s tokens', () => {
+  const media = css.match(/@media \(prefers-color-scheme: dark\) \{\s*\.tds\[data-theme="system"\] \{([^}]*)\}/);
+  assert.ok(media, "the system block exists");
+  const sys: Record<string, string> = {};
+  for (const d of media[1].matchAll(/(--t-[\w-]+):\s*([^;]+);/g)) sys[d[1]] = d[2].trim();
+  assert.deepEqual(sys, vars(/^\.tds\[data-theme="dark"\]$/));
 });

@@ -118,8 +118,8 @@ export function Motion() {
       </Sub>
 
       <Sub title="The vocabulary" note="Every interaction in the system is one row of this table. Movement distances: 2, 6, 12, 24px. Opacity moves with position and never ends below 0. Scale never drops below 0.96.">
-        <div className="overflow-x-auto">
-          <Table compact>
+        <div>
+          <Table compact label="Motion vocabulary">
             <THead><tr><Th>Interaction</Th><Th>Used for</Th><Th>Duration</Th><Th>Easing</Th><Th>Travel</Th></tr></THead>
             <TBody>
               {MOTION_TABLE.map((r) => (
@@ -227,7 +227,7 @@ function ThemePreview({ theme }: { theme: "light" | "dark" }) {
     <Scope theme={theme} className="flex min-w-0 flex-col gap-6 rounded-t-lg border border-t-line p-6">
       <div className="flex items-center justify-between"><p className="text-t-label text-t-ink">{theme === "light" ? "Light: premium and editorial" : "Dark: calm and sophisticated"}</p><AgentStatus state="active" /></div>
       <div className="flex flex-col gap-2">
-        <h4 className="text-t-h2 text-t-ink [text-wrap:balance]">Release assistant wants to push code</h4>
+        <h3 className="text-t-h2 text-t-ink [text-wrap:balance]">Release assistant wants to push code</h3>
         <p className="text-t-small text-t-muted">Matches “Push to remote”. Nothing runs until you decide.</p>
       </div>
       <div className="flex flex-wrap gap-2"><Button variant="primary" leading={Check}>Approve once</Button><Button variant="secondary">Deny</Button><Button variant="ghost">Details</Button></div>
@@ -259,7 +259,7 @@ function MarketingComposition() {
   return (
     <Scope theme={useScope().theme} density="marketing" className="overflow-hidden rounded-t-xl border border-t-line">
       <div className="px-6 sm:px-10 lg:px-14">
-        <SiteHeader links={["Product", "How it works", "Security", "Docs"]} active="Product" />
+        <SiteHeader links={["Product", "How it works", "Security", "Docs"]} active="Product" navLabel="Primary, marketing example" />
         <div className="flex flex-col gap-14 pt-14 pb-20 lg:pt-20 lg:pb-28">
           <Reveal className="max-w-4xl">
             <h3 className="text-t-hero text-t-ink [text-wrap:balance]">Let your agents work. Stay in charge.</h3>

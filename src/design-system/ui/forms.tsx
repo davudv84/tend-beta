@@ -43,7 +43,8 @@ export function Field({
   className?: string;
 }) {
   const id = useId();
-  const describedBy = [hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
+  // Only what is on the page: the hint is replaced by the error while there is one, so it must not be referenced then.
+  const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
   return (
     <div className={cx("flex flex-col gap-1.5", className)}>
       <label htmlFor={id} className="flex items-baseline justify-between text-t-label text-t-ink">

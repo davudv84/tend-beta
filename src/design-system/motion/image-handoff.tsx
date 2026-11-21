@@ -33,7 +33,6 @@ export function ImageHandoff({
               <button
                 type="button"
                 onClick={() => setOpen(it.id)}
-                aria-label={`Open ${it.title}`}
                 className="group block w-full text-left"
               >
                 {open === it.id ? (
@@ -44,7 +43,7 @@ export function ImageHandoff({
                     transition={t}
                     className="aspect-[4/3] overflow-hidden rounded-t-lg border border-t-line bg-t-surface shadow-t-1 transition-[border-color] duration-(--t-dur-fast) group-hover:border-t-line-strong"
                   >
-                    <div className="origin-top-left scale-[0.62] p-3 sm:scale-[0.7]" style={{ width: "145%" }}>
+                    <div aria-hidden className="origin-top-left scale-[0.62] p-3 sm:scale-[0.7]" style={{ width: "145%" }}>
                       {it.thumb}
                     </div>
                   </motion.div>

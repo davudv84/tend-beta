@@ -206,16 +206,18 @@ export function SiteHeader({
   links,
   active,
   onNavigate,
+  navLabel = "Primary",
 }: {
   links: string[];
   active?: string;
   onNavigate?: (l: string) => void;
+  navLabel?: string;
 }) {
   return (
     <header className="@container flex h-[72px] items-center justify-between gap-6"><div className="flex w-full items-center justify-between gap-4">
       <div className="flex items-center gap-10">
         <Wordmark />
-        <nav aria-label="Primary" className="hidden items-center gap-1 lg:flex">
+        <nav aria-label={navLabel} className="hidden items-center gap-1 lg:flex">
           {links.map((l) => (
             <button
               key={l}

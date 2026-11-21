@@ -8,6 +8,7 @@ import { Button, IconButton } from "../ui/button";
 import { Checkbox, Field, Input, SearchInput, Select, Switch, Textarea } from "../ui/forms";
 import { Dialog, DialogClose, DialogContent, DialogTrigger, Drawer, DrawerClose, DrawerContent, DrawerTrigger, Popover, PopoverContent, PopoverTrigger } from "../ui/overlays";
 import { ApprovalRequest, PolicyDecision } from "../tend/components";
+import { ScrollRegion } from "../ui/scroll-region";
 import { Cap, Chapter, Facts, Plate, Sub } from "./parts";
 
 /* ================================================================================================ 05 Spacing */
@@ -78,7 +79,7 @@ export function Spacing() {
           <DensityDemo density="app" />
           <DensityDemo density="marketing" />
         </div>
-        <div className="overflow-x-auto">
+        <ScrollRegion label="Density dials" className="overflow-x-auto">
           <table className="w-full min-w-[34rem] border-collapse text-left text-t-small">
             <thead><tr className="border-b border-t-line text-t-caption text-t-muted"><th className="pb-2 font-normal">Dial</th><th className="pb-2 font-normal">Application</th><th className="pb-2 font-normal">Marketing</th></tr></thead>
             <tbody className="divide-y divide-t-line text-t-ink">
@@ -92,7 +93,7 @@ export function Spacing() {
               ].map((r) => <tr key={r[0]}><td className="py-2.5 text-t-muted">{r[0]}</td><td className="py-2.5">{r[1]}</td><td className="py-2.5">{r[2]}</td></tr>)}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       </Sub>
 
       <Sub title="Containers and grid">
@@ -250,11 +251,12 @@ export function Buttons() {
       lead="One primary action per view. Labels are verbs. Every state is visible: hover is a change in tone, press is a small settle, focus is an outline, loading holds the button’s width so nothing jumps."
     >
       <Sub title="Variants and states" note="The real components, with hover, press and focus held on so they can be compared. Try the live ones in the last column.">
-        <Plate bodyClassName="overflow-x-auto !p-5">
+        <Plate bodyClassName="!p-5">
+          <ScrollRegion label="Button variants and states" className="overflow-x-auto">
           <table className="w-full min-w-[40rem] border-collapse text-left">
             <thead>
               <tr className="text-t-caption text-t-muted">
-                {["", "Default", "Hover", "Pressed", "Focus", "Disabled", "Loading", "Live"].map((h) => <th key={h} className="pr-2 pb-4 font-normal">{h}</th>)}
+                {["Variant", "Default", "Hover", "Pressed", "Focus", "Disabled", "Loading", "Live"].map((h) => <th key={h} className={cx("pr-2 pb-4 font-normal", h === "Variant" && "sr-only")}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -272,6 +274,7 @@ export function Buttons() {
               ))}
             </tbody>
           </table>
+          </ScrollRegion>
         </Plate>
       </Sub>
 

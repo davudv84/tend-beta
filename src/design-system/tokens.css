@@ -165,6 +165,7 @@
   --t-warn-line: #ebcf9b;
   --t-danger: #b3372a;
   --t-danger-hover: #9b2b20;
+  --t-danger-fg: #ffffff;
   --t-danger-soft: #fae7e3;
   --t-danger-ink: #8e241a;
   --t-danger-line: #efbfb7;
@@ -230,6 +231,7 @@
   --t-warn-line: #5a4520;
   --t-danger: #e0705f;
   --t-danger-hover: #e98878;
+  --t-danger-fg: #1a0907;
   --t-danger-soft: #2d1b18;
   --t-danger-ink: #f09a8c;
   --t-danger-line: #5e2e27;
@@ -252,6 +254,71 @@
   --t-ring: 0 0 0 3px rgb(166 180 238 / 0.28);
 }
 
+/* "System": the same dark tokens, applied by the visitor's own setting. The server cannot know it, so CSS decides, and the first paint is
+   already right. tokens.test.ts checks that this block and the dark one never drift apart. */
+@media (prefers-color-scheme: dark) {
+  .tds[data-theme="system"] {
+    color-scheme: dark;
+  
+    --t-canvas: #161513;
+    --t-sunken: #100f0e;
+    --t-surface: #1d1c19;
+    --t-raised: #252420;
+    --t-scrim: rgb(8 8 7 / 0.6);
+    --t-inverse: #f3efe6;
+    --t-inverse-text: #161513;
+  
+    --t-ink: #f3efe6;
+    --t-text: #d9d4c8;
+    --t-muted: #a19b8d;
+    --t-subtle: #7b7669;
+  
+    --t-line: #2a2824;
+    --t-line-strong: #3b3830;
+    --t-focus: #a6b4ee;
+  
+    --t-accent: #a6b4ee;
+    --t-accent-hover: #b9c4f3;
+    --t-accent-press: #c9d2f6;
+    --t-accent-fg: #101736;
+    --t-accent-soft: #1d2340;
+    --t-accent-line: #34407a;
+    --t-accent-text: #b9c4f3;
+  
+    --t-ok: #6fbf93;
+    --t-ok-soft: #1a2a21;
+    --t-ok-ink: #8ed0ac;
+    --t-ok-line: #2c4638;
+    --t-warn: #d9a13e;
+    --t-warn-soft: #2a2314;
+    --t-warn-ink: #e5b867;
+    --t-warn-line: #5a4520;
+    --t-danger: #e0705f;
+    --t-danger-hover: #e98878;
+    --t-danger-fg: #1a0907;
+    --t-danger-soft: #2d1b18;
+    --t-danger-ink: #f09a8c;
+    --t-danger-line: #5e2e27;
+    --t-info: #a6b4ee;
+    --t-info-soft: #1d2340;
+    --t-info-ink: #b9c4f3;
+    --t-info-line: #34407a;
+  
+    --t-code-bg: #121110;
+    --t-code-key: #b9c4f3;
+    --t-code-string: #8ed0ac;
+    --t-code-number: #e5b867;
+    --t-code-comment: #8a8577;
+    --t-code-punct: #a19b8d;
+  
+    --t-shadow-1: 0 1px 0 rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.3);
+    --t-shadow-2: 0 0 0 1px rgb(255 255 255 / 0.05), 0 8px 20px -6px rgb(0 0 0 / 0.55);
+    --t-shadow-3: 0 0 0 1px rgb(255 255 255 / 0.07), 0 32px 72px -20px rgb(0 0 0 / 0.75);
+    --t-shadow-button: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.4);
+    --t-ring: 0 0 0 3px rgb(166 180 238 / 0.28);
+  }
+}
+
 /* ============================================================================================================
    Base
    ============================================================================================================ */
@@ -265,6 +332,10 @@
 .tds :focus-visible {
   outline: 2px solid var(--t-focus);
   outline-offset: 2px;
+}
+/* A target that is only ever focused by a link or by script (the skip link's <main>) is not a control: no ring around the whole page. */
+.tds [tabindex="-1"]:focus-visible {
+  outline: none;
 }
 .tds .t-num {
   font-variant-numeric: tabular-nums lining-nums;

@@ -4,7 +4,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type Compone
 import { useReducedMotion } from "framer-motion";
 import { cx } from "./cx";
 
-export type ThemeName = "light" | "dark";
+/** "system" follows the visitor's setting through CSS (tokens.css); the other two are fixed. */
+export type ThemeName = "light" | "dark" | "system";
 export type Density = "app" | "marketing";
 
 interface ScopeValue {

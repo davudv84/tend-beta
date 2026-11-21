@@ -5,6 +5,7 @@ import { Check, ChevronRight, Copy } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cx } from "../cx";
 import { Icon } from "./icons";
+import { ScrollRegion } from "./scroll-region";
 import { TONE, type Tone } from "./feedback";
 
 /* ---------------------------------------------------------------- Status badge */
@@ -22,11 +23,11 @@ export function StatusBadge({ tone = "neutral", children, dot = true, className 
 
 /* ---------------------------------------------------------------- Table */
 
-export function Table({ children, className, compact }: { children: ReactNode; className?: string; compact?: boolean }) {
+export function Table({ children, className, compact, label = "Table" }: { children: ReactNode; className?: string; compact?: boolean; label?: string }) {
   return (
-    <div className={cx("t-scroll w-full overflow-x-auto", className)}>
+    <ScrollRegion label={label} className={cx("t-scroll w-full overflow-x-auto", className)}>
       <table className={cx("w-full border-collapse text-left text-t-small", compact ? "[&_td]:py-2 [&_th]:py-2" : "[&_td]:py-3.5 [&_th]:py-2.5")}>{children}</table>
-    </div>
+    </ScrollRegion>
   );
 }
 export const THead = ({ children }: { children: ReactNode }) => <thead className="border-b border-t-line">{children}</thead>;
@@ -154,9 +155,9 @@ export function CodeBlock({ code, lang = "plain", title, className }: { code: st
           <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
         </button>
       </figcaption>
-      <pre className="t-scroll overflow-x-auto p-4 font-t-mono text-t-code text-t-text">
+      <ScrollRegion as="pre" label={`${title ?? lang} code`} className="t-scroll overflow-x-auto p-4 font-t-mono text-t-code text-t-text">
         <code>{highlight(code, lang)}</code>
-      </pre>
+      </ScrollRegion>
     </figure>
   );
 }
