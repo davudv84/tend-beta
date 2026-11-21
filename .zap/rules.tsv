@@ -1,1 +1,12 @@
 # ZAP baseline rule overrides: <id>\t<IGNORE|INFO|WARN|FAIL>\t<reason>. Keep empty unless a finding is reviewed and accepted.
+# INFO keeps a rule's findings in every run's output (listed under INFO); nothing here is IGNORE. Reviewed 2026-11-21, evidence in
+# SECURITY-VERIFICATION.md section 17.
+#
+# 10049 Non-Storable Content (ZAP risk: Informational). Pages carry a fresh CSP nonce on every response, so they must not be stored by
+# caches; API answers are no-store on purpose (they depend on who asks). Being non-storable is the intended, safer behaviour.
+10049	INFO	(Non-Storable Content: intended, per-request CSP nonce and per-user answers)
+# 10096 Timestamp Disclosure - Unix (ZAP risk: Low). The matched number in the flagged Next.js chunks is 1905286922, a GitHub comment id inside
+# an icon's source URL (issuecomment-1905286922), not a time; the chunks are public static code with no server or user data.
+10096	INFO	(Timestamp Disclosure: false positive, a GitHub comment id in a public icon source URL)
+# 10109 Modern Web Application (ZAP risk: Informational). Says the app is script-driven so the AJAX spider would crawl it better; not a weakness.
+10109	INFO	(Modern Web Application: crawling hint, not a vulnerability)

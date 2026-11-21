@@ -1,8 +1,8 @@
 name: zap-baseline
 
 # OWASP ZAP baseline (passive) scan against a TEND production build started inside this job on localhost: never against a deployed
-# instance. Runs on pushes to security/** branches, and by hand once it is on main (Actions → zap-baseline → Run workflow). Fails on any WARN-level finding not listed in .zap/rules.tsv.
-# The image tag :stable floats: after the first reviewed run, pin it to the digest that run used (docker inspect), like the other pinned tools.
+# instance. Runs on pushes to security/** branches, and by hand once it is on main (Actions → zap-baseline → Run workflow). Fails on any WARN-level finding not listed in .zap/rules.tsv (the listed ones are reviewed and still printed, as INFO).
+# The image is pinned to the digest of the reviewed run of 2026-11-21 (zaproxy:stable at that time); update it deliberately, then re-review.
 on:
   workflow_dispatch:
   push:
@@ -33,7 +33,7 @@ jobs:
       - name: ZAP baseline
         run: |
           mkdir -p "$RUNNER_TEMP/zap" && cp .zap/rules.tsv "$RUNNER_TEMP/zap/" && chmod -R 777 "$RUNNER_TEMP/zap"
-          docker run --rm --network host -v "$RUNNER_TEMP/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+          docker run --rm --network host -v "$RUNNER_TEMP/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af \
             zap-baseline.py -t http://127.0.0.1:3210 -c rules.tsv -r report.html
       - if: always()
         uses: actions/upload-artifact@v4
