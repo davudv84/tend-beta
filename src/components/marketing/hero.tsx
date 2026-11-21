@@ -5,15 +5,15 @@ import { INTEGRATIONS, statusOf } from "@/lib/integrations-catalog";
 import { DemoButton } from "@/ui/demo-button";
 import { DesktopStory, PhoneStory } from "./demo/story";
 import { Container, PrimaryLink, QuietLink } from "./kit";
-import { HeroPainting } from "./landscape";
+import { HeroBackdrop } from "./hero-backdrop";
 
 /** Verified integrations, from the catalog and the verification report; "verified" cannot be claimed from here. */
 export const VERIFIED = INTEGRATIONS.filter((i) => statusOf(i) === "verified");
 
 /**
- * The top of the homepage: one line, one sentence, two buttons, and the app itself standing in the bright gap of the painted valley,
- * played once from real screenshots: the app's window from 1024px up, the app on a phone below. The painting is darkened at export
- * and fades to the page in its bottom third, so the app stays the thing to look at.
+ * The top of the homepage: one line, one sentence, two buttons, and the app itself standing in the doorway of a dark, quietly lit gateway,
+ * played once from real screenshots: the app's window from 1024px up, the app on a phone below. The backdrop is CSS only and fades to the
+ * page in its bottom third, so the app stays the thing to look at.
  */
 export function Hero({ accounts, demo }: { accounts: boolean; demo: boolean }) {
   const t = useT();
@@ -21,7 +21,7 @@ export function Hero({ accounts, demo }: { accounts: boolean; demo: boolean }) {
   const create = accounts ? "/account/sign-up" : "/operator";
   return (
     <section aria-labelledby="hero-title" className="relative isolate overflow-hidden">
-      <HeroPainting alt={f.art.valley} />
+      <HeroBackdrop />
       <Container className="flex flex-col items-center pt-14 pb-12 text-center md:pt-20 md:pb-14">
         <h1 id="hero-title" className="mk-display max-w-[16ch] text-[clamp(2.6rem,6.4vw,5.25rem)]">{f.title}</h1>
         <p className="mt-5 max-w-[44ch] text-[17px] leading-[1.45] text-foreground/80 md:text-[19px]">{f.body}</p>
