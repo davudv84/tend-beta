@@ -664,3 +664,34 @@ Other limits that stay:
 | `scripts/browser-e2e.mjs` (UI flows, WebKit + Chromium) | **NOT RUN**: WebKit is not installed here |
 
 The server-side suites ran on `5191d5e`. Nothing under `src/`, `next.config.ts` or the package files changed after it (`git diff --stat 5191d5e..ed34a24` is empty for them). Later commits touched only the hooks adapter, local scripts, tests, CI and docs, and those were re-run on the final code.
+
+### 17.4 GitHub Actions on `379bf8b` (final code; only this section's text changed after it)
+
+| Workflow / job | Result | Run |
+| --- | --- | --- |
+| security: types, lint, eslint-plugin-security, Semgrep, `npm audit`, secretlint | success | 44892804126 |
+| security: unit and integration tests + role/two-step negative controls | success | 44892804126 |
+| security: PostgreSQL (integration, negative controls, backup/restore and key-rotation drills, e2e with RLS, tenant matrix, RBAC, MCP proxy, alerts, **two-step sign-in and CSP in Chromium**, RLS defence-in-depth mutation) | success | 44892804126 |
+| security: production build and isolated enforcement (attacks, agent escape, prod config, tenant matrix, dynamic scan, MCP proxy, hooks fail-closed, offline e2e) | success | 44892804126 |
+| codeql: analysis | success (11 results, all assessed in §17.2) | 44892810659 |
+| secret-history: gitleaks over the whole history | success | 44892804176 |
+| zap-baseline (pinned image) | success: 0 FAIL, 0 WARN, 3 INFO, 65 PASS | 44892804150 |
+| **PR check "CodeQL"** (new alerts in changed code) | **failure: 1 high, 9 medium**. These are the results assessed in §17.2 (API-key hash false positive or test race; key sent by the adapter to its own https server; test harnesses). It stays red until the repository owner dismisses each alert in the Security tab with the reason given there. It was not suppressed in the configuration. | — |
+
+### 17.5 Remaining production blockers
+
+1. **The PR CodeQL check is red.** The owner should review the §17.2 reasons and dismiss the alerts (or ask for code changes). Do not merge
+   while it is red without that review.
+2. Branch protection: require the `security`, `codeql`, `secret-history` and `zap-baseline` checks on `main`. **NOT VERIFIED** that it is on.
+3. The §16.6 items stand: an independent penetration test (this round's work is an AI review, not one), a Vercel preview with an isolated
+   Neon branch run through `docs/deployment-checklist.md` (not done: no deployment was made), SSO and a second factor for the platform
+   admin, alert delivery to a real paging service, named owners and a rehearsed incident.
+4. ZAP ran only as a passive, unauthenticated baseline against a local build. An authenticated active scan, against a preview and not
+   production, is still to be run.
+
+### 17.6 Verdict
+
+All required GitHub jobs pass on the final code. Every CodeQL and ZAP result was fixed or has a written reason, and nothing was ignored
+or weakened. The remaining open item before merging is the owner's review and dismissal of the §17.2 CodeQL alerts. Merging is reasonable
+**only after** that review and with branch protection on. Production is still blocked by 17.5 items 3 and 4. The status stays
+**CONTROLLED BETA**. This is my own assessment, not a certification.
