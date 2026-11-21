@@ -20,7 +20,7 @@
 // The agent key is kept in ~/.tend/<host>.json (readable only by you), never in the host's settings, never printed, never sent anywhere but
 // TEND. What TEND receives about a tool call: its kind, the tool's name, and a shortened copy of the command, path, URL or MCP tool, with
 // things that look like secrets replaced by ***. Never file contents, prompts or tool output.
-import { chmodSync, chownSync, closeSync, constants, copyFileSync, existsSync, fchmodSync, fchownSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, chownSync, closeSync, constants, existsSync, fchmodSync, fchownSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -119,10 +119,14 @@ export function readConfig(host) {
   if (!HOOK_MODE && envUrl && envKey) return { url: envUrl.replace(/\/$/, ""), key: envKey };
   try {
     // Only a regular file (not a link to one) owned by you and readable by nobody else: the key decides what the assistant may do.
-    const st = lstatSync(configPath(host));
-    if (!st.isFile() || !(ownedByYou(st) || managedFile(st, lstatSync(HOME)))) return null;
-    const c = JSON.parse(readFileSync(configPath(host), "utf8"));
-    return { url: String(c.url).replace(/\/$/, ""), key: String(c.key) };
+    // One open file, checked and read through the same descriptor, so it cannot be swapped between the check and the read.
+    const fd = openSync(configPath(host), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const st = fstatSync(fd);
+      if (!st.isFile() || !(ownedByYou(st) || managedFile(st, lstatSync(HOME)))) return null;
+      const c = JSON.parse(readFileSync(fd, "utf8"));
+      return { url: String(c.url).replace(/\/$/, ""), key: String(c.key) };
+    } finally { closeSync(fd); }
   } catch { return null; }
 }
 /** The agent key goes with every request: plain http only to this computer itself (an older install may have written another address). */
@@ -152,6 +156,11 @@ function openSettings(file) {
   }
 }
 /** Writes the settings through the file opened before (or as a new file that must not exist yet), keeping the text that was read as a backup. */
+/** Writes a whole file through one descriptor that is not a symbolic link, then sets owner and mode on that same descriptor (a key file, the script). */
+function writeOwnFile(file, data, mode, owner) {
+  const fd = openSync(file, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0), mode);
+  try { writeSync(fd, data); if (owner) fchownSync(fd, owner.uid, owner.gid); fchmodSync(fd, mode); } finally { closeSync(fd); }
+}
 function writeSettings(file, opened, text, { mode = 0o644, owner, backup = true } = {}) {
   const noFollow = constants.O_NOFOLLOW ?? 0;
   if (backup && opened.text) {
@@ -375,10 +384,9 @@ async function install(host) {
 
   if (managed) return installManaged(host, { managed, file, opened, hooks, current, url, key, check });
   mkdirSync(HOME, { recursive: true, mode: 0o700 });
-  writeFileSync(configPath(host), JSON.stringify({ url, key }, null, 2) + "\n", { mode: 0o600 });
-  chmodSync(configPath(host), 0o600);
+  writeOwnFile(configPath(host), JSON.stringify({ url, key }, null, 2) + "\n", 0o600);
   const self = fileURLToPath(import.meta.url);
-  if (path.resolve(self) !== path.join(HOME, "tend-hooks.mjs")) copyFileSync(self, path.join(HOME, "tend-hooks.mjs"));
+  if (path.resolve(self) !== path.join(HOME, "tend-hooks.mjs")) writeOwnFile(path.join(HOME, "tend-hooks.mjs"), readFileSync(self), 0o644);
   mkdirSync(path.dirname(file), { recursive: true });
   writeSettings(file, opened, JSON.stringify(merge(host, current, hooks), null, 2) + "\n");
   console.error(`\nDone. TEND recognised this computer as "${check.body.agentId}".`);
@@ -391,12 +399,13 @@ function installManaged(host, { managed, file, opened, hooks, current, url, key,
   const gid = Number(process.env.SUDO_GID ?? 0);
   mkdirSync(managed.dir, { recursive: true, mode: 0o755 });
   mkdirSync(managed.home, { recursive: true, mode: 0o755 });
-  for (const d of [managed.dir, managed.home]) { chownSync(d, 0, 0); chmodSync(d, 0o755); }
+  for (const d of [managed.dir, managed.home]) {
+    if (lstatSync(d).isSymbolicLink()) fail(`${d} is a symbolic link; TEND does not install through links. Nothing was changed.`);
+    chownSync(d, 0, 0); chmodSync(d, 0o755);
+  }
   const cfg = path.join(managed.home, `${host}.json`), script = path.join(managed.home, "tend-hooks.mjs");
-  writeFileSync(cfg, JSON.stringify({ url, key }, null, 2) + "\n", { mode: 0o640 });
-  chownSync(cfg, 0, gid); chmodSync(cfg, 0o640);
-  copyFileSync(fileURLToPath(import.meta.url), script);
-  chownSync(script, 0, 0); chmodSync(script, 0o755);
+  writeOwnFile(cfg, JSON.stringify({ url, key }, null, 2) + "\n", 0o640, { uid: 0, gid });
+  writeOwnFile(script, readFileSync(fileURLToPath(import.meta.url)), 0o755, { uid: 0, gid: 0 });
   writeSettings(file, opened, JSON.stringify({ ...merge(host, current, hooks), allowManagedHooksOnly: true }, null, 2) + "\n", { mode: 0o644, owner: { uid: 0, gid: 0 } });
   console.error(`\nDone. TEND recognised this computer as "${check.body.agentId}". Start (or restart) Claude Code.`);
   console.error(`Check it: node "${script}" status claude-code --managed     Remove: sudo node "${script}" uninstall claude-code --managed --yes`);

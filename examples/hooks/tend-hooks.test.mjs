@@ -326,5 +326,14 @@ test("install writes the settings it read through the same open file: a symbolic
     const r3 = await run(p3);
     assert.equal(r3.status, 0, r3.stderr);
     assert.ok(JSON.parse(readFileSync(path.join(p3, ".claude", "settings.local.json"), "utf8")).hooks.PreToolUse);
+    assert.equal(statSync(path.join(p3, ".tend", "claude-code.json")).mode & 0o777, 0o600, "the key file is readable only by its owner");
+    // the key file's place is a link planted to another file: the key is not written there
+    const p4 = mkdtempSync(path.join(tmpdir(), "tend-keylink-")), bait = path.join(p4, "bait.txt");
+    mkdirSync(path.join(p4, ".tend"));
+    writeFileSync(bait, "untouched\n");
+    symlinkSync(bait, path.join(p4, ".tend", "claude-code.json"));
+    const r4 = await run(p4);
+    assert.notEqual(r4.status, 0);
+    assert.equal(readFileSync(bait, "utf8"), "untouched\n", "the agent key was not written through the link");
   } finally { server.close(); }
 });
