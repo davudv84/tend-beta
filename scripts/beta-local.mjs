@@ -36,7 +36,6 @@ export function provision(work, names) {
   for (const name of names) {
     if (!NAME.test(name)) throw new Error(`"${name}" is not a usable instance name (lowercase letters, digits and hyphens).`);
     const d = instanceDirs(work, name);
-    if (existsSync(d.env)) throw new Error(`${name} already has a local.env; refusing to overwrite its secrets.`);
     while (used.has(port)) port++;
     used.add(port);
     mkdirSync(path.dirname(d.env), { recursive: true, mode: 0o700 });
@@ -45,7 +44,9 @@ export function provision(work, names) {
       chmodSync(dir, 0o700);
     }
     // The secrets file is written and made private through one descriptor that is not a symbolic link (not by path, twice); O_EXCL: never over an existing file.
-    const fd = openSync(d.env, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
+    let fd;
+    try { fd = openSync(d.env, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600); }
+    catch (e) { if (e.code === "EEXIST" || e.code === "ELOOP") throw new Error(`${name} already has a local.env; refusing to overwrite its secrets.`); throw e; }
     try { fchmodSync(fd, 0o600); writeSync(fd, `# Beta instance "${name}" (local hosting). Secrets: keep private; git-ignored.\nPORT=${port}\nTEND_ADMIN_TOKEN=${randomBytes(32).toString("base64url")}\nTEND_GATEWAY_PAYMENTS_KEY=${randomBytes(24).toString("base64url")}\n`); } finally { closeSync(fd); }
     writeFileSync(path.join(d.sandbox, "hello.txt"), "Hello from your TEND test sandbox. This file is disposable.\n", { flag: "wx" });
     made.push({ name, port });
