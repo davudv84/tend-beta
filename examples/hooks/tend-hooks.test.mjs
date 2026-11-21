@@ -282,3 +282,49 @@ test("a stored plain-http address to another computer is refused at run time: th
     assert.equal(sent.length, 0, "nothing was sent anywhere");
   } finally { globalThis.fetch = realFetch; }
 });
+
+test("install writes the settings it read through the same open file: a symbolic link is refused, the original is kept as a backup, other settings stay", async () => {
+  const { spawn } = await import("node:child_process");
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, statSync, chmodSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  // a TEND that accepts the key (the installer checks it first); the installer runs as a separate process so this one keeps answering
+  const server = createServer((req, res) => { res.setHeader("content-type", "application/json"); res.end("{}"); });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const run = (project) => new Promise((resolve) => {
+    const c = spawn(process.execPath, [path.join(import.meta.dirname, "tend-hooks.mjs"), "install", "claude-code", "--project", project, "--url", url, "--yes"],
+      { env: { ...process.env, HOME: project, PATH: "/nonexistent", TEND_AGENT_KEY: "tend_sk_" + "a".repeat(32) } });
+    let stderr = "";
+    c.stderr.on("data", (d) => (stderr += d));
+    c.on("close", (status) => resolve({ status, stderr }));
+  });
+  try {
+    // the settings file is a link to another file: refused, the target untouched
+    const p1 = mkdtempSync(path.join(tmpdir(), "tend-link-")), elsewhere = path.join(p1, "elsewhere.json");
+    mkdirSync(path.join(p1, ".claude"));
+    writeFileSync(elsewhere, '{"keep":true}\n');
+    symlinkSync(elsewhere, path.join(p1, ".claude", "settings.local.json"));
+    const r1 = await run(p1);
+    assert.notEqual(r1.status, 0);
+    assert.match(r1.stderr, /symbolic link/);
+    assert.equal(readFileSync(elsewhere, "utf8"), '{"keep":true}\n', "the link's target was not written");
+    // an ordinary file: hooks added, other settings kept, the original saved next to it, its permissions unchanged
+    const p2 = mkdtempSync(path.join(tmpdir(), "tend-file-")), f = path.join(p2, ".claude", "settings.local.json");
+    mkdirSync(path.join(p2, ".claude"));
+    writeFileSync(f, '{"theme":"dark"}\n');
+    chmodSync(f, 0o640);
+    const r2 = await run(p2);
+    assert.equal(r2.status, 0, r2.stderr);
+    const after = JSON.parse(readFileSync(f, "utf8"));
+    assert.equal(after.theme, "dark");
+    assert.ok(after.hooks?.PreToolUse, "hooks added");
+    assert.equal(readFileSync(`${f}.before-tend`, "utf8"), '{"theme":"dark"}\n');
+    assert.equal(statSync(f).mode & 0o777, 0o640, "the file's own permissions are kept");
+    // a new file (none there yet) is created
+    const p3 = mkdtempSync(path.join(tmpdir(), "tend-new-"));
+    const r3 = await run(p3);
+    assert.equal(r3.status, 0, r3.stderr);
+    assert.ok(JSON.parse(readFileSync(path.join(p3, ".claude", "settings.local.json"), "utf8")).hooks.PreToolUse);
+  } finally { server.close(); }
+});
