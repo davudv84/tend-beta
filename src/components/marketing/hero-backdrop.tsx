@@ -26,9 +26,10 @@ function Frame({ className, tone }: { className: string; tone: string }) {
   );
 }
 
-export function HeroBackdrop() {
+/** `className` replaces the default `-z-20`, for use inside a stacking context (the passage's hero and picture layer). */
+export function HeroBackdrop({ className = "-z-20" }: { className?: string }) {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 -z-20 overflow-hidden">
+    <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
       {/* Controlled light: one soft wash from above, centred on the opening, narrower than the text column's surroundings. */}
       <div className="absolute inset-x-0 top-0 h-[78%] bg-[radial-gradient(ellipse_52%_70%_at_50%_0%,rgb(255_255_255/0.085),rgb(255_255_255/0.025)_48%,transparent_78%)]" />
       {/* Floor of the room: a faint cool-warm lift where the opening meets the app window. */}

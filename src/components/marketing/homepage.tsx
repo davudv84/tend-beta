@@ -1,6 +1,6 @@
 "use client";
 
-import { Hero } from "./hero";
+import { Passage } from "./home/passage";
 import { Closing, Everything, Holds, Proof, TryIt } from "./home-sections";
 import { SiteFrame } from "./site-frame";
 import type { HomeImages } from "./types";
@@ -15,7 +15,7 @@ import type { HomeImages } from "./types";
 export function Homepage({ accounts, demo, images, fontClass }: { accounts: boolean; demo: boolean; images: HomeImages; fontClass: string }) {
   return (
     <SiteFrame accounts={accounts} images={images} fontClass={fontClass}>
-      <Hero accounts={accounts} demo={demo} />
+      <Passage accounts={accounts} demo={demo} />
       <Proof />
       <TryIt />
       <Everything />
