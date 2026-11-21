@@ -5,9 +5,19 @@ import { buildCsp, cspMode, newNonce } from "./lib/csp.ts";
 /**
  * Adds a per-request nonce and the Content-Security-Policy to every page (Next 16 "proxy", formerly middleware). Next reads the nonce from the
  * REQUEST's policy header and stamps it on its own scripts and styles while rendering; the browser enforces the policy from the RESPONSE header.
- * API routes and static files are skipped: they return JSON or assets, never a document.
+ * API routes get no page policy (they return JSON and carry their own, from next.config.ts); static files are skipped.
  */
 export function proxy(request: NextRequest) {
+  // Trailing slashes are redirected here instead of by Next (skipTrailingSlashRedirect in next.config.ts), so the redirect carries a
+  // Content-Type and the same headers as every other answer. Same origin only: the URL is this request's, with its path trimmed.
+  const { pathname } = request.nextUrl;
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    // From the raw request URL: Next's nextUrl keeps the trailing slash it was given, which would redirect to itself.
+    const to = new URL(request.url);
+    to.pathname = to.pathname.replace(/\/+$/, "") || "/";
+    return new NextResponse(null, { status: 308, headers: { location: to.toString(), "content-type": "text/plain; charset=utf-8" } });
+  }
+  if (pathname === "/api" || pathname.startsWith("/api/")) return NextResponse.next(); // JSON: its own strict policy (next.config.ts)
   const mode = cspMode();
   if (mode === "off") return NextResponse.next();
   const policy = buildCsp({ nonce: newNonce(), dev: process.env.NODE_ENV === "development" });
@@ -21,7 +31,7 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      source: "/((?!api|_next/static|_next/image|favicon.ico|icon.svg|opengraph-image).*)",
+      source: "/((?!_next/static|_next/image|favicon.ico|icon.svg|opengraph-image).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
