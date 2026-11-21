@@ -114,10 +114,14 @@ jobs:
         env:
           DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: |
-          # client tools must match the server: pg_restore 18 (the runner's default) emits settings PostgreSQL 16 does not know
-          sudo apt-get update -q >/dev/null
-          sudo apt-get install -y --no-install-recommends postgresql-client-16 >/dev/null
-          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          # Client tools must match the server: pg_restore 18 (the runner's default) emits settings PostgreSQL 16 does not know, and the
+          # runner's package sources have no 16 client. So pg_dump/pg_restore run from the same postgres:16 image as the service.
+          mkdir -p "$RUNNER_TEMP/pg16"
+          for t in pg_dump pg_restore; do
+            printf '#!/bin/sh\nexec docker run --rm --network host -v /tmp:/tmp postgres:16 %s "$@"\n' "$t" > "$RUNNER_TEMP/pg16/$t"
+            chmod +x "$RUNNER_TEMP/pg16/$t"
+          done
+          export PATH="$RUNNER_TEMP/pg16:$PATH"
           pg_dump --version
           node --no-warnings scripts/ops/backup-restore-drill.mjs
           node --no-warnings scripts/ops/context-key-rotation-drill.mjs
