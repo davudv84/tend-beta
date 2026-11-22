@@ -103,3 +103,16 @@ test("the isolated server's port is held only by its own process tree", { skip }
     rmSync(data, { recursive: true, force: true });
   }
 });
+
+// lsof 4.95 skips a process whose name contains " (", and Next names its server "next-server (vX.Y.Z)": the port check then saw no listener and
+// passed without checking. Needs no build: a process with such a name holds a port, and it must be found.
+test("a listener named like Next's server process is still found (the port check does not go blind)", { skip: process.platform === "linux" ? false : "Linux /proc reader" }, async () => {
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, ["-e", "process.title = 'next-server (v0.0.0)'; const s = require('node:net').createServer().listen(0, '127.0.0.1', () => console.log(s.address().port));"], { stdio: ["ignore", "pipe", "ignore"] });
+  try {
+    const port = Number(await new Promise<string>((resolve) => child.stdout.once("data", (b) => resolve(String(b).trim()))));
+    assert.deepEqual(listeners(port), [child.pid]);
+  } finally {
+    child.kill("SIGKILL");
+  }
+});

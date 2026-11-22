@@ -8,7 +8,7 @@
 // It also checks what it started: the database must be the embedded one, and the process holding the port must be this server (not a stale
 // one from an earlier run answering for it). stop() ends the whole process tree, including the renamed `next-server` child that a plain kill leaves behind.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,7 +24,38 @@ const lines = (cmd, args) => {
 };
 /** pid and all its descendants (this tree only). */
 export const processTree = (pid) => [pid, ...lines("pgrep", ["-P", String(pid)]).map(Number).flatMap(processTree)];
-export const listeners = (port) => lines("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"]).map(Number);
+/**
+ * The pids listening on a TCP port. On Linux this reads the kernel's own tables (/proc/net/tcp*, then which process holds each socket): lsof
+ * (4.95, at least) skips any process whose name contains " (", and Next names its server "next-server (vX.Y.Z)", so lsof alone reported no
+ * listener at all and the "is this port ours?" check below passed without checking anything. Elsewhere (macOS) lsof is used.
+ */
+export const listeners = (port) => (process.platform === "linux" && existsSync("/proc/net/tcp") ? procListeners(port) : lines("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"]).map(Number));
+
+function procListeners(port) {
+  const hex = port.toString(16).toUpperCase().padStart(4, "0");
+  const inodes = new Set();
+  for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    let text = "";
+    try { text = readFileSync(table, "utf8"); } catch { continue; }
+    for (const row of text.split("\n").slice(1)) {
+      const f = row.trim().split(/\s+/); // sl local_address rem_address st … inode
+      if (f.length > 9 && f[1].endsWith(`:${hex}`) && f[3] === "0A") inodes.add(f[9]); // 0A = LISTEN
+    }
+  }
+  if (!inodes.size) return [];
+  const pids = [];
+  for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d))) {
+    let fds = [];
+    try { fds = readdirSync(`/proc/${pid}/fd`); } catch { continue; } // another user's process: not readable, and not ours either
+    for (const fd of fds) {
+      let target = "";
+      try { target = readlinkSync(`/proc/${pid}/fd/${fd}`); } catch { continue; }
+      const m = /^socket:\[(\d+)\]$/.exec(target);
+      if (m && inodes.has(m[1])) { pids.push(Number(pid)); break; }
+    }
+  }
+  return pids;
+}
 
 /** A free port chosen by the operating system, never one a stale server already holds. */
 export const freePort = () => new Promise((resolve, reject) => {
@@ -82,7 +113,10 @@ export async function startIsolatedServer({ root, env, database = "embedded", po
     }
     if (health.storage !== (database === "postgres" ? "postgres" : "embedded")) throw new Error(`The isolated server is not using the expected ${database} database (storage: ${health.storage}). Something configured a different database; refusing to continue.`);
     const mine = new Set(processTree(child.pid));
-    const others = listeners(port).filter((p) => !mine.has(p));
+    const holders = listeners(port);
+    // Fail closed: a server that answered on this port but whose listener cannot be identified is not known to be ours.
+    if (!holders.length) throw new Error(`Port ${port} answered, but no listening process could be identified, so it cannot be confirmed to be this server. Refusing to continue.`);
+    const others = holders.filter((p) => !mine.has(p));
     if (others.length) throw new Error(`Port ${port} is held by another process (pid ${others.join(", ")}), not this server. Refusing to continue: it could be a stale server with a different database.`);
     return { url, port, dir, health, stop, output: () => output, pids: () => processTree(child.pid) };
   } catch (e) {
