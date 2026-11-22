@@ -14,7 +14,7 @@ const run = (script, args) => spawnSync(process.execPath, [path.join(import.meta
 const policy = file("policy.json", { minTests: 3, allowedSkips: [{ reason: "needs macOS sandbox-exec", why: "Linux CI" }] });
 const tap = (lines, { tests = 3, pass = 3, fail = 0, cancelled = 0, skipped = 0, todo = 0 } = {}) =>
   `TAP version 13\n${lines.join("\n")}\n1..${tests}\n# tests ${tests}\n# suites 0\n# pass ${pass}\n# fail ${fail}\n# cancelled ${cancelled}\n# skipped ${skipped}\n# todo ${todo}\n# duration_ms 1\n`;
-const gate = (t) => run("test-gate.mjs", ["--tap", file(`run-${Math.random()}.tap`, t), "--policy", policy]);
+const gate = (t, extra = []) => run("test-gate.mjs", ["--tap", file(`run-${Math.random()}.tap`, t), "--policy", policy, ...extra]);
 
 test("test gate: passes a clean run, and a skip whose reason is allow-listed", () => {
   assert.equal(gate(tap(["ok 1 - a", "ok 2 - b", "ok 3 - c"])), 0);
@@ -46,4 +46,11 @@ test("audit gate: an allow-listed advisory passes until its entry expires, and a
   assert.equal(audit(advisory, [entry], "2027-02-01"), 1, "expired");
   assert.equal(audit(advisory, [{ ...entry, why: "" }]), 1, "no reason");
   assert.equal(audit("not json", []), 1, "an audit that did not run fails closed");
+});
+
+test("test gate: a database skip passes only with --allow-db-skip (the unit job), never otherwise; other skips still fail with it", () => {
+  const dbSkip = tap(["ok 1 - a", "ok 2 - b", "ok 3 - rls # SKIP set TEND_TEST_DATABASE_URL (or run `npm run test:postgres`)"], { pass: 2, skipped: 1 });
+  assert.equal(gate(dbSkip), 1);
+  assert.equal(gate(dbSkip, ["--allow-db-skip"]), 0);
+  assert.equal(gate(tap(["ok 1 - a", "ok 2 - b", "ok 3 - c # SKIP flaky"], { pass: 2, skipped: 1 }), ["--allow-db-skip"]), 1);
 });

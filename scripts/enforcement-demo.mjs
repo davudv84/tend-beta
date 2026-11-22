@@ -84,10 +84,9 @@ async function fakeTend(kind) {
 }
 
 async function main() {
-  // TEND_E2E_DATABASE_URL: run the same demonstration against a THROWAWAY local PostgreSQL (real concurrent connections, so the race below is a
-  // real race). Never point it at a database whose data you need: the server creates its schema there.
-  const pg = process.env.TEND_E2E_DATABASE_URL;
-  const server = await startIsolatedServer({ root, ...(pg && { database: "postgres" }), env: { TEND_ADMIN_TOKEN: ADMIN, TEND_DATA_DIR: dir, ...(pg && { DATABASE_URL: pg }) } });
+  // TEND_E2E_DATABASE_URL (a throwaway local PostgreSQL): startIsolatedServer gives the server a fresh database there, set up as production
+  // runs it (owner migrates, a restricted login serves, row-level security, signed tenant context), so the race below is a real race.
+  const server = await startIsolatedServer({ root, env: { TEND_ADMIN_TOKEN: ADMIN, TEND_DATA_DIR: dir } });
   URL_ = server.url;
   try {
     console.log(`isolated TEND on ${URL_} (${server.health.storage} database)\n`);
