@@ -1,0 +1,14 @@
+# Exact gitleaks findings verified to be fake test fixtures or code, not secrets. Each line is one finding's fingerprint (commit:file:rule:line),
+# so it covers that one old line only: the same value added anywhere else, or in any later commit, is reported again.
+# Verified 2026-11-22 from the redacted CI log (run 45009204536). Never add a real credential here: rotate it (docs/runbooks/secret-rotation.md).
+#
+# Base32 of the RFC 6238 test secret "12345678901234567890" (a published test vector), in the admin second-factor tests.
+61c721c611b257cede4080d2f011a017ab899fba:src/server/admin-mfa.test.ts:generic-api-key:12
+# A made-up base32 secret in the same tests, used to show that changing the secret ends sessions.
+61c721c611b257cede4080d2f011a017ab899fba:src/server/admin-mfa.test.ts:generic-api-key:90
+# "API_KEY=…" in a test that proves the hooks adapter redacts it before anything leaves the machine.
+67699dfbb16c2c310b0ef72b3b588319ff30669c:examples/hooks/tend-hooks.test.mjs:generic-api-key:153
+# A fake "Authorization: Bearer …" header in the same redaction tests.
+dcf4828c7e2865bad8011441e5fb0787fdde3f9e:examples/hooks/tend-hooks.test.mjs:curl-auth-header:21
+# "key: r2.body.apiKey": code reading a variable, not a value.
+5db327158a8d63986e00125433192acfe69ef9cc:scripts/authz-e2e.mjs:generic-api-key:104
