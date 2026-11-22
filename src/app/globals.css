@@ -779,7 +779,7 @@
 }
 
 /* The captions sit on the open side of the stack, or under it. */
-.mk .ps-cap { width: min(340px, 26vw); }
+.mk .ps-cap { width: min(300px, 26vw); }
 .mk .ps-cap-left { left: max(28px, calc(50vw - 600px)); top: 50%; margin-top: -70px; }
 .mk .ps-cap-right { right: max(28px, calc(50vw - 600px)); top: 50%; margin-top: -70px; }
 .mk .ps-cap-center { left: 50%; bottom: 6vh; width: min(520px, 90vw); margin-left: max(-260px, -45vw); text-align: center; }

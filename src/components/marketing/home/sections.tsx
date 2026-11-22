@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRightIcon, CheckIcon, MinusIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { BRAND_ICONS } from "@/lib/brand-icons";
@@ -201,33 +202,131 @@ export function ProductView() {
 
 // ——— How to start ———
 
-/** The three steps of the guided setup on one track, each with the action that starts it. */
+/** The screen each step shows, cropped (aspect 16:10): your workspace, the guided connect screen, an agent's rules. */
+const START_SHOTS: { shot: ScreenName; crop: Crop }[] = [
+  { shot: "overview", crop: [0, 0, 100] },
+  { shot: "connect", crop: [16, 2, 62] },
+  { shot: "policies-edit", crop: [2, 30, 70] },
+];
+
+/** Section progress, 0 → 1, while a tall section scrolls past its pinned stage. */
+function useStageProgress(ref: React.RefObject<HTMLElement | null>, on: boolean, onProgress: (p: number) => void) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !on) return;
+    let raf = 0;
+    const read = () => {
+      raf = 0;
+      const span = el.offsetHeight - innerHeight;
+      onProgress(span > 0 ? Math.min(1, Math.max(0, -el.getBoundingClientRect().top / span)) : 0);
+    };
+    const tick = () => { if (!raf) raf = requestAnimationFrame(read); };
+    read();
+    addEventListener("scroll", tick, { passive: true });
+    addEventListener("resize", tick);
+    return () => { cancelAnimationFrame(raf); removeEventListener("scroll", tick); removeEventListener("resize", tick); };
+  }, [ref, on, onProgress]);
+}
+
+/**
+ * How to start, in three steps. The section is pinned while you scroll through it: a track fills, the step you are on lights up and
+ * its real screen takes the stage. It reverses when you scroll up. Under reduced motion nothing is pinned: the three steps and their
+ * screens are listed one after the other.
+ */
 export function Start({ accounts, demo }: { accounts: boolean; demo: boolean }) {
   const t = useT();
   const s = t.land.start;
+  const alts = t.land.passage.alts;
+  const alt = [t.front.shots.overview, alts.connect, alts.rules];
   const create = accounts ? "/account/sign-up" : "/operator";
+  const root = useRef<HTMLElement>(null);
+  const [reduced, setReduced] = useState(false);
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const mq = matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduced(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  const onProgress = useCallback((p: number) => {
+    root.current?.style.setProperty("--sp", p.toFixed(4));
+    setActive(Math.min(2, Math.floor(p * 3)));
+  }, []);
+  useStageProgress(root, !reduced, onProgress);
   const action = [
     demo ? <DemoButton key="a" note={false} /> : <PrimaryLink key="a" href={create}>{t.front.create}</PrimaryLink>,
     <TextLink key="b" href="/docs">{s.docs}</TextLink>,
     <TextLink key="c" href="/product/rules">{t.front.product.rules.name}</TextLink>,
   ];
+  const stepBody = (st: (typeof s.steps)[number]) => ("demo" in st && demo ? st.demo : st.body);
+  const frame = "overflow-hidden rounded-2xl border border-white/[0.1] bg-[#121212] p-1.5 shadow-[0_50px_100px_-40px_rgb(0_0_0/0.95)]";
+
+  if (reduced) {
+    return (
+      <Band label="start-title" line={false} className={TONE.deep}>
+        <Container className={pad}>
+          <Head id="start-title" title={s.title} body={s.body} />
+          <ol className="mt-14 grid gap-14 md:mt-20">
+            {s.steps.map((st, i) => (
+              <li key={st.title} className="grid items-center gap-6 md:grid-cols-2 md:gap-12">
+                <div>
+                  <span className="grid size-9 place-items-center rounded-full border border-white/[0.16] text-[14px] tabular-nums">{i + 1}</span>
+                  <h3 className="mt-5 text-[22px] font-medium tracking-[-0.015em]">{st.title}</h3>
+                  <p className="mt-2 max-w-[34ch] text-[16px] leading-[1.55] text-foreground/65">{stepBody(st)}</p>
+                  <div className="mt-5 flex">{action[i]}</div>
+                </div>
+                <div className={frame}><ScreenCrop name={START_SHOTS[i].shot} crop={START_SHOTS[i].crop} aspect={1.6} alt={alt[i]} sizes="(min-width: 768px) 45vw, 92vw" className="rounded-[11px]" /></div>
+              </li>
+            ))}
+          </ol>
+        </Container>
+      </Band>
+    );
+  }
+
   return (
-    <Band label="start-title" line={false} className={TONE.deep}>
-      <Container className={pad}>
-        <Head id="start-title" title={s.title} body={s.body} />
-        <ol className="relative mt-16 grid gap-12 md:mt-20 md:grid-cols-3 md:gap-8">
-          {/* The track the three steps sit on. */}
-          <span aria-hidden className="absolute top-[18px] right-0 left-0 hidden h-px bg-[linear-gradient(90deg,rgb(95_184_146/0.6),rgb(255_255_255/0.14)_40%,rgb(255_255_255/0.14))] md:block" />
-          {s.steps.map((st, i) => (
-            <Reveal as="li" key={st.title} delay={i * 90} className="relative">
-              <span className={cn("relative grid size-9 place-items-center rounded-full border text-[14px] font-medium tabular-nums", i === 0 ? "border-sage/70 bg-[#17201c] text-sage" : "border-white/[0.16] bg-[#131313] text-foreground/75")}>{i + 1}</span>
-              <h3 className="mt-6 text-[21px] font-medium tracking-[-0.015em]">{st.title}</h3>
-              <p className="mt-2 max-w-[32ch] text-[15.5px] leading-[1.55] text-foreground/65">{"demo" in st && demo ? st.demo : st.body}</p>
-              <div className="mt-5 flex">{action[i]}</div>
-            </Reveal>
-          ))}
-        </ol>
-      </Container>
+    <Band label="start-title" line={false} className={cn(TONE.deep, "relative h-[300vh] max-md:h-[260vh]")}>
+      <div ref={(el) => { root.current = el?.parentElement ?? null; }} className="sr-only" />
+      <div className="sticky top-0 flex h-svh items-center overflow-hidden pt-16">
+        <Container className="grid w-full items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:gap-16">
+          <div>
+            <h2 id="start-title" className="mk-display text-[clamp(2rem,4vw,3.25rem)]">{s.title}</h2>
+            <ol className="relative mt-8 grid gap-1 pl-10 md:mt-10">
+              {/* The track; its mint part grows with the scroll. */}
+              <span aria-hidden className="absolute top-3 bottom-3 left-[15px] w-px bg-white/[0.14]" />
+              <span aria-hidden className="absolute top-3 bottom-3 left-[15px] w-px origin-top bg-sage" style={{ transform: "scaleY(var(--sp, 0))" }} />
+              {s.steps.map((st, i) => {
+                const on = i === active, done = i < active;
+                return (
+                  <li key={st.title} aria-current={on ? "step" : undefined} className={cn("relative py-3 transition-opacity duration-500 ease-[var(--ease-out)]", on ? "opacity-100" : "opacity-60")}>
+                    <span className={cn("absolute top-3.5 -left-10 grid size-[30px] place-items-center rounded-full border text-[13px] font-medium tabular-nums transition-colors duration-500", on ? "border-sage bg-[#17201c] text-sage" : done ? "border-sage/60 bg-[#131313] text-sage" : "border-white/[0.18] bg-[#131313] text-foreground/70")}>{i + 1}</span>
+                    <h3 className="text-[20px] font-medium tracking-[-0.015em] md:text-[22px]">{st.title}</h3>
+                    <div className={cn("grid transition-[grid-template-rows,opacity] duration-500 ease-[var(--ease-out)]", on ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")}>
+                      <div className="overflow-hidden">
+                        <p className="mt-1.5 max-w-[34ch] text-[15.5px] leading-[1.55] text-foreground/65">{stepBody(st)}</p>
+                        <div className="mt-4 flex pb-1">{action[i]}</div>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+            <p className="mt-6 max-w-[40ch] text-[14.5px] text-foreground/55 max-lg:hidden">{s.body}</p>
+          </div>
+          <div className={cn(frame, "relative")} aria-hidden>
+            <div className="relative overflow-hidden rounded-[11px]" style={{ aspectRatio: 1.6 }}>
+              {START_SHOTS.map(({ shot, crop }, i) => (
+                <div key={shot} className="absolute inset-0 transition-[opacity,transform] duration-700 ease-[var(--ease-out)]" style={{ opacity: i === active ? 1 : 0, transform: i === active ? "none" : `translateY(${i < active ? -2 : 2}%) scale(0.985)` }}>
+                  <ScreenCrop name={shot} crop={crop} aspect={1.6} alt="" sizes="(min-width: 1024px) 55vw, 92vw" className="absolute inset-0 !aspect-auto" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </Container>
+      </div>
+      {/* The same three steps for assistive technology: the pinned view above comes and goes with scrolling. */}
+      <ol className="sr-only">{s.steps.map((st, i) => <li key={st.title}><h3>{st.title}</h3><p>{stepBody(st)}</p><span>{alt[i]}</span></li>)}</ol>
     </Band>
   );
 }
