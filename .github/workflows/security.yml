@@ -70,7 +70,7 @@ jobs:
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tgz" | sha256sum --check --strict
           tar -xzf gitleaks.tgz gitleaks && rm gitleaks.tgz
       - name: scan the whole git history
-        run: ./gitleaks git --config .gitleaks.toml --redact --no-banner --exit-code 1 --report-format json --report-path gitleaks-report.json .
+        run: ./gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 --report-format json --report-path gitleaks-report.json .
       - name: keep the (redacted) report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
