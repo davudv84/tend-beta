@@ -1188,7 +1188,7 @@ export const de: Dict = {
     },
     why: {
       title: "Ein Agent kann alles, was seine Werkzeuge können.",
-      body: "TEND steht zwischen Ihren Agenten und ihren Werkzeugen. Jede Aktion, die sie anfragen, wird zuerst an Ihren Regeln geprüft, und erst dann läuft das Werkzeug.",
+      body: "TEND steht zwischen Ihren Agenten und ihren Werkzeugen. Jede Aktion, die ein Agent über TEND schickt, wird zuerst an Ihren Regeln geprüft, und erst dann läuft das Werkzeug.",
       agent: "Ihr Agent",
       asks: "möchte ausführen",
       code: "send_email → team@example.com",

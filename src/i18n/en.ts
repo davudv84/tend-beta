@@ -1202,7 +1202,7 @@ export const en = {
     // The sections after the passage (home/sections.tsx). Claims follow docs/security-limitations.md and docs/connect.md.
     why: {
       title: "An agent can do anything its tools can do.",
-      body: "TEND sits between your agents and their tools. Every action they ask for is checked against your rules first, and only then does the tool run.",
+      body: "TEND sits between your agents and their tools. Every action an agent sends through TEND is checked against your rules first, and only then does the tool run.",
       agent: "Your agent",
       asks: "asks to run",
       code: "send_email → team@example.com",
