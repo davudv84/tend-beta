@@ -26,12 +26,16 @@ async function call(method, p, { body, cookie, key } = {}) {
   return { status: res.status, body: data, setCookie: res.headers.get("set-cookie") };
 }
 const cookieOf = (r) => r.setCookie?.split(";")[0];
-const mailTo = async (email, wait = 20_000) => {
-  // Mails are sent after the response; the outbox may take a moment.
+const mailTo = async (email, wait = 20_000, containing = "") => {
+  // Mails are sent after the response, so the outbox may take a moment. With `containing`, wait for a mail that says it, not just for the
+  // first mail to that address: the sign-up confirmation is already there when an approval is expected, and returning it early made the check
+  // a race (it failed on a slow runner although the approval mail was sent a moment later).
+  let last = "";
   for (const end = Date.now() + wait; ; await new Promise((r) => setTimeout(r, 100))) {
     let files = [];
     try { files = readdirSync(path.join(dir, "outbox")).filter((f) => f.includes(email)).sort(); } catch {}
-    if (files.length || Date.now() > end) return files.length ? readFileSync(path.join(dir, "outbox", files.at(-1)), "utf8") : "";
+    if (files.length) { last = readFileSync(path.join(dir, "outbox", files.at(-1)), "utf8"); if (last.includes(containing)) return last; }
+    if (Date.now() > end) return last;
   }
 };
 const tokenIn = (mail) => /#token=([A-Za-z0-9_-]{43})/.exec(mail)?.[1];
@@ -65,7 +69,7 @@ async function main() {
     const admin = cookieOf(await call("POST", "/api/operator/session", { body: { token: ADMIN } }));
     const users = (await call("GET", "/api/admin/users", { cookie: admin })).body.users;
     for (const u of users) await call("POST", `/api/admin/users/${u.id}`, { cookie: admin, body: { action: "approve" } });
-    check(users.length === 2 && (await mailTo("ada@example.com")).includes("approved"), "both accounts approved; the approval is mailed");
+    check(users.length === 2 && (await mailTo("ada@example.com", 20_000, "approved")).includes("approved"), "both accounts approved; the approval is mailed");
     const A = cookieOf(await call("POST", "/api/account/sign-in", { body: { email: "ada@example.com", password: PW } }));
     const B = cookieOf(await call("POST", "/api/account/sign-in", { body: { email: "bo@example.com", password: PW } }));
     const viewA = (await call("GET", "/api/v1/state", { cookie: A })).body;
