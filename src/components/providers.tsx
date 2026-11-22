@@ -1,5 +1,6 @@
 "use client";
 
+import "@/lib/style-nonce";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";

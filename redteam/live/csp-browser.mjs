@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The Content-Security-Policy in a real browser (Chromium): visits the main pages signed out and signed in on a production build, shows a
-// toast, and records every CSP violation the browser reports, plus whether styles applied. Any violation is a failure.
+// toast, opens a menu and a select, and records every CSP violation the browser reports, plus whether styles applied. Any violation is a failure.
 import { createRequire } from "node:module";
 import { mkdtempSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -29,6 +29,24 @@ try {
   page.on("response", (r) => { if (r.status() >= 400 && !r.url().includes("/api/")) failedLoads.push(`${r.url()} ${r.status()}`); });
   const visit = async (p) => { await page.goto(server.url + p, { waitUntil: "load" }); await page.waitForTimeout(1200); };
   for (const p of ["/", "/welcome", "/account/sign-in", "/account/sign-up", "/developers"]) await visit(p);
+  // Dialogs, menus and selects lock the page behind them with a <style> added at run time (react-remove-scroll). It carries the nonce
+  // (src/lib/style-nonce.ts); if it were blocked, the page would still scroll behind an open menu. The mobile menu, then a select.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await visit("/");
+  await page.getByRole("button", { name: /menu/i }).first().click();
+  await page.getByRole("dialog").waitFor();
+  await page.waitForTimeout(300);
+  const lockedMenu = await page.evaluate(() => document.body.hasAttribute("data-scroll-locked") && getComputedStyle(document.body).overflow === "hidden");
+  check(lockedMenu, "an open menu locks the page behind it (the run-time scroll-lock style is allowed by the nonce)");
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await visit("/design-system");
+  await page.getByRole("combobox").first().click();
+  await page.getByRole("option").first().waitFor();
+  await page.waitForTimeout(300);
+  const selectStyled = await page.evaluate(() => { const v = document.querySelector("[data-radix-select-viewport]"); return !!v && getComputedStyle(v).scrollbarWidth === "none"; });
+  check(selectStyled, "an open select's own style applied (allowed by its exact hash)");
+  await page.keyboard.press("Escape");
   // the page's own stylesheet applied (a blocked <style> would leave the body unstyled)
   const styled = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
   check(!!styled && !/^"?Times/i.test(styled), "stylesheet applied (body font is the app's, not the browser default)", styled);
@@ -40,7 +58,7 @@ try {
   const sonnerRules = await page.evaluate(() => [...document.styleSheets].some((sh) => { try { return [...sh.cssRules].some((r) => r.cssText.includes("data-sonner-toaster")); } catch { return false; } }));
   check(sonnerRules, "the toast library's CSS applied (allowed by its exact hash, not by 'unsafe-inline')");
   check(failedLoads.length === 0, "nothing the app loads was blocked or failed (COEP/CORP)", failedLoads.slice(0, 5).join("\n      "));
-  check(violations.length === 0, `no CSP violations on ${12} pages`, violations.slice(0, 6).join("\n      "));
+  check(violations.length === 0, `no CSP violations on ${14} pages, with a menu and a select opened`, violations.slice(0, 6).join("\n      "));
 } finally { await browser.close(); await server.stop(); }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

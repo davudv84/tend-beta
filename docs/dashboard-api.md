@@ -53,7 +53,8 @@ Errors are always JSON `{ error: "<code>", message: "<human text>" }` with the H
 - **Content-Security-Policy** (`src/lib/csp.ts`, tested in `csp.test.ts` and in a real browser by `redteam/live/csp-browser.mjs`):
   - scripts only from this site (Next's own, nonce plus `'strict-dynamic'`): no CDN scripts, no inline `<script>`, no `onclick=""` attributes;
   - `<style>` elements and stylesheets only from this site or with the request's nonce: no runtime CSS-in-JS that injects `<style>` (the
-    toast library's CSS is allowed by its exact hash; **upgrading `sonner` needs the hash updated**, which the test says);
+    toast library's CSS and the select menu's one fixed rule are allowed by their exact hashes; **upgrading `sonner` or
+    `@radix-ui/react-select` needs the hash updated**, which the test says);
   - `style=""` attributes are allowed (React inline styles, Motion/Framer-style animations that set `style` work);
   - images: `'self' data: blob:`; fonts: `'self' data:`. **no font or image CDNs**: `next/font/google` and `next/font/local` are fine (Next serves
     the files from this site, as `src/app/layout.tsx` does today); a `<link>` to fonts.googleapis.com is blocked. Put images in `public/`;

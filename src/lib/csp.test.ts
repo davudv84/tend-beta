@@ -10,7 +10,7 @@ test("the production policy: nonce-only scripts, no unsafe-inline or unsafe-eval
   const p = buildCsp({ nonce: "N0NCE" });
   assert.equal(directive(p, "script-src"), "script-src 'self' 'nonce-N0NCE' 'strict-dynamic'");
   assert.ok(!/script-src[^;]*'unsafe-(inline|eval)'/.test(p), "scripts: no unsafe-inline, no unsafe-eval");
-  assert.ok(!/style-src(-elem)? [^;]*'unsafe-inline'/.test(p), "no inline style elements: only nonced ones and two known hashes")
+  assert.ok(!/style-src(-elem)? [^;]*'unsafe-inline'/.test(p), "no inline style elements: only nonced ones and the known hashes")
   assert.equal(directive(p, "style-src-attr"), "style-src-attr 'unsafe-inline'", "style attributes (rendered by React) may be inline")
   assert.match(directive(p, "style-src-elem")!, /'nonce-N0NCE'/);
   for (const d of ["default-src 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'", "connect-src 'self'"]) assert.ok(p.includes(d), d);
@@ -68,5 +68,15 @@ test("the allowed style hash is the toast library's actual CSS (an upgrade that 
   const css = JSON.parse(`"${/__insertCSS\("((?:[^"\\]|\\.)*)"\);/.exec(src)![1]}"`);
   assert.ok(STYLE_HASHES.includes(`'sha256-${createHash("sha256").update(css).digest("base64")}'`));
   assert.ok(STYLE_HASHES.includes(`'sha256-${createHash("sha256").update("").digest("base64")}'`), "the empty element it creates first");
-  assert.equal(STYLE_HASHES.length, 2, "nothing else");
+});
+
+test("the allowed style hash is the select menu's actual CSS, and there is no other", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { createHash } = await import("node:crypto");
+  const src = readFileSync(new URL("../../node_modules/@radix-ui/react-select/dist/index.mjs", import.meta.url), "utf8");
+  const blocks = [...src.matchAll(/__html: `([^`]*)`/g)].map((m) => m[1]);
+  assert.equal(blocks.length, 1, "the library renders exactly one inline style");
+  assert.ok(!/url\(|@import/i.test(blocks[0]), "and it loads nothing");
+  assert.ok(STYLE_HASHES.includes(`'sha256-${createHash("sha256").update(blocks[0]).digest("base64")}'`));
+  assert.equal(STYLE_HASHES.length, 3, "sonner's two and this one, nothing else");
 });

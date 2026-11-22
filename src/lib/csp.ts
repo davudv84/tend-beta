@@ -11,11 +11,17 @@ export type CspMode = "enforce" | "report" | "off";
 export const cspMode = (v = process.env.TEND_CSP): CspMode => (v === "report" || v === "off" ? v : "enforce");
 
 /**
- * The only inline style elements allowed by content: the toast library (sonner 2.0.8) inserts its CSS as a <style> element at load time,
- * without a nonce, first empty and then filled. Their SHA-256 hashes, so nothing else inline is allowed. csp.test.ts recomputes the
- * library's hash from node_modules: after an upgrade it fails until this is updated (until then toasts are unstyled, nothing else changes).
+ * The only inline style elements allowed by content, each by the SHA-256 hash of its exact text, so nothing else inline is allowed:
+ * - the toast library (sonner 2.0.8) inserts its CSS as a <style> element at load time, without a nonce, first empty and then filled;
+ * - the select menu (@radix-ui/react-select 2.4.1) renders one fixed <style> that hides the list's scrollbar while it is open.
+ * csp.test.ts recomputes each library's hash from node_modules: after an upgrade it fails until this is updated (until then that library's
+ * few rules are not applied, nothing else changes).
  */
-export const STYLE_HASHES = ["'sha256-StEaX+se6YS7pqjzrzMIA0KaX9zF/8zAhvQXZAe5epY='", "'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='"];
+export const STYLE_HASHES = [
+  "'sha256-StEaX+se6YS7pqjzrzMIA0KaX9zF/8zAhvQXZAe5epY='",
+  "'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='",
+  "'sha256-441zG27rExd4/il+NvIqyL8zFx5XmyNQtE381kSkUJk='",
+];
 
 export function buildCsp({ nonce, dev = false }: { nonce: string; dev?: boolean }) {
   const directives = [
