@@ -1166,6 +1166,97 @@ export const de: Dict = {
     },
   },
 
+  // The 3D passage at the top of the homepage (components/marketing/home/passage.tsx).
+  land: {
+    hero: { scroll: "Scrollen Sie: TEND in vier Schritten" },
+    passage: {
+      label: "TEND in vier Schritten",
+      step: (n: number, total: number) => `${n} von ${total}`,
+      stages: [
+        { title: "Agenten verbinden.", body: "Wählen Sie Ihren Agenten. Für Claude Code ist es ein Befehl." },
+        { title: "Regeln festlegen.", body: "Bestimmen Sie, was er darf: erlauben, erst fragen oder nie." },
+        { title: "Sensible Aktionen freigeben.", body: "Prüfen Sie die genaue Anfrage, bevor sie ausgeführt wird." },
+        { title: "Jede Entscheidung sehen.", body: "Verfolgen Sie jede Anfrage und ihr Ergebnis in der Aktivität." },
+      ],
+      alts: {
+        connect: "TENDs Ansicht „Agent verbinden“: Claude Code (getestet), Cursor (noch nicht mit echtem Cursor getestet), OpenAI Agents SDK und weitere Integrationen.",
+        rules: "Die Regeln eines Agenten in TEND: Erlauben, Erst fragen oder Nie für jede Aktion.",
+        approvals: "TENDs Freigabe-Ansicht für eine send_email-Anfrage, mit Einmal erlauben und Nicht erlauben.",
+        activity: "TENDs Aktivität: Anfragen mehrerer Agenten mit ihren Entscheidungen und Gründen.",
+      },
+      screensNote: "Die Ansichten stammen aus TENDs eigener App, mit einem Beispiel-Arbeitsbereich.",
+    },
+    why: {
+      title: "Ein Agent kann alles, was seine Werkzeuge können.",
+      body: "TEND steht zwischen Ihren Agenten und ihren Werkzeugen. Jede Aktion, die sie anfragen, wird zuerst an Ihren Regeln geprüft, und erst dann läuft das Werkzeug.",
+      agent: "Ihr Agent",
+      asks: "möchte ausführen",
+      code: "send_email → team@example.com",
+      tend: "TEND prüft Ihre Regeln",
+      tools: "Ihr Werkzeug",
+      runs: "Läuft nur, wenn TEND es erlaubt.",
+      verdicts: { allow: "Erlauben", ask: "Sie fragen", never: "Nie" },
+      diagram: "Ihr Agent fragt zuerst TEND. TEND erlaubt die Aktion, fragt Sie oder lehnt sie ab, und erst dann läuft das Werkzeug.",
+    },
+    control: {
+      title: "Was Sie steuern.",
+      items: {
+        agents: ["Wer handeln darf", "Jeder Agent bekommt einen eigenen Schlüssel. Widerrufen Sie einen, die anderen arbeiten weiter."],
+        rules: ["Was er tun darf", "Erlauben, erst fragen oder nie, pro Aktion, mit Bedingungen an die Argumente."],
+        activity: ["Was wirklich geschah", "Anfragen, Entscheidungen und Ergebnisse in einem nur anfügbaren Protokoll, jeder Eintrag per Hash mit dem vorigen verkettet."],
+      } as Record<"agents" | "rules" | "activity", [string, string]>,
+    },
+    view: {
+      title: "Die Anfrage wartet. Sie entscheiden.",
+      body: "Wenn eine Regel „erst fragen“ sagt, wartet die Anfrage mit ihrem genauen Text, bis Sie sie einmal erlauben oder ablehnen.",
+      link: "So funktionieren Freigaben",
+      alt: "TENDs Übersicht mit einer wartenden Anfrage: Claude Code möchte git push origin feature/discount-codes ausführen, mit Einmal erlauben und Nicht erlauben.",
+      callouts: { request: "Die genaue Anfrage, Wort für Wort.", rule: "Die Regel, die sie angehalten hat.", once: "Einmal erlauben führt sie einmal aus." },
+    },
+    start: {
+      title: "In drei Schritten starten.",
+      body: "Vom leeren Arbeitsbereich zur ersten freigegebenen Aktion in wenigen Minuten.",
+      steps: [
+        { title: "Konto anlegen", body: "Ihr eigener Arbeitsbereich, zum Testen mit fiktiven Daten.", demo: "Oder sehen Sie sich zuerst die schreibgeschützte Demo mit Beispiel-Agenten an." },
+        { title: "Agent verbinden", body: "Die geführte Einrichtung gibt ihm einen eigenen Schlüssel und führt eine echte Testaktion aus." },
+        { title: "Regeln wählen", body: "Alles beginnt gesperrt. Erlauben, erst fragen oder nie, Werkzeug für Werkzeug." },
+      ],
+      docs: "Zur Einrichtungsanleitung",
+    },
+    works: {
+      title: "Für die Agenten, die Sie schon nutzen.",
+      body: "Verifiziert heißt: Alle sieben Testszenarien von TEND liefen mit dem echten Produkt durch: erlauben, ablehnen, freigeben, zurückweisen, widerrufen, TEND nicht erreichbar und Protokoll.",
+      verified: "Verifiziert",
+      groups: { agents: "Agenten und Modelle", frameworks: "Frameworks", protocols: "Protokolle" },
+      notTested: "Umgesetzt, noch nicht verifiziert",
+      planned: "Geplant",
+      report: "Verifizierungsbericht",
+    },
+    trust: {
+      badge: "Öffentliche Beta",
+      title: "Ehrlich über die Beta.",
+      body: "TEND ist in der Beta, zum Testen mit fiktiven Daten. Hier steht, was es heute tut und was nicht.",
+      doesTitle: "Was es tut, getestet",
+      does: [
+        "Führt eine erlaubte Aktion einmal aus, genau wie freigegeben.",
+        "Schließt im Fehlerfall: Ist TEND nicht erreichbar, läuft die geschützte Aktion nicht.",
+        "Gibt jedem Agenten einen eigenen, einzeln widerrufbaren Schlüssel.",
+        "Führt ein Hash-verkettetes Protokoll, das Sie mit audit-verify prüfen können.",
+      ],
+      notTitle: "Was es nicht tut",
+      not: [
+        "Code kontrollieren, der es nie fragt. Echte Zugangsdaten gehören hinter TENDs Gateway.",
+        "SSO, Rollen oder Zwei-Faktor-Anmeldung bieten, noch nicht.",
+        "Beurteilen, was eine Anfrage bedeutet. Es bindet genau das, was gefragt wurde.",
+      ],
+      links: { limits: "Alle Grenzen", threat: "Bedrohungsmodell", report: "Verifizierungsbericht" },
+    },
+    closing: {
+      body: "Stellen Sie TEND vor Ihren ersten Agenten.",
+      bodyDemo: "Sehen Sie sich die schreibgeschützte Demo an, oder stellen Sie TEND vor Ihren ersten Agenten.",
+      docs: "Zur Dokumentation",
+    },
+  },
   reviewUi: {
     proposed: (kind) => `Vorgeschlagene Änderung · ${kind}`,
     inert: "Vorschläge bewirken nichts, bis ein Mensch sie genehmigt. Agenten können ihre eigenen Anfragen weder umsetzen noch genehmigen oder ausweiten.",

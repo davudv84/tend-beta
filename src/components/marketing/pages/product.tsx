@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/i18n/client";
-import { Closing } from "../home-sections";
+import { Closing } from "../home/sections";
 import { Band, Caption, Container, DisplayTitle, ExploreLink, PrimaryLink, QuietLink, Terminal } from "../kit";
 import { LazyMount } from "../lazy";
 import { Shot, type ShotName } from "../shot";

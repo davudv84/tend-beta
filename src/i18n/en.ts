@@ -1179,6 +1179,98 @@ export const en = {
     },
   },
 
+  // The 3D passage at the top of the homepage (components/marketing/home/passage.tsx).
+  land: {
+    hero: { scroll: "Scroll to see TEND in four steps" },
+    passage: {
+      label: "TEND in four steps",
+      step: (n: number, total: number) => `${n} of ${total}`,
+      stages: [
+        { title: "Connect your agents.", body: "Pick the agent you use. For Claude Code it is one command." },
+        { title: "Set the rules.", body: "Choose what it can do: allow, ask you first, or never." },
+        { title: "Approve sensitive actions.", body: "Review the exact request before it runs." },
+        { title: "See every decision.", body: "Follow every request and its outcome in Activity." },
+      ],
+      alts: {
+        connect: "TEND's Connect an agent screen: Claude Code (tested), Cursor (not yet tested with real Cursor), OpenAI Agents SDK and other integrations.",
+        rules: "An agent's rules in TEND: Allow, Ask me first or Never for each action.",
+        approvals: "TEND's approval screen for a send_email request, with Allow once and Don't allow.",
+        activity: "TEND's Activity screen: requests from several agents with their decisions and reasons.",
+      },
+      screensNote: "The screens are TEND's own app, with a sample workspace.",
+    },
+    // The sections after the passage (home/sections.tsx). Claims follow docs/security-limitations.md and docs/connect.md.
+    why: {
+      title: "An agent can do anything its tools can do.",
+      body: "TEND sits between your agents and their tools. Every action they ask for is checked against your rules first, and only then does the tool run.",
+      agent: "Your agent",
+      asks: "asks to run",
+      code: "send_email → team@example.com",
+      tend: "TEND checks your rules",
+      tools: "Your tool",
+      runs: "Runs only if TEND allows it.",
+      verdicts: { allow: "Allow", ask: "Ask you", never: "Never" },
+      diagram: "Your agent asks TEND first. TEND allows the action, asks you, or refuses it, and only then does the tool run.",
+    },
+    control: {
+      title: "What you control.",
+      items: {
+        agents: ["Who can act", "Each agent gets its own key. Revoke one and the others keep working."],
+        rules: ["What it may do", "Allow, ask first or never, per action, with conditions on the arguments."],
+        activity: ["What actually happened", "Requests, decisions and outcomes in an append-only log, each entry hash-chained to the one before."],
+      } as Record<"agents" | "rules" | "activity", [string, string]>,
+    },
+    view: {
+      title: "The request waits. You decide.",
+      body: "When a rule says ask first, the request waits with its exact text until you allow it once or decline it.",
+      link: "How approvals work",
+      alt: "TEND's Overview with one request waiting: Claude Code wants to run git push origin feature/discount-codes, with Allow once and Don't allow.",
+      callouts: { request: "The exact request, word for word.", rule: "The rule that held it.", once: "Allow once runs it one time." },
+    },
+    start: {
+      title: "Start in three steps.",
+      body: "From an empty workspace to a first approved action in a few minutes.",
+      steps: [
+        { title: "Create an account", body: "Your own workspace, for testing with fictional data.", demo: "Or look around the read-only demo first, with sample agents." },
+        { title: "Connect an agent", body: "Guided setup gives it its own key and runs one real test action." },
+        { title: "Choose its rules", body: "Everything starts blocked. Allow, ask first or never, tool by tool." },
+      ],
+      docs: "Read the setup guide",
+    },
+    works: {
+      title: "Built for the agents you already run.",
+      body: "Verified means all seven of TEND's test scenarios passed with the real product: allow, deny, approve, reject, revoke, TEND unavailable, and audit.",
+      verified: "Verified",
+      groups: { agents: "Agents and models", frameworks: "Frameworks", protocols: "Protocols" },
+      notTested: "Implemented, not yet verified",
+      planned: "Planned",
+      report: "Verification report",
+    },
+    trust: {
+      badge: "Public beta",
+      title: "Honest about the beta.",
+      body: "TEND is in beta, for testing with fictional data. Here is what it does today, and what it doesn't.",
+      doesTitle: "What it does, tested",
+      does: [
+        "Runs an allowed action once, exactly as it was approved.",
+        "Fails closed: if TEND can't be reached, the protected action doesn't run.",
+        "Gives each agent its own key, revocable on its own.",
+        "Keeps a hash-chained log you can check with audit-verify.",
+      ],
+      notTitle: "What it doesn't do",
+      not: [
+        "Control code that never asks it. Keep real credentials behind TEND's gateway.",
+        "Offer SSO, roles or two-factor sign-in yet.",
+        "Judge what a request means. It binds exactly what was asked.",
+      ],
+      links: { limits: "All limitations", threat: "Threat model", report: "Verification report" },
+    },
+    closing: {
+      body: "Put TEND in front of your first agent.",
+      bodyDemo: "Look around the read-only demo, or put TEND in front of your first agent.",
+      docs: "Read the docs",
+    },
+  },
   reviewUi: {
     proposed: (kind: string) => `Proposed change · ${kind}`,
     inert: "Proposals do nothing until a human approves them. Agents can’t apply, approve or escalate their own requests.",

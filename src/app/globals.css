@@ -677,3 +677,153 @@
   --text-t-code--letter-spacing: 0;
   --text-t-code--font-weight: 400;
 }
+
+/* ——— The passage ——— */
+.mk .ps-stage {
+  --k: 0.9;
+  perspective: 1400px;
+  perspective-origin: 50% 46%;
+  overflow: hidden;
+  /* A soft pool of light where the stack stands, so the lit plane separates from the room. */
+  background: radial-gradient(52% 46% at 50% 47%, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.015) 55%, transparent 80%);
+}
+.mk .ps-world {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.mk .ps-layer {
+  position: absolute;
+  width: 720px;
+  height: 450px;
+  left: -360px;
+  top: -225px;
+  border-radius: 14px;
+  will-change: transform, opacity;
+}
+.mk .ps-layer-image {
+  overflow: hidden;
+  background: #181818;
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.04), 0 50px 90px -40px rgb(0 0 0 / 0.95), 0 18px 36px -18px rgb(0 0 0 / 0.7);
+}
+/* Light from above on every plane, and its edge: a hairline that is brighter along the top, like glass catching a ceiling light. */
+.mk .ps-layer-image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0) 34%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), inset 0 1px 0 0 rgb(255 255 255 / 0.22);
+}
+.mk .ps-img {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+/* The screenshot, placed so its crop fills the plane (passage.tsx works out the box per breakpoint). */
+.mk .ps-shot {
+  position: absolute;
+  left: var(--l);
+  top: var(--t);
+  width: var(--w);
+  height: var(--h);
+  max-width: none;
+}
+/* The one thing to look at on a plane: a ring in TEND's mint, on while its step is. */
+.mk .ps-ring {
+  position: absolute;
+  left: var(--rl);
+  top: var(--rt);
+  width: var(--rw);
+  height: var(--rh);
+  border-radius: 10px;
+  border: 2px solid var(--sage);
+  box-shadow: 0 0 0 5px rgb(95 184 146 / 0.14);
+  /* It settles onto its target as its step arrives. */
+  transform: scale(calc(1.06 - 0.06 * var(--wr, 1)));
+}
+/* A plane that is not in front goes dark rather than see-through. */
+.mk .ps-dim {
+  position: absolute;
+  inset: 0;
+  background: #101010;
+  opacity: var(--dim, 0);
+  pointer-events: none;
+}
+/* Which of the four steps this is. */
+.mk .ps-rail { display: inline-flex; gap: 4px; }
+.mk .ps-rail > span { width: 14px; height: 2px; border-radius: 1px; background: rgb(255 255 255 / 0.2); }
+.mk .ps-rail > span[data-on] { background: var(--sage); }
+@media (max-width: 767px) {
+  .mk .ps-layer { width: 360px; height: 400px; left: -180px; top: -200px; }
+  .mk .ps-shot { left: var(--ml); top: var(--mt); width: var(--mw); height: var(--mh); }
+  .mk .ps-ring { left: var(--mrl); top: var(--mrt); width: var(--mrw); height: var(--mrh); border-radius: 8px; }
+}
+/* The hero scene, shrunk by the engine into the first plane. */
+.mk .ps-hero {
+  transform-origin: 50% 50%;
+  will-change: transform, clip-path, opacity;
+}
+.mk .ps-hint-box {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  font-size: 11px;
+}
+
+/* The captions sit on the open side of the stack, or under it. */
+.mk .ps-cap { width: min(300px, 26vw); }
+.mk .ps-cap-left { left: max(28px, calc(50vw - 600px)); top: 50%; margin-top: -70px; }
+.mk .ps-cap-right { right: max(28px, calc(50vw - 600px)); top: 50%; margin-top: -70px; }
+.mk .ps-cap-center { left: 50%; bottom: 6vh; width: min(520px, 90vw); margin-left: max(-260px, -45vw); text-align: center; }
+.mk .ps-cap-center > p:first-child { justify-content: center; }
+/* A tablet: the text under the stack, centred, like the last step on a desktop. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .mk .ps-cap,
+  .mk .ps-cap-left,
+  .mk .ps-cap-right,
+  .mk .ps-cap-center {
+    left: 50%;
+    right: auto;
+    top: auto;
+    bottom: 6vh;
+    width: min(560px, 84vw);
+    margin: 0 0 0 max(-280px, -42vw);
+    text-align: center;
+  }
+  .mk .ps-cap > p:first-child { justify-content: center; }
+}
+@media (max-width: 767px) {
+  .mk .ps-cap,
+  .mk .ps-cap-left,
+  .mk .ps-cap-right,
+  .mk .ps-cap-center {
+    left: 20px;
+    right: 20px;
+    top: auto;
+    bottom: max(24px, env(safe-area-inset-bottom));
+    width: auto;
+    margin: 0;
+    text-align: left;
+  }
+  .mk .ps-cap > p:first-child { justify-content: flex-start; }
+}
+
+/* Why (home/sections.tsx): a request travels along the line from one step to the next. Still under reduced motion. */
+@keyframes mk-flow-x { from { left: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } to { left: calc(100% - 6px); opacity: 0; } }
+@keyframes mk-flow-y { from { top: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } to { top: calc(100% - 6px); opacity: 0; } }
+.mk .mk-flow-dot { top: 0; animation: mk-flow-y 2.6s var(--ease-out) infinite; }
+@media (min-width: 1024px) {
+  .mk .mk-flow-dot { top: auto; animation-name: mk-flow-x; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk .mk-flow-dot { animation: none; left: calc(50% - 3px); top: calc(50% - 3px); }
+}
