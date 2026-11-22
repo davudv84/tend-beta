@@ -29,6 +29,16 @@ try {
   page.on("response", (r) => { if (r.status() >= 400 && !r.url().includes("/api/")) failedLoads.push(`${r.url()} ${r.status()}`); });
   const visit = async (p) => { await page.goto(server.url + p, { waitUntil: "load" }); await page.waitForTimeout(1200); };
   for (const p of ["/", "/welcome", "/account/sign-in", "/account/sign-up", "/developers"]) await visit(p);
+  // The home page's scroll-driven 3D passage and "Start in three steps" (CSS 3D and Motion, no canvas): scroll the whole page under the policy.
+  // The passage must really move (its 3D world's transform changes as you scroll), and nothing may be blocked.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await visit("/");
+  const worldAt = () => page.evaluate(() => getComputedStyle(document.querySelector(".ps-world") ?? document.body).transform);
+  const first = await worldAt();
+  const total = await page.evaluate(() => document.documentElement.scrollHeight);
+  const seen = new Set([first]);
+  for (let y = 0; y < total; y += 450) { await page.mouse.wheel(0, 450); await page.waitForTimeout(60); seen.add(await worldAt()); }
+  check(seen.size > 3, "the home page's 3D passage moves as you scroll, under the policy", `${seen.size} distinct transforms`);
   // Dialogs, menus and selects lock the page behind them with a <style> added at run time (react-remove-scroll). It carries the nonce
   // (src/lib/style-nonce.ts); if it were blocked, the page would still scroll behind an open menu. The mobile menu, then a select.
   await page.setViewportSize({ width: 390, height: 844 });
@@ -58,7 +68,7 @@ try {
   const sonnerRules = await page.evaluate(() => [...document.styleSheets].some((sh) => { try { return [...sh.cssRules].some((r) => r.cssText.includes("data-sonner-toaster")); } catch { return false; } }));
   check(sonnerRules, "the toast library's CSS applied (allowed by its exact hash, not by 'unsafe-inline')");
   check(failedLoads.length === 0, "nothing the app loads was blocked or failed (COEP/CORP)", failedLoads.slice(0, 5).join("\n      "));
-  check(violations.length === 0, `no CSP violations on ${14} pages, with a menu and a select opened`, violations.slice(0, 6).join("\n      "));
+  check(violations.length === 0, `no CSP violations on ${15} pages, with a menu and a select opened`, violations.slice(0, 6).join("\n      "));
 } finally { await browser.close(); await server.stop(); }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
