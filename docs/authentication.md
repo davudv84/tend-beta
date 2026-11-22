@@ -7,7 +7,7 @@ Status labels: **VERIFIED** (tested here, evidence named), **IMPLEMENTED BUT UNV
 | Identity | How | Second factor |
 | --- | --- | --- |
 | Account (e-mail + password, scrypt) | `/account/sign-in` | TOTP, optional per account (below) |
-| Platform admin | `TEND_ADMIN_TOKEN` (one shared secret, 32+ characters) | **none**; keep the token in a secret store and rotate it (`docs/operations.md`) |
+| Platform admin | `TEND_ADMIN_TOKEN` (one shared secret, 32+ characters) | **optional TOTP** (`TEND_ADMIN_TOTP_SECRET`, off unless set; `src/server/totp.ts` via otplib, each code once, one generic error for a wrong token or code; `admin-mfa.test.ts`). Without it: none; keep the token in a secret store and rotate it (`docs/operations.md`) |
 | Agent | API key (`tend_sk_…`), one per agent, optional expiry. Sent only over https: every TEND client (SDK for JS and Python, hooks adapter, example agents) refuses a plain-http address other than `localhost`/`127.0.0.1`/`[::1]` before sending anything, and the hooks then block the tool call (**VERIFIED**, client tests) | n/a |
 
 Sessions: server-side rows, cookie `__Host-` prefixed in production, 12 h for the admin token and 7 days for accounts, ended by sign-out, "sign out everywhere", a password
@@ -59,7 +59,7 @@ the test), `scripts/mfa-e2e.mjs` (API + real Chromium sign-in on a production bu
 **Not tested:** real authenticator apps on phones (the format is the standard `otpauth://` one). The settings card's setup flow was not driven
 in a browser (the API it calls was).
 
-Not covered: two-step for the platform admin token; requiring two-step for a whole workspace; WebAuthn/passkeys.
+Not covered: two-step for the platform admin token unless `TEND_ADMIN_TOTP_SECRET` is set (and then it is one secret shared by whoever holds the token, not per person); requiring two-step for a whole workspace; WebAuthn/passkeys.
 
 ## SSO (**NOT IMPLEMENTED**)
 

@@ -22,6 +22,7 @@ are git-ignored and CI runs secretlint.
 | Secret | Used for | Rotation | Effect |
 | --- | --- | --- | --- |
 | `TEND_ADMIN_TOKEN` | platform admin sign-in | Set a new value (32+ random characters), redeploy. | Every admin-token session ends (sessions are bound to a key derived from the token, `src/server/session.ts`). Account sessions are unaffected. |
+| `TEND_ADMIN_TOTP_SECRET` (optional) | second factor for the platform admin token | A new base32 secret (`openssl rand 20 \| base32`), redeploy, add it to the admin's authenticator app. | Turning it on, changing it or removing it ends every admin-token session (`src/server/session.ts` epoch; `admin-mfa.test.ts`). An unusable value disables admin sign-in instead of skipping the factor. |
 | `TEND_CONTEXT_KEY` | signs the tenant context the database policies verify | See below. | Wrong or missing key: the server refuses to start, or (key removed while running) sees no tenant rows. |
 | Agent API keys | each agent's identity | Dashboard or `POST /api/v1/agents/<id>/keys` (rotate), `DELETE` (revoke). Optional expiry: `keyExpiresInDays`, `TEND_KEY_MAX_AGE_DAYS`. | Old key refused at once; recorded as `key.rotated` / `key.revoked`. |
 | Account sessions | operators' browsers | `DELETE /api/operator/sessions` (sign out everywhere); a password reset also ends all of that account's sessions. | Agent keys keep working: revoke them separately after a suspected compromise. |

@@ -1,4 +1,5 @@
 import { createECDH } from "node:crypto";
+import { canonicalSecret } from "./totp.ts";
 import path from "node:path";
 
 /**
@@ -80,6 +81,15 @@ export const config = {
     return t && !problem ? t : "";
   },
   /** True when a token is set but refused as weak, so sign-in can say why instead of "not configured". */
+  /**
+   * The admin's optional second factor: TEND_ADMIN_TOTP_SECRET, a base32 secret (at least 128 bits) shared with an authenticator app. Unset: the
+   * token alone signs in, as before. Set but unusable: "invalid", and admin sign-in is refused until it is fixed (never silently skipped).
+   */
+  get adminTotp(): string | "invalid" | null {
+    const raw = process.env.TEND_ADMIN_TOTP_SECRET ?? "";
+    if (!raw) return null;
+    return canonicalSecret(raw) ?? "invalid";
+  },
   get adminTokenWeak() {
     if (this.adminDisabled) return false;
     const t = process.env.TEND_ADMIN_TOKEN ?? "";
