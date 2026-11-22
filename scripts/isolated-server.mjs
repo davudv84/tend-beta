@@ -146,7 +146,10 @@ export async function startIsolatedServer({ root, env, database = "embedded", po
     }
     if (health.storage !== (database === "postgres" ? "postgres" : "embedded")) throw new Error(`The isolated server is not using the expected ${database} database (storage: ${health.storage}). Something configured a different database; refusing to continue.`);
     const mine = new Set(processTree(child.pid));
-    const others = listeners(port).filter((p) => !mine.has(p));
+    const holders = listeners(port);
+    // Fail closed: a server that answered on this port but whose listener cannot be identified is not known to be ours.
+    if (!holders.length) throw new Error(`Port ${port} answered, but no listening process could be identified, so it cannot be confirmed to be this server. Refusing to continue.`);
+    const others = holders.filter((p) => !mine.has(p));
     if (others.length) throw new Error(`Port ${port} is held by another process (pid ${others.join(", ")}), not this server. Refusing to continue: it could be a stale server with a different database.`);
     return { url, port, dir, health, stop, output: read, pids: () => processTree(child.pid) };
   } catch (e) {
