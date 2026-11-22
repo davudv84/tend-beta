@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { CheckIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/i18n/error-text";
-import { coverageOf, PRESETS, type Covered, presetOf, presetRules, TEST_COMMANDS, type PresetId } from "@/lib/agent-presets";
+import { coverageOf, PRESETS, type Covered, presetOf, presetRules, presetVersionOf, TEST_COMMANDS, type PresetId } from "@/lib/agent-presets";
 import { useNow } from "@/lib/format";
 import type { PolicyView, RuleLike } from "@/lib/permissions";
 import { evidenceOf, pendingTest, type Check } from "@/lib/protection";
@@ -127,6 +127,9 @@ export function PresetPicker({ agentId, onSaved, titled = true, coverage }: { ag
     return () => { live = false; };
   }, [agentId, getPolicy, onSaved]);
   const saved = savedPreset(view);
+  // A preset saved with an earlier version keeps its rules until someone saves it again; say so, and let them.
+  const savedVersion = view && view.enforcement === "enforce" ? presetVersionOf(view.rules) : null;
+  const outdated = !!savedVersion && !savedVersion.latest && savedVersion.id === choice;
   const custom = view && !saved ? view.rules.length : 0;
   const save = async () => {
     if (!view) return;
@@ -155,9 +158,10 @@ export function PresetPicker({ agentId, onSaved, titled = true, coverage }: { ag
         ))}
       </fieldset>
       {custom > 0 && <p className="text-[13px] text-[#92400e] dark:text-[#f0c987]">{p.replaces(custom)}</p>}
+      {outdated && savedVersion && <p className="text-[13px] text-[#92400e] dark:text-[#f0c987]">{p.olderVersion(p[savedVersion.id].name)}</p>}
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" disabled={busy || !view || saved === choice} onClick={() => void save()} className={buttonClass()}>{busy ? p.saving : p.save}</button>
-        <p role="status" className="text-[13px] text-muted-foreground">{saved && saved === choice ? p.saved(p[saved].name) : ""}</p>
+        <button type="button" disabled={busy || !view || (saved === choice && !outdated)} onClick={() => void save()} className={buttonClass()}>{busy ? p.saving : p.save}</button>
+        <p role="status" className="text-[13px] text-muted-foreground">{saved && saved === choice && !outdated ? p.saved(p[saved].name) : ""}</p>
       </div>
       {coverage && view && <Coverage view={view} integration={coverage} />}
     </div>

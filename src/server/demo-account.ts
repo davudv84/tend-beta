@@ -27,8 +27,9 @@ const SAMPLES: Sample[] = [
   {
     name: "Claude Code · checkout-service (sample)", model: "Claude Code", provider: "Anthropic", role: "Coding assistant · sample data",
     rules: presetRules("balanced"),
-    allow: [run("npm test"), run("git status"), run("git diff --stat"), edit("src/checkout/discounts.ts"), edit("src/checkout/discounts.test.ts"), read("README.md"), run("npm run lint")],
-    approve: [run("git push origin feature/discount-codes"), run("curl -s https://api.example.com/v1/rates"), edit(".env.local"), open("https://docs.example.com/payments/refunds")],
+    // Balanced v2: read-only commands and file edits run; any other command (tests and linters run project code) waits for a person.
+    allow: [run("git status"), run("git diff --stat"), run("git log --oneline -5"), edit("src/checkout/discounts.ts"), edit("src/checkout/discounts.test.ts"), read("README.md"), run("ls src/checkout")],
+    approve: [run("npm test"), run("git push origin feature/discount-codes"), run("curl -s https://api.example.com/v1/rates"), edit(".env.local"), open("https://docs.example.com/payments/refunds"), run("npm run lint")],
     deny: [run("cat ~/.ssh/id_ed25519"), run("rm -rf / --no-preserve-root")],
   },
   {

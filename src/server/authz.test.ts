@@ -484,7 +484,7 @@ test("in enforce mode, running a policy-governed tool without an authorization i
 test("the rule that decided a request is recorded with it, reaches the operator's screen, and never a visitor's", async () => {
   const { presetRules } = await import("../lib/agent-presets.ts");
   const { forViewer } = await import("./redact.ts");
-  const { db, agent } = await setup(presetRules("balanced"));
+  const { db, agent } = await setup(presetRules("balanced", 1)); // v1: its rules are the fixture this test names
   const ask = (command: string) => requestAuthorization(db, agent, { tool: "shell", action: "Bash", detail: `Run: ${command}`, args: { command } }, null);
   assert.equal((await ask("git push origin main")).view.status, "pending");
   assert.equal((await ask("cat ~/.ssh/id_rsa")).view.status, "denied");

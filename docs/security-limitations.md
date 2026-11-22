@@ -36,11 +36,12 @@ Read this before you put anything real behind TEND. This beta is for controlled 
 - **The agent tells TEND what it is about to do.** Conditions are checked against the arguments the agent sends. TEND's adapters send exactly the
   arguments the tool then receives, but a modified or malicious agent could describe one call and make another. Only a tool that itself checks
   TEND's decision closes that, and TEND does not offer that yet.
-- **The coding-assistant presets match the words of a command, not what it does.** "Balanced" asks before a shell command whose text contains
-  `git push`, `rm `, `curl `, `sudo ` and similar, and denies one that mentions `.ssh`; it allows every other command on its own. A reworded
-  command gets past those rules and runs without asking: `git -C . push`, `find … -delete`, `python3 -c "…urlopen…"`, `cat ~/.ss?/id_rsa`
-  (`src/lib/agent-presets.test.ts` lists the cases). Use "Strict" for a firm line: there, every shell command, file change, web and MCP call
-  waits for a person. Strict allows reading files (except under `.ssh`) without asking, `.env` included, which Balanced asks about.
+- **Shell rules match the words of a command, not what it does.** Balanced **v1** (saved before November 2026) asked only before commands whose
+  text names `git push`, `rm `, `curl `, `sudo ` and similar, so a reworded command ran unasked: `git -C . push`, `find … -delete`,
+  `python3 -c "…urlopen…"`, `cat ~/.ss?/id_rsa`. A saved v1 policy keeps those rules until someone saves the preset again (the dashboard says so).
+  Balanced **v2** asks before every shell command except a few read-only ones written plainly (no `; & | $` and so on); Strict asks before every
+  one. Even v2's short allow-list is a text match: it is chosen so that a command starting that way cannot do more than read, and anything that
+  could chain, redirect or substitute asks. `src/lib/agent-presets.test.ts` lists the cases, and docs/presets.md the versions.
 - **Conditions see summaries of long values.** Strings over 256 characters and lists over 50 items reach the rules as a hash and a length. A
   condition on such a value (or on an object where a plain value belongs) is treated as unknown: a deny or approve rule that might match
   applies, an allow rule does not, so padding or reshaping an argument can make a request stricter, never looser. String comparisons ignore
