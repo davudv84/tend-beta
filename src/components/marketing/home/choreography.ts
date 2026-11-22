@@ -1,9 +1,10 @@
 // The passage's choreography (passage.tsx): every moving value as keyframes over the scroll progress `s`, 0 at the hero and 1 when the
-// layers have folded flat into the product. Pure functions, so the server's first frame and the client's engine agree.
+// stack has settled flat on the last screen. Pure functions, so the server's first frame and the client's engine agree.
 //
-// The motion follows the reference's grammar: the hero picture shrinks into a plane, the plane tilts into a stack of same-size layers
-// with wide gaps, and the camera swings the stack from side to side, one stage per swing, the text always on the open side. Between
-// two stages the gaps close, the content changes while the layers are together, and the gaps open again.
+// Four planes, one real TEND screen each: Connect, Control, Approve, Monitor. The hero shrinks into the first plane; the plane opens
+// into a stack, and the stack advances one plane per step. Only the plane in front is lit. The ones still to come wait behind it, dark;
+// the one just explained darkens first and only then lifts away, so two screens are never seen through each other. The camera turns
+// the stack a little to one side per step, so the text is always on the open side. At the end the stack settles flat.
 
 type Track = readonly (readonly [number, number])[];
 
@@ -23,30 +24,32 @@ export function at(track: Track, s: number): number {
   return track[track.length - 1][1];
 }
 
-/** The stages' holds, in progress. Stage 0 is the hero; 1–5 the request's steps; 6 the product. */
+/** The stages' holds, in progress. Stage 0 is the hero; 1–4 are Connect, Control, Approve, Monitor. The last hold runs to the end. */
 export const HOLDS: readonly (readonly [number, number])[] = [
-  [0, 0.06], [0.1, 0.2], [0.26, 0.36], [0.42, 0.52], [0.58, 0.68], [0.74, 0.84], [0.93, 1.01],
+  [0, 0.07], [0.15, 0.27], [0.37, 0.49], [0.59, 0.71], [0.82, 1.01],
 ];
 /** Where each stage's text sits: under the stack, or on the open side of it. */
-export const SIDE = ["center", "center", "left", "right", "left", "right", "center"] as const;
-export const HERO_END = 0.06;
+export const SIDE = ["center", "left", "right", "left", "center"] as const;
+export const HERO_END = 0.07;
 
-// The camera. x in vw, y in vh, angles in degrees, dolly in px of scene space.
-const X: Track = [[0, 0], [0.08, 0], [0.2, 0], [0.26, 15], [0.36, 15], [0.42, -13], [0.52, -13], [0.58, 15], [0.68, 15], [0.74, -13], [0.84, -13], [0.93, 0]];
-const Y: Track = [[0, 0], [0.075, 0], [0.12, -9], [0.2, -9], [0.26, -1], [0.84, -1], [0.93, -9]];
-const RY: Track = [[0, 0], [0.075, 0], [0.13, 24], [0.2, 22], [0.26, 31], [0.36, 28], [0.42, -31], [0.52, -28], [0.58, 31], [0.68, 28], [0.74, -31], [0.84, -28], [0.93, 0]];
-const RX: Track = [[0, 0], [0.075, 0], [0.13, 9], [0.2, 7], [0.26, 8], [0.36, 6], [0.42, 9], [0.52, 7], [0.58, 8], [0.68, 6], [0.74, 9], [0.84, 7], [0.93, 0]];
-const RZ: Track = [[0, 0], [0.13, -1.5], [0.36, 1], [0.52, -1], [0.68, 1], [0.84, -1], [0.93, 0]];
-const DOLLY: Track = [[0, 0], [0.075, 0], [0.13, -80], [0.2, -40], [0.26, -110], [0.36, -70], [0.42, -110], [0.52, -70], [0.58, -110], [0.68, -70], [0.74, -110], [0.84, -70], [0.93, 0]];
-/** The space between layers: closed in the hero, wide on each hold, closing between holds while the content changes. */
-const GAP: Track = [[0, 0], [0.075, 0], [0.13, 175], [0.2, 185], [0.23, 60], [0.26, 190], [0.36, 195], [0.39, 60], [0.42, 195], [0.52, 195], [0.55, 60], [0.58, 195], [0.68, 195], [0.71, 60], [0.74, 200], [0.84, 205], [0.92, 0]];
-/** The stack's final size: the product screen ends larger than a layer. */
-const FINAL: Track = [[0.84, 1], [0.93, 1.32]];
-const LINES: Track = [[0.07, 0], [0.12, 1], [0.84, 1], [0.9, 0]];
+// The camera. x in vw, y in vh, angles in degrees, dolly in px of scene space. One small turn per step and no roll: a plane always
+// faces the reader enough to be read.
+const X: Track = [[0, 0], [0.07, 0], [0.15, 10], [0.27, 10], [0.37, -10], [0.49, -10], [0.59, 10], [0.71, 10], [0.82, 0]];
+const Y: Track = [[0, 0], [0.07, 0], [0.15, -3], [0.71, -3], [0.82, -4]];
+const RY: Track = [[0, 0], [0.07, 0], [0.15, 12], [0.27, 12], [0.37, -12], [0.49, -12], [0.59, 12], [0.71, 12], [0.82, 0]];
+const RX: Track = [[0, 0], [0.07, 0], [0.15, 5], [0.71, 5], [0.82, 2], [0.9, 0]];
+// A slow push-in through every hold (the camera is never quite still while a step is read), eased back between steps.
+const DOLLY: Track = [
+  [0, 0], [0.07, 0], [0.15, -60], [0.27, -18], [0.37, -60], [0.49, -18], [0.59, -60], [0.71, -18], [0.82, -30], [0.9, 0],
+];
+/** The space between planes: closed in the hero, open while the stack is read, closed again as it settles flat. */
+const GAP: Track = [[0, 0], [0.07, 0], [0.15, 150], [0.71, 150], [0.82, 110], [0.9, 0]];
+/** The stack's final size: the last screen ends a little larger than a plane. */
+const FINAL: Track = [[0.88, 1], [0.97, 1.2]];
 
-/** How present stage `k`'s content is: 1 on its hold, crossfading in the middle of the swing on either side. */
+/** How present stage `k` is: 1 on its hold, crossing over in the middle of the turn on either side. */
 export function weight(s: number, k: number) {
-  const f = 0.022;
+  const f = 0.06;
   const [a, b] = HOLDS[k];
   const prev = k > 0 ? (HOLDS[k - 1][1] + a) / 2 : -1;
   const next = k < HOLDS.length - 1 ? (b + HOLDS[k + 1][0]) / 2 : 2;
@@ -54,44 +57,46 @@ export function weight(s: number, k: number) {
 }
 
 export type Frame = ReturnType<typeof frame>;
-export const LAYERS = 5;
-/** The layer that carries the picture; the others are line drawings in front of and behind it. */
-export const IMAGE_LAYER = 1;
-/** Each layer's place along z, in gaps from the picture: the outline of what TEND looks at sits just in front of it (so it stays on its
- *  target), the fields it reads further forward, the tracing and the path behind. */
-const DEPTH = [0.28, 0, -1, 0.95, -2];
+export const PLANES = 4;
 
-export function frame(s: number, mobile: boolean) {
-  const r = mobile ? 0.55 : 1;
+/** `mobile`: a phone (portrait planes). `centered`: anything narrower than a desktop, where the text sits under the stack, so the
+ *  stack stays in the middle and turns less. */
+export function frame(s: number, mobile: boolean, centered = mobile) {
+  const r = mobile ? 0.5 : centered ? 0.65 : 1;
   const gap = at(GAP, s) * (mobile ? 0.7 : 1);
-  const lines = at(LINES, s);
+  const weights = HOLDS.map((_, k) => weight(s, k));
+  // Which plane is in front, continuously: 0 on Connect … 3 on Monitor.
+  const p = weights.reduce((sum, w, k) => sum + (k > 0 ? w * (k - 1) : 0), 0);
+  const appear = clamp((s - HERO_END) / 0.03);
   return {
-    x: mobile ? 0 : at(X, s),
-    y: mobile ? -10 * clamp((s - 0.07) / 0.05) : at(Y, s),
+    x: centered ? 0 : at(X, s),
+    y: centered ? (mobile ? -2 : 3) * clamp((s - 0.07) / 0.08) : at(Y, s),
     rx: at(RX, s) * r,
     ry: at(RY, s) * r,
-    rz: at(RZ, s) * r,
     dolly: at(DOLLY, s),
-    final: at(FINAL, s) * (mobile ? 0.8 : 1),
+    final: at(FINAL, s) * (mobile ? 0.9 : 1),
     gap,
-    layers: Array.from({ length: LAYERS }, (_, i) => ({
-      z: DEPTH[i] * gap,
-      opacity: i === IMAGE_LAYER ? clamp((s - HERO_END) / 0.012) : lines,
-    })),
-    weights: HOLDS.map((_, k) => weight(s, k)),
-    /** The hero picture's shrink into the image layer, 0 → 1. */
+    planes: Array.from({ length: PLANES }, (_, i) => {
+      const d = i - p; // < 0: already explained; 0: in front; > 0: still to come
+      // Explained: dark by d = -0.25, then lifts and fades (a dark fade only darkens what is behind it). To come: dark, opaque.
+      const dim = d < 0 ? clamp(-d * 4) : 0.8 * clamp(d * 1.4);
+      const opacity = d < 0 ? 1 - clamp((-d - 0.25) / 0.25) : 1;
+      return { z: -d * gap, y: d < 0 ? d * 150 : -d * 40 * (gap / 150), dim, opacity: opacity * appear };
+    }),
+    weights,
+    /** The hero picture's shrink into the first plane, 0 → 1. */
     shrink: ease(clamp(s / HERO_END)),
     heroText: 1 - clamp((s - 0.004) / 0.028),
-    heroOut: clamp((s - HERO_END) / 0.012),
+    heroOut: clamp((s - HERO_END) / 0.03),
   };
 }
 
-/** A stage's text: in after its swing settles, out before the next swing (the last one stays). */
+/** A stage's text: in after its turn settles, out before the next turn (the last one stays). */
 export function captionAt(s: number, k: number) {
   const [a, b] = HOLDS[k];
-  const fade = 0.02;
+  const fade = 0.03;
   const last = k === HOLDS.length - 1;
-  const op = Math.min(clamp((s - a + 0.006) / fade), last ? 1 : clamp((b + 0.012 - s) / fade));
-  const y = s < (a + b) / 2 ? 16 * (1 - op) : -16 * (1 - op);
+  const op = Math.min(clamp((s - a + 0.01) / fade), last ? 1 : clamp((b + 0.02 - s) / fade));
+  const y = s < (a + b) / 2 ? 14 * (1 - op) : -14 * (1 - op);
   return { op, y };
 }

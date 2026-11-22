@@ -88,12 +88,12 @@ export function Nav({ accounts }: { accounts: boolean }) {
 
   return (
     <>
-      <div className="border-b border-white/[0.06] bg-[#141414]">
+      <aside aria-label={f.top.short} className="border-b border-white/[0.06] bg-[#141414]">
         <Container className="flex h-9 items-center justify-center gap-3 text-[12.5px] pointer-coarse:h-11">
           <span className="truncate text-foreground/85"><span className="sm:hidden">{f.top.short}</span><span className="hidden sm:inline">{f.top.text}</span></span>
           <Link href="/security" className="shrink-0 text-muted-foreground underline underline-offset-4 decoration-white/25 hover:text-foreground sm:no-underline sm:hover:underline"><span className="sm:hidden">{f.top.shortLink}</span><span className="hidden sm:inline">{f.top.link}</span></Link>
         </Container>
-      </div>
+      </aside>
       <header className={cn("sticky top-0 z-40 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none lg:translate-y-0", tucked && !drawer && "max-lg:-translate-y-full")}>
         <div ref={bar} onPointerLeave={(e) => e.pointerType === "mouse" && later()} onPointerEnter={() => closing.current && clearTimeout(closing.current)} className={cn("relative border-b bg-[#181818]/90 backdrop-blur-md transition-colors", menu ? "border-white/[0.08]" : "border-transparent")}>
           <Container className="flex h-16 items-center justify-between gap-6">
