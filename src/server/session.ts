@@ -49,13 +49,17 @@ export const sessionCookieName = (req?: Request) => (config.secureCookies && !pl
 const sha = (s: string) => createHash("sha256").update(s).digest();
 const sameHash = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b);
 
-// Which admin token a session was issued under. A slow hash, computed once per token and kept in memory, so the value stored with
-// a session is of no use for guessing the token offline.
-let epochFor: { token: string; value: string } | undefined;
+// Which admin token (and second-factor secret) a session was issued under. A slow hash, computed once per token and kept in memory, so the value
+// stored with a session is of no use for guessing the token offline. Turning the second factor on, changing its secret or turning it off ends every
+// admin session, as changing the token does: a session that never passed the current factor does not outlive the change. Without a second factor
+// the input is the token alone, exactly as before, so servers that do not use it keep their sessions.
+let epochFor: { key: string; value: string } | undefined;
 function epoch() {
   const token = config.adminToken;
   if (!token) return undefined;
-  if (epochFor?.token !== token) epochFor = { token, value: scryptSync(token, "tend-session-epoch-v1", 16).toString("hex") };
+  const totp = process.env.TEND_ADMIN_TOTP_SECRET ?? "";
+  const key = totp ? `${token}\0totp:${totp.replace(/[\s=]/g, "").toUpperCase()}` : token;
+  if (epochFor?.key !== key) epochFor = { key, value: scryptSync(key, "tend-session-epoch-v1", 16).toString("hex") };
   return epochFor.value;
 }
 
@@ -183,7 +187,7 @@ export function sessionHeader(value: string, maxAgeMs: number, req?: Request) {
 export async function viewerOf(q: Q, req: Request): Promise<Viewer> {
   const s = await currentSession(q, req);
   return {
-    role: s ? "operator" : "visitor", canAct: !!s, public: config.public, operatorAvailable: !!config.adminToken, demo: config.demo,
+    role: s ? "operator" : "visitor", canAct: !!s, public: config.public, operatorAvailable: !!config.adminToken, adminCode: !!config.adminTotp, demo: config.demo,
     workspace: s?.workspace ?? DEFAULT_WORKSPACE, admin: !!s?.admin, accounts: config.accounts, approval: config.approvalRequired, emailVerification: config.emailVerification, ...(s?.email && { account: { email: s.email } }),
     ...(s?.readOnly && { readOnly: true }),
   };

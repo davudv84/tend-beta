@@ -11,6 +11,7 @@ import { config } from "./config.ts";
 import { clientIp, HttpError } from "./http.ts";
 import { audit, createSession, signOut } from "./session.ts";
 import { spend } from "./limits.ts";
+import { STEP_MS, verifyTotp } from "./totp.ts";
 
 export const FAILURES_PER_MINUTE = 10;
 export const SIGNINS_PER_MINUTE = 30;
@@ -24,6 +25,10 @@ export async function signIn(db: DB, req: Request, input: unknown, now = Date.no
   const client = clientIp(req);
   const known = client !== "unknown";
   if (config.adminDisabled) throw new HttpError(404, "not_found", "Not found.");
+  if (config.adminTotp === "invalid") {
+    await note(db, "signin.failed", { client, reason: "operator_disabled", now });
+    throw new HttpError(403, "operator_disabled", "The server’s TEND_ADMIN_TOTP_SECRET is not a usable base32 secret (at least 128 bits), so admin sign-in is disabled until it is fixed.");
+  }
   if (!config.adminToken) {
     await note(db, "signin.failed", { client, reason: "operator_disabled", now });
     throw new HttpError(403, "operator_disabled", config.adminTokenWeak ? "The server’s TEND_ADMIN_TOKEN is too weak, so operator sign-in is disabled. It needs at least 32 random characters." : "Operator access isn’t configured. Set TEND_ADMIN_TOKEN on the server.");
@@ -34,11 +39,22 @@ export async function signIn(db: DB, req: Request, input: unknown, now = Date.no
     if (attempt.n === FAILURES_PER_MINUTE + 1) await note(db, "signin.blocked", { client, reason: "too_many_failures", now });
     throw new HttpError(429, "rate_limited", "Too many failed sign-in attempts from this address. Try again shortly.", { retryAfter: attempt.retryAfter });
   }
-  const token = (input as { token?: unknown } | null | undefined)?.token;
-  if (typeof token !== "string" || !checkAdminToken(token)) {
-    await note(db, "signin.failed", { client, reason: typeof token === "string" ? "invalid_token" : "malformed", now });
+  const { token, code } = (input ?? {}) as { token?: unknown; code?: unknown };
+  // With a second factor, the token and the code are checked together and refused with one answer, so a wrong code never confirms the token.
+  const totp = config.adminTotp;
+  const tokenOk = typeof token === "string" && checkAdminToken(token);
+  const step = totp ? verifyTotp(totp, code, now) : null;
+  if (!tokenOk || (totp && step === null)) {
+    const reason = typeof token !== "string" ? "malformed" : !tokenOk ? "invalid_token" : "invalid_code";
+    await note(db, "signin.failed", { client, reason, now });
     if (!known) await wait(Math.min(2_000, Math.max(0, attempt.n - FAILURES_PER_MINUTE) * 100));
-    throw new HttpError(401, "invalid_token", "That admin token isn’t valid.");
+    throw new HttpError(401, "invalid_token", totp ? "That admin token or code isn’t valid." : "That admin token isn’t valid.");
+  }
+  // A code works once: a second sign-in with the same code (someone who saw it) is refused. Counted by the code's own time step, in the database,
+  // so every server instance agrees; the counter's window is the step's own minute, so it outlives the code.
+  if (totp && step !== null && !(await spend(db, `signin:totp:${step}`, 1, { now: step * STEP_MS })).ok) {
+    await note(db, "signin.failed", { client, reason: "code_reused", now });
+    throw new HttpError(401, "invalid_token", "That admin token or code isn’t valid.");
   }
   await spend(db, `signin:fail:${client}`, FAILURES_PER_MINUTE, { now, cost: -1 });
   if (!(await spend(db, `signin:ok:${client}`, SIGNINS_PER_MINUTE, { now })).ok)

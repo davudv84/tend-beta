@@ -25,6 +25,8 @@ export interface Viewer {
   canAct: boolean;
   public: boolean;
   operatorAvailable: boolean;
+  /** The admin sign-in asks for a code from an authenticator app as well as the token. */
+  adminCode?: boolean;
   demo: boolean;
   workspace?: string;
   admin?: boolean;
@@ -56,7 +58,7 @@ interface Store extends Projection {
   setPrefs: (p: Partial<Prefs>) => void;
   init: () => Promise<void>;
   poll: () => Promise<void>;
-  signIn: (token: string) => Promise<Result>;
+  signIn: (token: string, code?: string) => Promise<Result>;
   /** E-mail and password (accounts). Like signIn, it checks that this browser really holds the session before changing the screen. */
   signInWithPassword: (email: string, password: string) => Promise<Result>;
   signOut: () => Promise<void>;
@@ -178,8 +180,8 @@ export const useStore = create<Store>()(
           }
         },
 
-        signIn: async (token) => {
-          const r = await call("/api/operator/session", { token });
+        signIn: async (token, code) => {
+          const r = await call("/api/operator/session", code ? { token, code } : { token });
           if (!r.ok) return r;
           // The server said yes. Before changing anything on screen, ask whether this browser actually holds the session now. Safari drops a
           // Secure cookie on plain http://; resetting the store first would swap the form for a loading skeleton and remount it, losing the
