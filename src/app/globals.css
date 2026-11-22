@@ -676,6 +676,7 @@
   --text-t-code--line-height: 1.65;
   --text-t-code--letter-spacing: 0;
   --text-t-code--font-weight: 400;
+}
 
 /* ——— The passage ——— */
 .mk .ps-stage {
