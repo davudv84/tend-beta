@@ -874,7 +874,7 @@ export const en = {
         doesntItems: [
           ["Only code that asks", "TEND is a checkpoint, not a sandbox. An agent that skips the wrapper, or holds real credentials for email, a database or payments, can act without TEND, and TEND will not know. For real enforcement the credential must live behind TEND’s gateway."],
           ["Same machine, same user", "Processes running as your user can read each other’s environment and files. TEND is not an isolation boundary on your computer."],
-          ["No roles or two-factor sign-in", "Each account has one workspace and everyone in it is an operator. No SSO, no 2FA, no teams yet."],
+          ["No single sign-on yet", "Workspaces have roles (owner, admin, operator, viewer) and invitations, and each person can turn on two-step sign-in, but a workspace cannot require it yet and there is no SSO. The platform admin token is one shared secret, with an optional code."],
           ["Older presets read the words of a command", "Balanced as saved before November 2026 asked only before commands whose text named git push, rm, curl or sudo, so a reworded command could get past it. Policies saved with it keep it until they are saved again; the current Balanced asks before every command except a few read-only ones."],
           ["The agent describes its own call", "Conditions are checked against the arguments the agent sends. A modified or malicious agent could describe one call and make another."],
           ["Long values are summarized", "Strings over 256 characters and lists over 50 items reach the rules as a hash and a length, so a condition on them does not match."],

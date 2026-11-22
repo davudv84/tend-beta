@@ -29,7 +29,7 @@ Read this before you put anything real behind TEND. This beta is for controlled 
   must live behind TEND (its gateway) or in a service that requires TEND's approval.
 - **Same machine, same user.** Processes running as your user can read each other's environment (`ps eww`) and files. On macOS
   `npm run agents:confined` reduces this for the example agents; it is not a general isolation boundary.
-- **Accounts without roles or multi-factor sign-in.** Each account has one workspace and everyone in it is an operator. No SSO, no 2FA, no teams.
+- **No single sign-on; two-step sign-in is per person.** Workspaces have roles (owner, admin, operator, viewer) and invitations, and each account can turn on two-step sign-in (TOTP, docs/authentication.md), but a workspace cannot require it yet, and there is no SSO. The platform admin token is one shared secret; `TEND_ADMIN_TOTP_SECRET` adds a code to it, shared by whoever holds the token.
   The admin token (for approving accounts) is one shared secret. Confirming an address needs the link and the password chosen at sign-up, so
   signing up first with someone else's address gains nothing. A password reset signs every session out but leaves agent keys working:
   after a suspected compromise, also revoke the keys of agents you did not create.
