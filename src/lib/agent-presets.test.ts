@@ -2,6 +2,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { evaluate, parsePolicy } from "../server/policy.ts";
+import { readFileSync } from "node:fs";
+import { de } from "../i18n/de.ts";
+import { en } from "../i18n/en.ts";
 import { coverageOf, isTestRule, PRESETS, presetOf, presetRules } from "./agent-presets.ts";
 
 const agent = { status: "active" as const, integrationEnabled: true, permissions: [] };
@@ -74,4 +77,44 @@ test("coverage: a rule overridden by a stricter one with the same scope (from ei
   const c = coverageOf([{ tool: "mcp", action: "*", effect: "approve" }, { tool: "web", action: "*", effect: "allow" }], [{ tool: "mcp", action: "*", effect: "deny" }, { tool: "web", action: "*", effect: "approve" }]);
   assert.deepEqual(c.enforced.map((r) => [r.tool, r.effect, r.from]), [["mcp", "deny", "central"], ["web", "approve", "central"]]);
   assert.deepEqual(c.monitored, []);
+});
+
+// ---- What the presets promise against a reworded command (security review, Nov 2026) ----------------------------------------------------------
+// The shell rules match the text of a command. These cases are written to get past that text match. They pin two facts: Strict never lets any of
+// them run without a person, and Balanced is a tripwire, not a boundary (docs/security-limitations.md says so). If Balanced is ever hardened so
+// that some of these are caught, move them to the first list; never weaken the Strict assertion.
+const REWORDED = [
+  ["read an SSH key through a glob", "cat ~/.ss?/id_rsa"],
+  ["read an SSH key through split quotes", "cat ~/.s''sh/id_rsa"],
+  ["read an SSH key through a variable", "d=.ss; cat ~/${d}h/id_rsa"],
+  ["read an SSH key through base64", "cat $(echo fi5zc2gvaWRfcnNh | base64 -d)"],
+  ["push with git -C", "git -C . push origin main"],
+  ["push through sh -c", "sh -c 'git pu''sh origin main'"],
+  ["delete with find", "find build -delete"],
+  ["reach the network from python", `python3 -c "import urllib.request as u;u.urlopen('https://example.com')"`],
+  ["reach the network from node", `node -e "fetch('https://example.com')"`],
+  ["escalate with su", "su -c ls root"],
+] as const;
+const shellRequest = (command: string) => ({ tool: "shell", action: "Bash", resource: null, detail: `Run: ${command}`.slice(0, 200), args: { command } });
+const AGENT = { status: "active" as const, integrationEnabled: true, permissions: [] as string[] };
+
+test("Strict: no shell command, however it is worded, runs without a person", () => {
+  for (const [what, command] of REWORDED) {
+    const d = evaluate(AGENT, presetRules("strict"), shellRequest(command));
+    assert.notEqual(d.effect, "allow", `strict let "${what}" run on its own`);
+  }
+  for (const command of ["ls", "echo hi", "npm test", "git status"]) assert.notEqual(evaluate(AGENT, presetRules("strict"), shellRequest(command)).effect, "allow");
+});
+
+test("Balanced is a text tripwire: the plain forms are held, reworded forms get past it (documented limitation)", () => {
+  for (const command of ["git push origin main", "rm -rf build", "curl https://example.com", "sudo ls"]) assert.equal(evaluate(AGENT, presetRules("balanced"), shellRequest(command)).effect, "approve", command);
+  assert.equal(evaluate(AGENT, presetRules("balanced"), shellRequest("cat ~/.ssh/id_rsa")).effect, "deny");
+  const through = REWORDED.filter(([, c]) => evaluate(AGENT, presetRules("balanced"), shellRequest(c)).effect === "allow").map(([w]) => w);
+  assert.deepEqual(through, REWORDED.map(([w]) => w), "if Balanced now catches some of these, update this test and docs/security-limitations.md");
+  const doc = readFileSync(new URL("../../docs/security-limitations.md", import.meta.url), "utf8");
+  assert.match(doc, /presets match the words of a command/, "the limitation is written down where operators read it");
+});
+
+test("the Balanced description does not promise more than a text match", () => {
+  for (const dict of [en, de]) assert.match(dict.assistant.presets.balanced.body, /reworded|umformuliert/);
 });

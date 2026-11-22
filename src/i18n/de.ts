@@ -859,6 +859,7 @@ export const de: Dict = {
           ["Nur Code, der fragt", "TEND ist ein Kontrollpunkt, keine Sandbox. Ein Agent, der den Wrapper auslässt oder echte Zugangsdaten für E-Mail, eine Datenbank oder Zahlungen hat, kann ohne TEND handeln, und TEND erfährt es nicht. Für echte Durchsetzung müssen die Zugangsdaten hinter TENDs Gateway liegen."],
           ["Gleicher Rechner, gleicher Benutzer", "Prozesse unter Ihrem Benutzer können gegenseitig Umgebung und Dateien lesen. TEND ist auf Ihrem Rechner keine Isolationsgrenze."],
           ["Keine Rollen, keine Zwei-Faktor-Anmeldung", "Jedes Konto hat einen Arbeitsbereich, und alle darin sind Betreiber. Noch kein SSO, keine 2FA, keine Teams."],
+          ["Vorlagen lesen den Wortlaut eines Befehls", "Die fertige Richtlinie „Ausgewogen“ für Programmier-Assistenten fragt vor Befehlen, deren Text git push, rm, curl oder sudo nennt, und lässt den Rest laufen. Ein umformulierter Befehl kann durchkommen. „Streng“ fragt vor jedem Befehl."],
           ["Der Agent beschreibt seinen Aufruf selbst", "Bedingungen werden gegen die Argumente geprüft, die der Agent sendet. Ein veränderter oder bösartiger Agent könnte einen Aufruf beschreiben und einen anderen ausführen."],
           ["Lange Werte werden zusammengefasst", "Texte über 256 Zeichen und Listen über 50 Einträge erreichen die Regeln als Hash und Länge, eine Bedingung darauf greift also nicht."],
           ["Erkennt Manipulation, verhindert sie nicht", "Wer in die Datenbank schreiben kann, kann den Verlauf umschreiben und die Kette neu berechnen. Bewahren Sie den Checkpoint (erste und letzte Sequenznummer samt Hashes) außerhalb von TEND auf und prüfen Sie dagegen: Ein Umschreiben, ein gelöschter Anfang oder ein geänderter ältester Eintrag passt dann nicht mehr zu dem, was Sie aufbewahrt haben."],
@@ -2071,7 +2072,7 @@ export const de: Dict = {
     },
     presets: {
       title: "Wie streng soll TEND sein?",
-      balanced: { name: "Ausgewogen", body: "Befehle und Dateiänderungen laufen, außer solche, die veröffentlichen, löschen, sudo nutzen oder ins Netz gehen: Die warten auf Sie. Web- und MCP-Werkzeuge warten auf Sie." },
+      balanced: { name: "Ausgewogen", body: "Befehle und Dateiänderungen laufen. Ein Befehl, dessen Text Veröffentlichen, Löschen, sudo oder das Netz nennt (git push, rm, curl, …), wartet auf Sie. Geprüft wird aber der Wortlaut, ein umformulierter Befehl kann durchkommen. Web- und MCP-Werkzeuge warten auf Sie. Für eine feste Grenze wählen Sie Streng." },
       strict: { name: "Streng", body: "Jeder Befehl, jede Dateiänderung, jeder Web- und MCP-Aufruf wartet auf Sie. Dateien lesen ist erlaubt." },
       monitor: { name: "Nur beobachten", body: "Alles läuft und wird protokolliert. Blockiert wird nur der Testbefehl von TEND, das ist also kein Schutz." },
       recommended: "Empfohlen",
