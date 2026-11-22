@@ -36,6 +36,11 @@ Read this before you put anything real behind TEND. This beta is for controlled 
 - **The agent tells TEND what it is about to do.** Conditions are checked against the arguments the agent sends. TEND's adapters send exactly the
   arguments the tool then receives, but a modified or malicious agent could describe one call and make another. Only a tool that itself checks
   TEND's decision closes that, and TEND does not offer that yet.
+- **The coding-assistant presets match the words of a command, not what it does.** "Balanced" asks before a shell command whose text contains
+  `git push`, `rm `, `curl `, `sudo ` and similar, and denies one that mentions `.ssh`; it allows every other command on its own. A reworded
+  command gets past those rules and runs without asking: `git -C . push`, `find … -delete`, `python3 -c "…urlopen…"`, `cat ~/.ss?/id_rsa`
+  (`src/lib/agent-presets.test.ts` lists the cases). Use "Strict" for a firm line: there, every shell command, file change, web and MCP call
+  waits for a person. Strict allows reading files (except under `.ssh`) without asking, `.env` included, which Balanced asks about.
 - **Conditions see summaries of long values.** Strings over 256 characters and lists over 50 items reach the rules as a hash and a length. A
   condition on such a value (or on an object where a plain value belongs) is treated as unknown: a deny or approve rule that might match
   applies, an allow rule does not, so padding or reshaping an argument can make a request stricter, never looser. String comparisons ignore

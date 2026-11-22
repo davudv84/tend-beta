@@ -874,6 +874,7 @@ export const en = {
           ["Only code that asks", "TEND is a checkpoint, not a sandbox. An agent that skips the wrapper, or holds real credentials for email, a database or payments, can act without TEND, and TEND will not know. For real enforcement the credential must live behind TEND’s gateway."],
           ["Same machine, same user", "Processes running as your user can read each other’s environment and files. TEND is not an isolation boundary on your computer."],
           ["No roles or two-factor sign-in", "Each account has one workspace and everyone in it is an operator. No SSO, no 2FA, no teams yet."],
+          ["Presets read the words of a command", "The ready-made Balanced policy for coding assistants asks before commands whose text names git push, rm, curl or sudo, and lets the rest run. A reworded command can get past it. Strict asks before every command."],
           ["The agent describes its own call", "Conditions are checked against the arguments the agent sends. A modified or malicious agent could describe one call and make another."],
           ["Long values are summarized", "Strings over 256 characters and lists over 50 items reach the rules as a hash and a length, so a condition on them does not match."],
           ["Detects tampering, doesn’t prevent it", "Someone who can write to the database can rewrite history and recompute the chain. Keep the checkpoint (first and head seq plus hashes) somewhere outside TEND and re-check against it: a rewrite, a cut prefix or an altered oldest entry no longer matches what you kept."],
@@ -2096,7 +2097,7 @@ export const en = {
     },
     presets: {
       title: "How strict should TEND be?",
-      balanced: { name: "Balanced", body: "Commands and file edits run, except ones that publish, delete, use sudo or reach the network: those wait for you. Web and MCP tools wait for you." },
+      balanced: { name: "Balanced", body: "Commands and file edits run. A command whose text names publishing, deleting, sudo or the network (git push, rm, curl, …) waits for you, but this reads the words of the command, so a reworded one can get past it. Web and MCP tools wait for you. For a firm line, choose Strict." },
       strict: { name: "Strict", body: "Every command, file edit, web and MCP call waits for you. Reading files is allowed." },
       monitor: { name: "Monitor only", body: "Everything runs and is recorded. Nothing is blocked except TEND's own test command, so this is not protection." },
       recommended: "Recommended",
