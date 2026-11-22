@@ -17,6 +17,7 @@
     "security:dast": "node --no-warnings redteam/live/dynamic-scan.mjs",
     "e2e:authz": "node scripts/authz-e2e.mjs",
     "e2e:gateway": "node scripts/gateway-e2e.mjs",
+    "e2e:enforcement": "node --no-warnings scripts/enforcement-demo.mjs",
     "e2e:connect": "node scripts/connect-e2e.mjs",
     "e2e:accounts": "node scripts/accounts-e2e.mjs",
     "e2e:open-beta": "node scripts/open-beta-e2e.mjs",
