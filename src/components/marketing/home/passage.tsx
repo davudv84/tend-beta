@@ -101,7 +101,7 @@ function layout(): Layout {
   const k = mobile ? Math.min((vw * 0.92) / plane.w, (vh * 0.5) / plane.h)
     : centered ? Math.min((vw * 0.8) / plane.w, (vh * 0.52) / plane.h)
     : Math.min((vw * 0.54) / plane.w, (vh * 0.68) / plane.h);
-  return { vw, vh, k: clamp(k, 0.3, 1.2), mobile, centered, plane };
+  return { vw, vh, k: clamp(k, 0.3, mobile ? 1.2 : 1.3), mobile, centered, plane };
 }
 
 export function Passage({ accounts, demo }: { accounts: boolean; demo: boolean }) {
