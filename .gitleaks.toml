@@ -1,0 +1,7 @@
+# Secret scanning (.github/workflows/security.yml). gitleaks' default rules, applied to the whole git history.
+# Add an allowlist entry only for a value verified to be a fake test fixture, as narrowly as possible (one path and one regex), with a comment
+# saying why. Never allow-list a whole directory, and never a real credential: rotate it (docs/runbooks/secret-rotation.md) and rewrite history.
+title = "TEND"
+
+[extend]
+useDefault = true

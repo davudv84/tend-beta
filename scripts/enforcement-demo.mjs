@@ -228,7 +228,10 @@ async function main() {
     rmSync(dir, { recursive: true, force: true });
   }
   console.log(`\n${passed} passed, ${failed} failed${skipped ? `, ${skipped} skipped (not counted as passed)` : ""}`);
-  process.exit(failed ? 1 : 0);
+  // A skipped check is a failure unless the caller said, by name, that this kind of skip is expected (CI's PostgreSQL run, where accounts are off).
+  const skipOk = skipped === 0 || process.env.TEND_E2E_ALLOW_SKIPS === "cross-tenant";
+  if (!skipOk) console.error(`${skipped} check(s) skipped; failing. Set TEND_E2E_ALLOW_SKIPS=cross-tenant only where a second tenant cannot exist.`);
+  process.exit(failed || !skipOk ? 1 : 0);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

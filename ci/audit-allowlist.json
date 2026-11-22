@@ -1,0 +1,4 @@
+{
+  "//": "Read by scripts/ci/audit-gate.mjs. An advisory listed here does not fail CI until its expiry date. Each entry: id (GHSA-…), package, why it is not exploitable in TEND, expires (YYYY-MM-DD, at most 90 days out). Empty is the goal.",
+  "advisories": []
+}

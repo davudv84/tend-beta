@@ -9,11 +9,14 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "pretest": "node scripts/node-check.mjs --tests",
-    "test": "node --no-warnings --test src/lib/*.test.ts src/server/*.test.ts src/sanctuary/*.test.ts src/i18n/*.test.ts src/ui/*.test.ts src/design-system/*.test.ts examples/claude-agent/*.test.mjs examples/claude-quickstart/*.test.mjs scripts/verify/*.test.mjs examples/adapters/*.test.mjs examples/hooks/*.test.mjs",
+    "test": "node --no-warnings --test src/lib/*.test.ts src/server/*.test.ts src/sanctuary/*.test.ts src/i18n/*.test.ts src/ui/*.test.ts src/design-system/*.test.ts scripts/ci/*.test.mjs examples/claude-agent/*.test.mjs examples/claude-quickstart/*.test.mjs scripts/verify/*.test.mjs examples/adapters/*.test.mjs examples/hooks/*.test.mjs",
     "test:postgres": "sh scripts/test-postgres.sh",
     "e2e:authz": "node scripts/authz-e2e.mjs",
     "e2e:gateway": "node scripts/gateway-e2e.mjs",
     "e2e:enforcement": "node --no-warnings scripts/enforcement-demo.mjs",
+    "test:gate": "node scripts/ci/test-gate.mjs",
+    "audit:gate": "node scripts/ci/audit-gate.mjs",
+    "drill:backup": "node --no-warnings scripts/backup-restore-drill.mjs",
     "e2e:connect": "node scripts/connect-e2e.mjs",
     "e2e:accounts": "node scripts/accounts-e2e.mjs",
     "e2e:open-beta": "node scripts/open-beta-e2e.mjs",
@@ -87,6 +90,11 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "zod": "^4.6.7"
+  },
+  "overrides": {
+    "@ts-morph/common": {
+      "minimatch": "^11.0.1"
+    }
   },
   "engines": {
     "node": ">=20.12.0"
