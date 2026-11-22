@@ -55,6 +55,13 @@ security-critical database work; porting 17 onto the deeper line keeps that work
   library's. The policy is unchanged (still no `'unsafe-inline'` for style elements). `redteam/live/csp-browser.mjs` now opens the mobile
   menu and a select; without the fix it fails on both.
 
+- **Three end-to-end suites never ran on PostgreSQL** (from this branch, and `main`). `e2e:authz`, `e2e:gateway` and `e2e:connect` started
+  their own server with `DATABASE_URL` forced empty, so in the workflow step "on PostgreSQL" they ran on the embedded database again: the
+  approvals, single-use, replay and expiry suite had never run end to end on PostgreSQL. Their stop also killed only `npx`, leaving the
+  `next-server` child running after every run. They now start their server through `scripts/isolated-server.mjs` like the other suites (the
+  same settings, explicitly no local-http cookie relaxation), so with `TEND_E2E_DATABASE_URL` they get a fresh PostgreSQL database in both the
+  production and the single-owner setup, and the whole process tree is stopped. All three pass in all three modes, nothing left running.
+
 ## Homepage, dashboard and product pages
 
 Production builds of `main` and of this branch, 17 routes, desktop and phone, reduced motion: pixel-identical except `/security` (the text
@@ -96,7 +103,7 @@ PostgreSQL 16 on this machine; Chromium for the browser checks. Every command is
 | unit tests through the gate, no database | 660 tests: 611 pass, 0 fail, 49 allowed skips (44 need PostgreSQL, 5 need macOS) |
 | `npm test` with PostgreSQL | 660 tests: 655 pass, 0 fail, 5 skip (macOS sandbox) |
 | PostgreSQL files through the gate (floor 44) | 44/44, no skip |
-| e2e: authz, gateway, connect, accounts, open-beta, onboarding, enforcement | all pass: embedded database; PostgreSQL production setup; PostgreSQL single-owner setup (26, 11, 8, 30, 41, 38, 30 checks each time) |
+| e2e: authz, gateway, connect, accounts, open-beta, onboarding, enforcement | all pass: embedded database; PostgreSQL production setup; PostgreSQL single-owner setup (26, 11, 8, 30, 41, 38, 30 checks each time; authz, gateway and connect on PostgreSQL only after the fix above) |
 | tenant matrix, MCP proxy, role matrix, alerts, hook fail-closed (PostgreSQL) | all hold (tenant matrix: 9,752 cross-tenant requests, nothing of A returned or changed, no 5xx) |
 | two-step sign-in in a browser (`mfa-e2e`) | 9/9 |
 | CSP in a browser, with a menu and a select opened | 7/7 (fails without this branch's fix) |

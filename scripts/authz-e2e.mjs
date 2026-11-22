@@ -1,23 +1,22 @@
 #!/usr/bin/env node
 // End-to-end check of pre-execution authorization over real HTTP, against an isolated server it starts itself:
-// a fresh embedded database in a temp directory, a random throwaway admin token, demo off, no DATABASE_URL.
+// a fresh embedded database in a temp directory (or PostgreSQL, below), a random throwaway admin token, demo off.
 // Only fake agents and fake data. Needs a build first:  npm run build && npm run e2e:authz
 // Takes about 70 seconds, most of it waiting for a token to expire.
+// The server is started by scripts/isolated-server.mjs like every other suite: nothing of your .env.local, the whole process tree stopped at the
+// end, and with TEND_E2E_DATABASE_URL a fresh PostgreSQL database (production roles and row-level security) instead of the embedded one.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { startIsolatedServer } from "./isolated-server.mjs";
 
-const PORT = 3900 + Math.floor(Math.random() * 90);
-const URL_ = `http://127.0.0.1:${PORT}`;
 const ADMIN = `fake_admin_${randomBytes(18).toString("hex")}`;
 const dir = mkdtempSync(path.join(tmpdir(), "tend-authz-e2e-"));
-const env = { ...process.env, TEND_ADMIN_TOKEN: ADMIN, TEND_DATA_DIR: dir, TEND_DEMO: "0", TEND_PUBLIC: "0", DATABASE_URL: "", POSTGRES_URL: "", ANTHROPIC_API_KEY: "", NODE_ENV: "production", TEND_TRUSTED_PROXY: "1" };
-const server = spawn("npx", ["next", "start", "-p", String(PORT), "-H", "127.0.0.1"], { env, stdio: ["ignore", "ignore", "pipe"] });
-let serverErr = "";
-server.stderr.on("data", (b) => (serverErr += b));
+const root = path.resolve(import.meta.dirname, "..");
+const server = await startIsolatedServer({ root, env: { TEND_ADMIN_TOKEN: ADMIN, TEND_DATA_DIR: dir, TEND_TRUSTED_PROXY: "1", TEND_LOCAL_HTTP: "0" } });
+const URL_ = server.url;
 
 const results = [];
 const seen = []; // every response body except token claims, checked for leaked secrets at the end
@@ -83,13 +82,6 @@ const POLICY = {
 };
 
 try {
-  for (let i = 0; ; i++) {
-    if (server.exitCode !== null) throw new Error(`server exited: ${serverErr.slice(-500)}`);
-    if (i > 120) throw new Error("server did not start within 60s");
-    if (await fetch(`${URL_}/api/health`).then((r) => r.ok, () => false)) break;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-
   const login = await call("POST", "/api/operator/session", { body: { token: ADMIN } });
   assert.equal(login.status, 200);
   cookie = login.headers.get("set-cookie").split(";")[0];
@@ -431,8 +423,7 @@ try {
 } catch (e) {
   results.push(["FAIL", "harness", e.message]);
 } finally {
-  server.kill("SIGTERM");
-  await new Promise((r) => setTimeout(r, 500));
+  await server.stop(); // the whole process tree: a plain kill of npx left the next-server child running
   rmSync(dir, { recursive: true, force: true });
 }
 
