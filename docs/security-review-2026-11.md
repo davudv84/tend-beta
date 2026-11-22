@@ -131,12 +131,22 @@ counted as passed; the 25-way race again had exactly one winner.
 Not verified here: the hosted deployment (Vercel, Neon) and its environment variables, backups and restores, secret rotation, monitoring and
 alerting, availability, and screen-reader behaviour.
 
+## Follow-up, 22 November 2026: status of each finding
+
+| Finding | Status | Evidence |
+|---|---|---|
+| H-1 Balanced is a text tripwire | **Fixed for every new save**: Balanced v2 asks before every shell command except plainly written read-only ones. Policies saved with v1 keep it (never rewritten silently); the dashboard says so and offers the update | `agent-presets.test.ts` (no reworded command runs unasked under v2 or any Strict), docs/presets.md |
+| M-1 Strict reads `.env` unasked | **Fixed for every new save** (Strict v2) | same |
+| L-2 No CI | **Pipeline added** (.github/workflows/security.yml, required check `security-gate`). **Branch protection still needs the repository owner** | `scripts/ci/gates.test.mjs` proves the gates fail on skips, failures and advisories |
+| L-3 Four advisories | **Resolved**: npm override `minimatch ^11.0.1` under `@ts-morph/common` (upstream 0.29 already uses it; ts-morph glob and the shadcn CLI smoke-tested). `npm audit`: 0 | `npm run audit:gate` |
+| I-3 No admin MFA | **Optional TOTP second factor** (`TEND_ADMIN_TOTP_SECRET`); still one shared admin identity, no SSO or roles | `admin-mfa.test.ts`, `totp.test.ts` (RFC 6238 vectors) |
+| Two-tenant tests on PostgreSQL | **Added** (library level, real pool, concurrent cross-tenant spends); HTTP-level two-tenant runs stay on the embedded database (accounts need a mail service with a database URL) | `postgres-tenancy.test.ts`; a removed tenant filter makes 2 of its 4 tests fail |
+| Backups and rotation | **Drill and runbooks** (docs/runbooks); the hosted database's own restore is not tested from here | `npm run drill:backup` |
+
 ## Next
 
-1. **CI** that runs typecheck, lint, `npm test` against a throwaway PostgreSQL, `npm run build`, `e2e:authz`, `e2e:accounts` and
-   `e2e:enforcement` on every pull request, with branch protection and dependency alerts. Without it, every result above can silently regress.
-2. Versioned presets (H-1, M-1).
-3. Two-tenant HTTP tests on PostgreSQL (needs a test mail sink for a database-backed server).
-4. Per-operator admin accounts with MFA instead of the shared admin token.
-5. Backup/restore drill and secret-rotation runbook for the hosted instance.
-6. Independent penetration test.
+1. Make `security-gate` a required check on `main` (branch protection or a ruleset) and turn on Dependabot alerts; both need the repository owner.
+2. Run the restore drill and the rotation runbook against the hosted instance (Vercel, Neon access) and record the results.
+3. Per-operator admin accounts (with the second factor) instead of one shared admin token.
+4. Two-tenant HTTP tests on PostgreSQL (a test mail sink for database-backed servers).
+5. Independent penetration test.
