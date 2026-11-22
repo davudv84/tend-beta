@@ -697,15 +697,29 @@ function queries(raw: Raw, exec: (sql: string) => Promise<unknown>): Q {
 /**
  * The database's certificate is always checked: chain and hostname (`verify-full`). Hosted providers hand out `sslmode=require`, which pg 8
  * already treats as verify-full but pg 9 will weaken to libpq's "encrypt without checking", so it is pinned here rather than in a variable the
- * provider's integration owns and may rewrite. `disable` (a local database) and a missing sslmode are left as they are.
+ * provider's integration owns and may rewrite. A missing sslmode is pinned too unless the host is this machine; an explicit `disable` is left.
  */
 export function verifiedTls(url: string): string {
   let u: URL;
   try { u = new URL(url); } catch { return url; }
-  if (!["allow", "prefer", "require", "verify-ca"].includes(u.searchParams.get("sslmode") ?? "")) return url;
+  const mode = u.searchParams.get("sslmode");
+  // No sslmode at all means no TLS in pg: password and data in clear text. That is fine on this machine, never across a network, so a URL that
+  // names another host is pinned too. Only an explicit sslmode=disable (an operator's deliberate choice) is left without TLS.
+  if (mode === null && !loopbackHost(u)) {
+    u.searchParams.set("sslmode", "verify-full");
+    return u.toString();
+  }
+  if (!["allow", "prefer", "require", "verify-ca"].includes(mode ?? "")) return url;
   u.searchParams.set("sslmode", "verify-full");
   u.searchParams.delete("uselibpqcompat");
   return u.toString();
+}
+/** This machine: localhost, 127.0.0.0/8, ::1, or a Unix socket (an empty host, or a host= parameter that is a path). */
+function loopbackHost(u: URL) {
+  const h = decodeURIComponent(u.hostname).replace(/^\[|\]$/g, "").toLowerCase();
+  const socket = u.searchParams.get("host");
+  if (socket?.startsWith("/")) return true;
+  return h === "" || h === "localhost" || h === "::1" || /^127(\.\d{1,3}){3}$/.test(h);
 }
 export const tlsMode = (url: string) => {
   try { return new URL(verifiedTls(url)).searchParams.get("sslmode") ?? "none"; } catch { return "unknown"; }
