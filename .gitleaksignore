@@ -10,5 +10,7 @@
 67699dfbb16c2c310b0ef72b3b588319ff30669c:examples/hooks/tend-hooks.test.mjs:generic-api-key:153
 # A fake "Authorization: Bearer …" header in the same redaction tests.
 dcf4828c7e2865bad8011441e5fb0787fdde3f9e:examples/hooks/tend-hooks.test.mjs:curl-auth-header:21
-# "key: r2.body.apiKey": code reading a variable, not a value.
+# scripts/authz-e2e.mjs line 104 assigns a response field to an object property: code reading a variable, not a value.
 5db327158a8d63986e00125433192acfe69ef9cc:scripts/authz-e2e.mjs:generic-api-key:104
+# The comment above, as first written in commit f966bff, quoted that line of code and so matched the same rule. It is not a value either.
+f966bffe23cecdebea0063c8201b1611ae0caf05:.gitleaksignore:generic-api-key:13
