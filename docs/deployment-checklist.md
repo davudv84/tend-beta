@@ -27,32 +27,41 @@ Nothing else: TEND's start-up (as the owner) migrates, grants `tend_app` exactly
 | `TEND_APP_URL` | `https://<preview host>` |
 | `TEND_ALERT_WEBHOOK_URL` | an HTTPS receiver you control (optional but recommended) |
 
-Remove the integration's `POSTGRES_URL*` variables from the preview scope if they point at the owner (TEND reads `POSTGRES_URL` only when
-`DATABASE_URL` is unset).
+Deployment targets (not secret, so **not** Sensitive; the deployment check compares the real URLs with them):
 
-## 3. Preflight (locally, values never printed)
+| Variable | Value |
+| --- | --- |
+| `TEND_EXPECT_DB` | the database name, e.g. `tend_preview_fresh` |
+| `TEND_EXPECT_NEON_ENDPOINT` | the preview branch's endpoint id: Neon → Branches → the branch → Computes, `ep-…` |
+| `TEND_EXPECT_RUNTIME_USER` | the restricted login in `DATABASE_URL`, e.g. `tend_runtime` |
+| `TEND_EXPECT_MIGRATE_USER` | the owner in `DATABASE_MIGRATE_URL`, e.g. `neondb_owner` |
+| `TEND_PRODUCTION_NEON_ENDPOINT` | the **production** branch's endpoint id. A preview fails if any of its variables contains it |
+| `TEND_ALLOW_MIGRATIONS` | leave unset. Set `1` only to approve the migrations the check reports as pending, then remove it |
 
-The preflight reads a file of `KEY=value` lines (or the shell's environment when no file is given) and prints only what is wrong, never a value.
+For Production the same `TEND_EXPECT_*` variables are required, with the production values (`TEND_PRODUCTION_NEON_ENDPOINT` optional there,
+equal to `TEND_EXPECT_NEON_ENDPOINT` if set).
 
-```bash
-vercel env pull --environment=preview --git-branch=security/release-redesign .env.preflight
-```
-```bash
-node scripts/check-production-config.mjs .env.preflight --expect-db tend_preview_fresh --runtime-user tend_runtime_v2 --migrate-user neondb_owner
-```
-```bash
-rm .env.preflight
-```
-It must print "No blocking problems". The three `--expect-…` flags pin the preview database and the two logins by name, so a URL that points at another database or role fails here, before any deploy.
+Remove the integration's `POSTGRES_URL*` and `PG*` variables from the preview scope: the deployment check refuses any that points at the
+production endpoint (TEND reads `POSTGRES_URL` only when `DATABASE_URL` is unset).
 
-**If it says several variables "all hold exactly the same value"**: the file does not contain your real settings. It is a placeholder, or Vercel did not
-export the values (a variable marked *Sensitive* cannot be read back, and a pull may write a stand-in for it; check Vercel's current documentation).
-That is not something to fix variable by variable. Check the variables with `vercel env ls preview` (names and scope only), then run the preflight on a
-file you build from your own copies of the values (the ones you generated and stored), readable only by you, and delete it afterwards:
+## 3. Deployment check (inside Vercel, values never printed)
 
-```bash
-umask 077 && ${EDITOR:-nano} .env.preflight
-```
+`vercel env pull` writes a placeholder for every Sensitive variable, so a local check cannot validate the real connection strings. The check
+therefore runs **inside the deployment**, where the real values are: `npm run build` starts with `node scripts/deploy-check.mjs`, and the server
+repeats it at every start before its first write (`src/server/deploy-check.mjs`). On a Vercel preview or production it:
+
+1. compares both URLs with the targets above (login, database, Neon endpoint, password present, `sslmode`), and for a preview scans every variable
+   for the production endpoint. Nothing connects until this passes;
+2. connects with each URL in a `READ ONLY` transaction (rolled back) and checks the runtime login (no superuser, BYPASSRLS, CREATEROLE, CREATEDB,
+   no privileged or owner membership, cannot create in `public`, no access to `tend_context_keys`) and the owner (right login and database, owns
+   TEND's tables, schema version);
+3. refuses pending migrations unless `TEND_ALLOW_MIGRATIONS=1` is set for the deployment.
+
+Any problem fails the build ("stopping before deployment. Nothing was written to any database.") and the build log lists each one by variable
+name. The log shows logins, database names, versions and yes/no only.
+
+The local preflight (`node scripts/check-production-config.mjs <file>`) still checks the non-secret rules on a file you build from your own copies
+of the values (`umask 077`, delete it afterwards); it cannot replace the deployment check.
 
 Also in the Preview scope: `TEND_DEMO=0`. The demo (on by default) seeds synthetic agents on every dashboard poll and its retention needs DELETE rights the
 restricted login deliberately lacks.

@@ -5,6 +5,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { config } from "./config.ts";
 import { contextSettings } from "./db-context.ts";
+import { checkTargets, probeOwner, probeRuntime } from "./deploy-check.mjs";
 import { HttpError } from "./http.ts";
 
 /** Something to run queries against: the database, or one open transaction. `?` placeholders. */
@@ -884,12 +885,27 @@ async function open() {
     const problem = value ? databaseUrlProblem(name, value) : "";
     if (problem) throw new Error(`database configuration: ${problem}. Nothing was changed in the database.`);
   }
+  // On a Vercel preview or production deployment: the URLs must match the declared targets (database, Neon branch, logins; a preview must
+  // not reach the production endpoint), checked before anything connects. The build ran the same check (scripts/deploy-check.mjs); this
+  // repeats it in case a variable changed after the build. src/server/deploy-check.mjs.
+  const target = checkTargets(process.env);
+  if (target.enforced && target.problems.length) throw new Error(`deployment check: ${target.problems.join("; ")}. Nothing was changed in the database.`);
   if (migrateUrl) {
     if (!url) throw new Error("DATABASE_MIGRATE_URL is set without DATABASE_URL");
     if (migrateUrl === url) console.error("[tend] WARNING: DATABASE_MIGRATE_URL equals DATABASE_URL, so the application still runs as the schema owner: this is not a role split.");
     const runtime = await postgres(url);
     const admin = await postgres(migrateUrl);
     try {
+      // Read-only checks of both logins and of the schema state, in READ ONLY transactions, before the first write (migrations, the context
+      // key, the runtime grants). Pending migrations need the deployment's explicit approval (TEND_ALLOW_MIGRATIONS=1).
+      if (target.enforced) {
+        const readOnly = <T>(d: DB, fn: (all: (sql: string) => Promise<Record<string, unknown>[]>) => Promise<T>) =>
+          d.tx(async (q) => { await q.exec("SET TRANSACTION READ ONLY"); return fn((sql) => q.all<Record<string, unknown>>(sql)); });
+        const rt = await readOnly(runtime, (all) => probeRuntime(all, target.targets));
+        const ow = await readOnly(admin, (all) => probeOwner(all, target.targets, { allowMigrations: process.env.TEND_ALLOW_MIGRATIONS === "1", expectedVersion: MIGRATIONS.length }));
+        const problems = [...rt.problems, ...ow.problems];
+        if (problems.length) throw new Error(`deployment check: ${problems.join("; ")}. Nothing was changed in the database.`);
+      }
       await migrate(admin);
       await installContextKey(admin);
       // The runtime login's privileges, renewed at every start so a release that adds a table never runs without them (or with a log table
