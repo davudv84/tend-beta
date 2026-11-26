@@ -5,6 +5,7 @@
 // not apply and exits 0. It never writes to a database and never prints a password, token, connection string or host.
 import pg from "pg";
 import { checkTargets, probeOwner, probeRuntime } from "../src/server/deploy-check.mjs";
+import { checkProductionConfig } from "./check-production-config.mjs";
 
 // The server's TLS rule (db.ts verifiedTls): anything weaker than verify-full is upgraded; never downgraded.
 function verifiedTls(url) {
@@ -31,7 +32,20 @@ async function readOnly(name, url, fn) {
 /** @param {Record<string, string | undefined>} [env] @param {(line: string) => void} [log] */
 export async function runDeployCheck(env = process.env, log = console.log) {
   const t = checkTargets(env);
-  const problems = [...t.problems], facts = [...t.facts];
+  const problems = [...t.problems], facts = [...t.facts], warnings = [];
+  if (t.enforced) {
+    // The secrets and security settings the server needs (the same rules as the local preflight), on the real values: lengths, formats and
+    // distinctness only, never a value.
+    const pre = checkProductionConfig(env, { db: t.targets?.db, runtimeUser: t.targets?.runtimeUser, migrateUser: t.targets?.migrateUser, endpoint: t.targets?.endpoint });
+    for (const p of pre.problems) if (!problems.includes(p)) problems.push(p);
+    warnings.push(...pre.warnings);
+    if (env.TEND_ACCOUNTS !== "0" && !(env.RESEND_API_KEY && env.TEND_EMAIL_FROM))
+      warnings.push("RESEND_API_KEY and TEND_EMAIL_FROM are not both set: e-mail accounts (sign-up, sign-in) stay off; only the admin token can sign in");
+    if (env.TEND_DEMO !== "0") warnings.push("TEND_DEMO is not 0: the demo seeds synthetic data and needs rights the restricted login lacks (set TEND_DEMO=0)");
+    facts.push(`TEND_ALLOW_MIGRATIONS ${env.TEND_ALLOW_MIGRATIONS === undefined ? "is unset" : env.TEND_ALLOW_MIGRATIONS === "1" ? "is 1 (migrations approved)" : "is set but not 1 (no approval)"}`);
+    const present = ["TEND_CONTEXT_KEY", "TEND_MFA_KEY", "TEND_ADMIN_TOKEN", "TEND_APP_URL", "RESEND_API_KEY", "TEND_EMAIL_FROM", "TEND_DEMO", "TEND_ADMIN"].map((k) => `${k} ${env[k] ? "set" : "unset"}`);
+    facts.push(`settings present: ${present.join(", ")}`);
+  }
   if (t.enforced && !problems.length) {
     try {
       const rt = await readOnly("DATABASE_URL", env.DATABASE_URL, (all) => probeRuntime(all, t.targets));
@@ -42,6 +56,7 @@ export async function runDeployCheck(env = process.env, log = console.log) {
   } else if (t.enforced) facts.push("database checks not run: the variables above must be fixed first (nothing was connected to)");
   log(`TEND deployment check (VERCEL_ENV=${t.vercelEnv}${env.VERCEL_GIT_COMMIT_REF ? `, branch ${env.VERCEL_GIT_COMMIT_REF}` : ""})`);
   for (const f of facts) log(`  info     ${f}`);
+  for (const w of warnings) log(`  warning  ${w}`);
   for (const p of problems) log(`  BLOCKING ${p}`);
   log(problems.length ? `${problems.length} blocking problem(s): stopping before deployment. Nothing was written to any database.` : t.enforced ? "Deployment check passed (read-only; nothing was written)." : "");
   return problems.length ? 1 : 0;

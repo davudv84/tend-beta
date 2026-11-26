@@ -211,3 +211,20 @@ test("DEPLOY-PG probes on real PostgreSQL: a clean runtime login passes, every e
     await admin.end();
   }
 });
+
+test("DEPLOY-8 the build step also checks the secrets and settings the server needs, on the real values, naming them without values", async () => {
+  const out: string[] = [];
+  // all targets right, but no secrets at all: blocked before any connection, each missing secret named
+  assert.equal(await runDeployCheck({ ...good }, (l: string) => out.push(l)), 1);
+  for (const want of [/BLOCKING TEND_CONTEXT_KEY must be set/, /BLOCKING TEND_ADMIN_TOKEN must be at least 32/, /BLOCKING TEND_APP_URL must be the https/, /TEND_ALLOW_MIGRATIONS is unset/, /settings present: TEND_CONTEXT_KEY unset/, /database checks not run/])
+    assert.ok(out.some((l) => want.test(l)), `${want}\n${out.join("\n")}`);
+  leaksNothing(out);
+  // a key that is too short, and two secrets that are the same, are blocking; the values are never printed
+  out.length = 0;
+  const key = "k".repeat(20), same = randomBytes(24).toString("hex");
+  await runDeployCheck({ ...good, TEND_CONTEXT_KEY: key, TEND_MFA_KEY: same, TEND_ADMIN_TOKEN: same, TEND_APP_URL: "https://tend-preview.example.app", TEND_ALLOW_MIGRATIONS: "1" }, (l: string) => out.push(l));
+  assert.ok(out.some((l) => /BLOCKING TEND_CONTEXT_KEY must be set, at least 32/.test(l)), out.join("\n"));
+  assert.ok(out.some((l) => /BLOCKING TEND_ADMIN_TOKEN and TEND_MFA_KEY must be different secrets/.test(l)));
+  assert.ok(out.some((l) => /TEND_ALLOW_MIGRATIONS is 1 \(migrations approved\)/.test(l)));
+  assert.ok(!out.join("\n").includes(key) && !out.join("\n").includes(same), "no secret value in the output");
+});
