@@ -68,6 +68,7 @@ const isNeon = (u) => /\.neon\.tech$/.test(u.hostname);
  */
 export function checkTargets(env) {
   const scope = deployScope(env);
+  if (scope.enforced && env.TEND_SITE_ONLY === "1") return { ...scope, siteOnly: true, targets: undefined, ...checkSiteOnly(env) };
   const problems = [], facts = [];
   if (!scope.enforced) return { ...scope, problems, targets: undefined, facts: [`not a Vercel preview or production deployment (VERCEL_ENV=${scope.vercelEnv}): deployment check not applied`] };
   if (scope.vercelEnv === "unknown") problems.push("VERCEL=1 but VERCEL_ENV is missing: cannot tell preview from production (turn on \"Automatically expose System Environment Variables\")");
@@ -116,6 +117,26 @@ export function checkTargets(env) {
     facts.push(`production endpoint referenced by ${leaks.length ? leaks.join(", ") : "no variable"} of this deployment`);
   }
   return { ...scope, problems, facts, targets: want };
+}
+
+/** Variables a site-only showcase must not have: any database connection and every TEND secret (src/lib/site-only.ts). */
+const SITE_ONLY_FORBIDDEN_NAMES = /^(DATABASE_|POSTGRES_|PG[A-Z]|NEON_|TEND_DB_|TEND_EXPECT_|TEND_PRODUCTION_NEON)|^(TEND_ADMIN_TOKEN|TEND_ADMIN_TOTP_SECRET|TEND_CONTEXT_KEY|TEND_MFA_KEY|TEND_AGENT_KEY|TEND_VAPID_PRIVATE_KEY|TEND_CF_ACCESS_CLIENT_SECRET|TEND_PROTECTION_BYPASS|TEND_ALERT_WEBHOOK_URL|TEND_ALLOW_MIGRATIONS|RESEND_API_KEY|TEND_DEMO_ACCOUNT)$/;
+const SITE_ONLY_FORBIDDEN_VALUES = /postgres(ql)?:\/\/|\.neon\.tech|tend_sk_[A-Za-z0-9_-]{8}/i;
+
+/**
+ * A site-only showcase (TEND_SITE_ONLY=1): instead of database targets, the deployment must carry no database and no secret at all, so even a
+ * mistake in the app could not reach data. Names only in the output, never a value. Returns { problems, facts }.
+ */
+export function checkSiteOnly(env) {
+  const problems = [], facts = [];
+  const names = Object.keys(env).filter((k) => !k.startsWith("VERCEL") && !k.startsWith("NEXT_") && !k.startsWith("npm_"));
+  const byName = names.filter((k) => SITE_ONLY_FORBIDDEN_NAMES.test(k) && env[k] !== undefined && env[k] !== "");
+  const byValue = names.filter((k) => !byName.includes(k) && typeof env[k] === "string" && SITE_ONLY_FORBIDDEN_VALUES.test(env[k]));
+  for (const k of byName) problems.push(`${k} is set: a site-only deployment must have no database variable and no TEND secret (remove it from this project)`);
+  for (const k of byValue) problems.push(`${k} holds something that looks like a database connection or an agent key: remove it from this project`);
+  if (env.TEND_PUBLIC === "1") problems.push("TEND_PUBLIC=1 has no place on a site-only deployment");
+  facts.push(`site-only showcase: database variables ${byName.some((k) => /DATABASE|POSTGRES|^PG|NEON/.test(k)) ? "PRESENT" : "none"}, TEND secrets ${byName.some((k) => !/DATABASE|POSTGRES|^PG|NEON|TEND_DB_|TEND_EXPECT_/.test(k)) ? "PRESENT" : "none"}, connection-like values ${byValue.length ? "PRESENT" : "none"}; the app serves the marketing pages only and never connects to a database`);
+  return { problems, facts };
 }
 
 /** Read-only probe of the runtime login. `all(sql)` runs one statement inside a READ ONLY transaction and returns its rows. */

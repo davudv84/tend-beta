@@ -7,6 +7,7 @@ import { homeImages } from "@/components/marketing/images";
 import { config } from "@/server/config";
 import { getDb } from "@/server/db";
 import { isOperator } from "@/server/session";
+import { siteOnly } from "@/lib/site-only";
 
 /** The browser's own bars take the site's colour on a phone, and the page is dark from the first frame. */
 export const viewport: Viewport = { themeColor: "#181818", colorScheme: "dark", viewportFit: "cover" };
@@ -14,6 +15,7 @@ export const viewport: Viewport = { themeColor: "#181818", colorScheme: "dark", 
 /** The public homepage: what TEND is, shown with TEND's own screens. An operator who is already signed in goes straight to their Overview. */
 export default async function FrontPage() {
   const h = await headers();
-  if (await isOperator(await getDb(), new Request("http://localhost/", { headers: h }))) redirect("/home");
-  return <Homepage accounts={config.accounts} demo={config.accounts && !!config.demoAccount} images={homeImages()} fontClass={newsreader.variable} />;
+  // Site-only showcase: no sessions and no database; nobody is signed in.
+  if (!siteOnly() && await isOperator(await getDb(), new Request("http://localhost/", { headers: h }))) redirect("/home");
+  return <Homepage accounts={!siteOnly() && config.accounts} demo={!siteOnly() && config.accounts && !!config.demoAccount} images={homeImages()} fontClass={newsreader.variable} />;
 }

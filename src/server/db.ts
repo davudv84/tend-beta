@@ -862,6 +862,8 @@ export const meta = {
 const g = globalThis as { __tendDb?: Promise<DB> };
 
 export function getDb(): Promise<DB> {
+  // Site-only showcase (src/lib/site-only.ts): there is no database, whatever variables are present; nothing connects.
+  if (process.env.TEND_SITE_ONLY === "1") return Promise.reject(new HttpError(404, "not_found", "Not available on this site."));
   return (g.__tendDb ??= open().catch((e) => {
     g.__tendDb = undefined;
     if (/tenant isolation cannot be guaranteed/.test((e as Error).message)) void import("./security-events.ts").then((m) => m.securityEvent("isolation.failed", { reason: (e as Error).message.slice(0, 120) }));

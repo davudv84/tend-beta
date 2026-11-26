@@ -75,7 +75,7 @@ export const CHECK_ONLY_MARKER = new URL("../DEPLOY_CHECK_ONLY", import.meta.url
 export async function runDeployCheck(env = process.env, log = console.log, { checkOnly = existsSync(CHECK_ONLY_MARKER), connect = readOnly } = {}) {
   const t = checkTargets(env);
   const problems = [...t.problems], facts = [...t.facts], warnings = [];
-  if (t.enforced) {
+  if (t.enforced && !t.siteOnly) {
     // The secrets and security settings the server needs (the same rules as the local preflight), on the real values: lengths, formats and
     // distinctness only, never a value.
     // The targets (database, logins, endpoint) are checkTargets' job above; passing them again would only repeat its findings in other words.
@@ -102,7 +102,7 @@ export async function runDeployCheck(env = process.env, log = console.log, { che
     const present = ["TEND_CONTEXT_KEY", "TEND_MFA_KEY", "TEND_ADMIN_TOKEN", "TEND_APP_URL", "RESEND_API_KEY", "TEND_EMAIL_FROM", "TEND_DEMO", "TEND_ADMIN"].map((k) => `${k} ${env[k] ? "set" : "unset"}`);
     facts.push(`settings present: ${present.join(", ")}`);
   }
-  if (t.enforced && !problems.length) {
+  if (t.enforced && !t.siteOnly && !problems.length) {
     // The context key as db.ts contextKey/contextSignature use it. Only its 16-hex id and per-transaction MACs leave this function.
     const key = Buffer.from(env.TEND_CONTEXT_KEY ?? "", "utf8");
     const kid = createHash("sha256").update(key).digest("hex").slice(0, 16);
@@ -124,7 +124,7 @@ export async function runDeployCheck(env = process.env, log = console.log, { che
       try { const r = await connect("DATABASE_URL", env.DATABASE_URL, (all) => probeIsolation(all, sign)); problems.push(...r.problems); facts.push(...r.facts); }
       catch (e) { problems.push(`tenant isolation probe failed: ${e.code ?? "error"}`); }
     } else if (!schema) facts.push("tenant isolation probe not run: no schema yet (the server's start-up self-test checks it after migrating)");
-  } else if (t.enforced) facts.push("database checks not run: the variables above must be fixed first (nothing was connected to)");
+  } else if (t.enforced && !t.siteOnly) facts.push("database checks not run: the variables above must be fixed first (nothing was connected to)");
   log(`TEND deployment check (VERCEL_ENV=${t.vercelEnv}${env.VERCEL_GIT_COMMIT_REF ? `, branch ${env.VERCEL_GIT_COMMIT_REF}` : ""})`);
   for (const f of facts) log(`  info     ${f}`);
   for (const w of warnings) log(`  warning  ${w}`);

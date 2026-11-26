@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+import { siteOnly } from "@/lib/site-only";
 import type { Metadata } from "next";
 import "@/design-system/tokens.css";
 
@@ -8,5 +10,6 @@ export const metadata: Metadata = {
 };
 
 export default function DesignSystemLayout({ children }: { children: React.ReactNode }) {
+  if (siteOnly()) notFound(); // site-only showcase: not part of it
   return children;
 }

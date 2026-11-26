@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server.js";
 import type { NextRequest } from "next/server.js";
 import { buildCsp, cspMode, newNonce } from "./lib/csp.ts";
+import { SITE_ONLY_TO_CONTACT, siteOnly, sitePathAllowed } from "./lib/site-only.ts";
 
 /**
  * Adds a per-request nonce and the Content-Security-Policy to every page (Next 16 "proxy", formerly middleware). Next reads the nonce from the
@@ -17,6 +18,13 @@ export function proxy(request: NextRequest) {
     to.pathname = to.pathname.replace(/\/+$/, "") || "/";
     return new NextResponse(null, { status: 308, headers: { location: to.toString(), "content-type": "text/plain; charset=utf-8" } });
   }
+  // Site-only showcase (src/lib/site-only.ts): nothing but the marketing pages and their files; no API, no dashboard, no sign-in.
+  if (siteOnly() && SITE_ONLY_TO_CONTACT.has(pathname)) {
+    const to = new URL(request.url); to.pathname = "/contact"; to.search = "";
+    return new NextResponse(null, { status: 307, headers: { location: to.toString(), "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  }
+  if (siteOnly() && !sitePathAllowed(pathname))
+    return new NextResponse("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" } });
   if (pathname === "/api" || pathname.startsWith("/api/")) return NextResponse.next(); // JSON: its own strict policy (next.config.ts)
   const mode = cspMode();
   if (mode === "off") return NextResponse.next();

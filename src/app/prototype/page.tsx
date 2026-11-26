@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+import { siteOnly } from "@/lib/site-only";
 import Link from "next/link";
 import { ArrowRightIcon } from "lucide-react";
 import { Wordmark } from "@/components/brand";
@@ -21,6 +23,7 @@ function Label({ n, children }: { n: string; children: React.ReactNode }) {
 }
 
 export default async function Landing() {
+  if (siteOnly()) notFound(); // site-only showcase: not part of it
   const t = await getT();
   const l = t.landing;
   return (

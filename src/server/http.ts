@@ -58,6 +58,8 @@ async function deliverQueued() {
 export function route<C>(fn: (req: Request, ctx: C) => Promise<Response> | Response) {
   // Every request starts with an empty database context (nothing tenant-scoped visible) until authentication binds one.
   return (req: Request, ctx: C) => withRequestContext(async () => {
+    // Site-only showcase (src/lib/site-only.ts): no API at all; refused before the route's own code (or the database) is reached.
+    if (process.env.TEND_SITE_ONLY === "1") return json({ error: "not_found", message: "Not available on this site." }, 404);
     try {
       const res = await fn(req, ctx);
       await deliverQueued();
