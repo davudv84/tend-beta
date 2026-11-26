@@ -44,11 +44,13 @@ export async function runDeployCheck(env = process.env, log = console.log, { che
   if (t.enforced) {
     // The secrets and security settings the server needs (the same rules as the local preflight), on the real values: lengths, formats and
     // distinctness only, never a value.
-    const pre = checkProductionConfig(env, { db: t.targets?.db, runtimeUser: t.targets?.runtimeUser, migrateUser: t.targets?.migrateUser, endpoint: t.targets?.endpoint });
+    // The targets (database, logins, endpoint) are checkTargets' job above; passing them again would only repeat its findings in other words.
+    const pre = checkProductionConfig(env);
     for (const p of pre.problems) if (!problems.includes(p)) problems.push(p);
     // What is wrong with TEND_APP_URL, from its shape only (it is not secret, but the rule is the same: the value is never printed).
     const app = env.TEND_APP_URL ?? "";
     if (app && pre.problems.some((p) => p.startsWith("TEND_APP_URL"))) {
+      problems.splice(problems.indexOf(pre.problems.find((p) => p.startsWith("TEND_APP_URL"))), 1); // replaced by the precise message below
       const why = [];
       if (app !== app.trim()) why.push("it has spaces or a line break before or after it");
       const a = app.trim();
