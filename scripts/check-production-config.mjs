@@ -18,6 +18,12 @@ export function checkProductionConfig(env, expect = {}) {
   // The exception only applies to a deployment that really has one owner URL; with a separate migration login everything else still applies.
   const owner = env.TEND_DB_ALLOW_OWNER_LOGIN === "1" && !mig;
   need(!!db && /^postgres(ql)?:$/.test(db.protocol), "DATABASE_URL must be a PostgreSQL URL");
+  // A connection string copied without its password: the server's start-up refuses it too (db.ts databaseUrlProblem).
+  const local = (u) => ["127.0.0.1", "localhost", "::1", "[::1]"].includes(u.hostname);
+  for (const [n, u] of [["DATABASE_URL", db], ["DATABASE_MIGRATE_URL", mig]]) if (u && /^postgres(ql)?:$/.test(u.protocol)) {
+    need(!!u.username, `${n} names no database user`);
+    need(!!u.password || local(u), `${n} has no password in it (copy the connection string again with the password shown)`);
+  }
   if (!owner) {
     need(!!mig, "DATABASE_MIGRATE_URL (the schema owner, used only at start-up) must be set: production refuses an owner login on DATABASE_URL");
     need(!db || !mig || db.username !== mig.username, "DATABASE_URL and DATABASE_MIGRATE_URL must be different logins (the runtime one restricted)");

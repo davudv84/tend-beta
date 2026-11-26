@@ -7,8 +7,10 @@ import path from "node:path";
 import { test } from "node:test";
 import { checkProductionConfig, explainShape, parseEnvFile } from "../check-production-config.mjs";
 
+// Built at run time with a dummy password: a real deployment's URLs carry one, and no credential-shaped URL sits in a published file.
+const pgUrl = (user, host = "db.example.net", db = "tend") => { const u = new URL(`postgres://${host}/${db}?sslmode=require`); u.username = user; u.password = "dummy-not-a-secret"; return u.toString(); };
 const good = {
-  DATABASE_URL: "postgres://tend_app@db.example.net/tend?sslmode=require", DATABASE_MIGRATE_URL: "postgres://owner@db.example.net/tend?sslmode=require",
+  DATABASE_URL: pgUrl("tend_app"), DATABASE_MIGRATE_URL: pgUrl("owner"),
   TEND_CONTEXT_KEY: "c".repeat(10) + "0123456789abcdefghijklmnopqrstuv", TEND_MFA_KEY: "m".repeat(10) + "0123456789abcdefghijklmnopqrstuv",
   TEND_ADMIN_TOKEN: "a".repeat(4) + "0123456789abcdefghijklmnopqrstuvwxyz", TEND_APP_URL: "https://tend.example.net", TEND_ALERT_WEBHOOK_URL: "https://hooks.example.net/x",
 };
@@ -87,4 +89,16 @@ test("PROD-5 the two URLs must lead to the same database, and --expect-db / --ru
   assert.equal(code, 1);
   assert.match(out, /DATABASE_URL targets database "tend_preview_fresh", expected "neondb"/);
   assert.ok(!out.includes("pw-not-printed") && !out.includes("ep-x"), "no password and no host printed");
+});
+
+test("PROD-6 a connection string without its password (or without a user) is blocking, and named, before anything connects", () => {
+  const noPw = (user) => `postgres://${user}@db.example.net/tend?sslmode=require`;
+  const p1 = checkProductionConfig({ ...good, DATABASE_URL: noPw("tend_app") }).problems;
+  assert.ok(p1.some((p) => /DATABASE_URL has no password in it/.test(p)), p1.join(" | "));
+  const p2 = checkProductionConfig({ ...good, DATABASE_MIGRATE_URL: noPw("owner") }).problems;
+  assert.ok(p2.some((p) => /DATABASE_MIGRATE_URL has no password in it/.test(p)), p2.join(" | "));
+  const p3 = checkProductionConfig({ ...good, DATABASE_URL: "postgres://db.example.net/tend?sslmode=require" }).problems;
+  assert.ok(p3.some((p) => /DATABASE_URL names no database user/.test(p)));
+  // A local database may use trust or peer authentication without a password.
+  assert.ok(!checkProductionConfig({ ...good, DATABASE_URL: "postgres://tend_app@127.0.0.1:5432/tend" }).problems.some((p) => /password/.test(p)));
 });

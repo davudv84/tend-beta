@@ -719,6 +719,20 @@ function queries(raw: Raw, exec: (sql: string) => Promise<unknown>): Q {
  * already treats as verify-full but pg 9 will weaken to libpq's "encrypt without checking", so it is pinned here rather than in a variable the
  * provider's integration owns and may rewrite. A missing sslmode is pinned too unless the host is this machine; an explicit `disable` is left.
  */
+/**
+ * What is wrong with a database URL, in words that name the variable and never its value; "" when nothing is. Run before connecting, so a
+ * connection string pasted without its password (Neon's Connect dialog can hide it) is reported as that, not as the driver's
+ * "SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string".
+ */
+export function databaseUrlProblem(name: string, url: string): string {
+  let u: URL;
+  try { u = new URL(url); } catch { return `${name} is not a URL`; }
+  if (!/^postgres(ql)?:$/.test(u.protocol)) return `${name} does not start with postgres:// or postgresql://`;
+  if (!u.username) return `${name} names no database user`;
+  if (!u.password && !loopbackHost(u)) return `${name} has no password in it (copy the connection string again with the password shown)`;
+  return "";
+}
+
 export function verifiedTls(url: string): string {
   let u: URL;
   try { u = new URL(url); } catch { return url; }
@@ -865,6 +879,11 @@ async function open() {
   // Migrations run on a separate short-lived connection with the first, the pool the application uses is the second, and it must find the schema
   // already current: an outdated or unreadable schema stops the start instead of running with it. Without DATABASE_MIGRATE_URL both are one role, as before.
   const migrateUrl = process.env.DATABASE_MIGRATE_URL ?? "";
+  // A malformed or passwordless URL stops the start with a message that says which variable and what is wrong (no value is printed).
+  for (const [name, value] of [[process.env.DATABASE_URL ? "DATABASE_URL" : "POSTGRES_URL", url], ["DATABASE_MIGRATE_URL", migrateUrl]] as const) {
+    const problem = value ? databaseUrlProblem(name, value) : "";
+    if (problem) throw new Error(`database configuration: ${problem}. Nothing was changed in the database.`);
+  }
   if (migrateUrl) {
     if (!url) throw new Error("DATABASE_MIGRATE_URL is set without DATABASE_URL");
     if (migrateUrl === url) console.error("[tend] WARNING: DATABASE_MIGRATE_URL equals DATABASE_URL, so the application still runs as the schema owner: this is not a role split.");

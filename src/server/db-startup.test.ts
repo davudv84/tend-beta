@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { assertSchemaCurrent, getDb, memoryDb, migrate, MIGRATIONS } from "./db.ts";
+import { assertSchemaCurrent, databaseUrlProblem, getDb, memoryDb, migrate, MIGRATIONS } from "./db.ts";
 
 const g = globalThis as { __tendDb?: Promise<unknown> };
 async function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void>) {
@@ -69,4 +69,17 @@ test("migrate is idempotent, and a database that has TEND's tables but no migrat
   await db.exec(`INSERT INTO schema_migrations (version, applied_at) SELECT g, 0 FROM generate_series(1, ${MIGRATIONS.length}) g`);
   await migrate(db);
   await db.close();
+});
+
+test("a database URL without its password is refused before connecting, with a message that names the variable and never the value", async () => {
+  assert.match(databaseUrlProblem("DATABASE_URL", "postgres://tend_app@ep-x-pooler.eu.neon.tech/db?sslmode=require"), /DATABASE_URL has no password in it/);
+  assert.match(databaseUrlProblem("DATABASE_MIGRATE_URL", "not a url"), /DATABASE_MIGRATE_URL is not a URL/);
+  assert.match(databaseUrlProblem("DATABASE_URL", "mysql://u:p@h/db"), /does not start with postgres/);
+  assert.equal(databaseUrlProblem("DATABASE_URL", "postgres://tend@127.0.0.1:5432/db"), "", "local trust/peer auth needs no password");
+  // Through the real start-up: refused with that message; the host is never contacted (it does not exist), and nothing is printed of the URL.
+  await withEnv({ DATABASE_URL: "postgres://tend_runtime@unreachable.invalid/db?sslmode=require", DATABASE_MIGRATE_URL: undefined, POSTGRES_URL: undefined, VERCEL: undefined }, async () => {
+    const e = await rejects(getDb());
+    assert.match(e?.message ?? "", /database configuration: DATABASE_URL has no password in it.*Nothing was changed/);
+    assert.ok(!(e?.message ?? "").includes("unreachable.invalid"), "the URL itself is not in the message");
+  });
 });
