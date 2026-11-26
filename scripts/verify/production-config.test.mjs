@@ -102,3 +102,14 @@ test("PROD-6 a connection string without its password (or without a user) is blo
   // A local database may use trust or peer authentication without a password.
   assert.ok(!checkProductionConfig({ ...good, DATABASE_URL: "postgres://tend_app@127.0.0.1:5432/tend" }).problems.some((p) => /password/.test(p)));
 });
+
+test("PROD-7 --expect-endpoint pins both URLs to one Neon branch (its compute endpoint), pooled or direct, without printing the host", () => {
+  const neon = (user, host) => `postgres://${user}:${"p".repeat(24)}@${host}/tend?sslmode=require`;
+  const env = { ...good, DATABASE_URL: neon("tend_app", "ep-quiet-sky-a1b2c3-pooler.eu-central-1.aws.neon.tech"), DATABASE_MIGRATE_URL: neon("owner", "ep-quiet-sky-a1b2c3.eu-central-1.aws.neon.tech") };
+  assert.deepEqual(checkProductionConfig(env, { endpoint: "ep-quiet-sky-a1b2c3" }).problems, []);
+  const other = checkProductionConfig({ ...env, DATABASE_URL: neon("tend_app", "ep-other-main-z9y8x7-pooler.eu-central-1.aws.neon.tech") }, { endpoint: "ep-quiet-sky-a1b2c3" }).problems;
+  assert.equal(other.length, 1, other.join(" | "));
+  assert.match(other[0], /DATABASE_URL is not on the Neon endpoint "ep-quiet-sky-a1b2c3"/);
+  assert.ok(!other[0].includes("ep-other-main"), "the actual host is not printed");
+  assert.equal(checkProductionConfig({ ...env, DATABASE_MIGRATE_URL: neon("owner", "ep-other-main-z9y8x7.eu-central-1.aws.neon.tech") }, { endpoint: "ep-quiet-sky-a1b2c3" }).problems.length, 1);
+});

@@ -4,9 +4,10 @@
 // `node scripts/check-production-config.mjs .env.preflight`, then delete the file) or pass the variables in the environment.
 // Exit 0: nothing blocking (warnings may remain). Exit 1: a requirement is not met; the list says which and why. Never prints secrets.
 //
-// Optional identity checks (names only, never values): --expect-db <name>  --runtime-user <login>  --migrate-user <login>
-//   node scripts/check-production-config.mjs .env.preflight --expect-db tend_preview_fresh --runtime-user tend_runtime_v2 --migrate-user neondb_owner
-// They fail when a URL points at another database or logs in as another role, so a preview cannot be checked against the wrong database.
+// Optional identity checks (names only, never values): --expect-db <name>  --runtime-user <login>  --migrate-user <login>  --expect-endpoint <ep-id>
+//   node scripts/check-production-config.mjs .env.preflight --expect-db tend_preview_fresh --runtime-user tend_runtime --migrate-user neondb_owner --expect-endpoint ep-cool-name-a1b2c3d4
+// They fail when a URL points at another database, another Neon branch (each branch has its own compute endpoint, the ep-… id that starts the
+// host name; Neon Console → Branches → the branch → Computes) or logs in as another role, so a preview cannot be checked against the wrong database.
 import { readFileSync } from "node:fs";
 
 export function checkProductionConfig(env, expect = {}) {
@@ -48,6 +49,11 @@ export function checkProductionConfig(env, expect = {}) {
   }
   if (expect.db && db) need(dbName(db) === expect.db, `DATABASE_URL targets database "${dbName(db) || "none"}", expected "${expect.db}"`);
   if (expect.db && mig) need(dbName(mig) === expect.db, `DATABASE_MIGRATE_URL targets database "${dbName(mig) || "none"}", expected "${expect.db}"`);
+  // The Neon endpoint id is the host's first label without the pooled suffix (ep-x-y-123.region.aws.neon.tech, ep-x-y-123-pooler.…). Not a secret,
+  // but the actual host is still not printed: only whether it matches.
+  const endpoint = (u) => u.hostname.split(".")[0].replace(/-pooler$/, "");
+  if (expect.endpoint && db) need(endpoint(db) === expect.endpoint, `DATABASE_URL is not on the Neon endpoint "${expect.endpoint}" (another branch, or not Neon)`);
+  if (expect.endpoint && mig) need(endpoint(mig) === expect.endpoint, `DATABASE_MIGRATE_URL is not on the Neon endpoint "${expect.endpoint}" (another branch, or not Neon)`);
   if (expect.runtimeUser && db) need(decodeURIComponent(db.username) === expect.runtimeUser, `DATABASE_URL logs in as "${decodeURIComponent(db.username) || "none"}", expected the runtime login "${expect.runtimeUser}"`);
   if (expect.migrateUser && mig) need(decodeURIComponent(mig.username) === expect.migrateUser, `DATABASE_MIGRATE_URL logs in as "${decodeURIComponent(mig.username) || "none"}", expected the migration login "${expect.migrateUser}"`);
   for (const k of ["TEND_CONTEXT_KEY", "TEND_MFA_KEY", "TEND_ADMIN_TOKEN"]) for (const j of ["TEND_CONTEXT_KEY", "TEND_MFA_KEY", "TEND_ADMIN_TOKEN"])
@@ -92,7 +98,7 @@ export function parseEnvFile(text) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
   const flag = (n) => { const i = args.indexOf(`--${n}`); return i < 0 ? undefined : args.splice(i, 2)[1]; };
-  const expect = { db: flag("expect-db"), runtimeUser: flag("runtime-user"), migrateUser: flag("migrate-user") };
+  const expect = { db: flag("expect-db"), runtimeUser: flag("runtime-user"), migrateUser: flag("migrate-user"), endpoint: flag("expect-endpoint") };
   // From the file only when one is given: a variable left in the shell must not stand in for one the deployment lacks.
   const env = args[0] ? parseEnvFile(readFileSync(args[0], "utf8")) : { ...process.env };
   const { problems, warnings } = checkProductionConfig(env, expect);
