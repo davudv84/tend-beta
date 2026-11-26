@@ -228,3 +228,38 @@ test("DEPLOY-8 the build step also checks the secrets and settings the server ne
   assert.ok(out.some((l) => /TEND_ALLOW_MIGRATIONS is 1 \(migrations approved\)/.test(l)));
   assert.ok(!out.join("\n").includes(key) && !out.join("\n").includes(same), "no secret value in the output");
 });
+
+test("DEPLOY-9 a check-only build never deploys: it stops after the checks even when they all pass; outside Vercel it changes nothing", async () => {
+  const out: string[] = [];
+  // the targets fail here (no database to probe), so check-only adds nothing: still blocked by the problems
+  assert.equal(await runDeployCheck({ ...good }, (l: string) => out.push(l), { checkOnly: true }), 1);
+  assert.ok(!out.some((l) => /CHECK-ONLY/.test(l)));
+  // not a Vercel deployment: the marker does not break local or CI builds
+  out.length = 0;
+  assert.equal(await runDeployCheck({}, (l: string) => out.push(l), { checkOnly: true }), 0);
+});
+
+test("DEPLOY-10 when every check passes: a normal build continues (exit 0); a check-only build stops (exit 1) and says nothing was deployed", async () => {
+  const secrets = { TEND_CONTEXT_KEY: randomBytes(36).toString("base64url"), TEND_MFA_KEY: randomBytes(36).toString("base64url"), TEND_ADMIN_TOKEN: randomBytes(32).toString("hex"),
+    TEND_APP_URL: "https://tend-preview.example.app", TEND_DEMO: "0" };
+  // A database that answers the probes as a clean preview at schema 26 would (the probes' SQL is covered on real PostgreSQL by DEPLOY-PG).
+  const rows: Record<string, Record<string, unknown>[]> = {
+    runtime: [{ login: "tend_runtime", who: "tend_runtime", db: "tend_preview", sup: false, bypass: false, createrole: false, createdb: false, privileged: "", owns: false, createpublic: false, schema: true, keys: false, ro: "on" }],
+    owner: [{ login: "neondb_owner", db: "tend_preview", ro: "on", history: true, meta: true, owns: true }],
+    versions: Array.from({ length: SCHEMA_VERSION }, (_, i) => ({ version: i + 1 })),
+  };
+  const connect = async <T>(name: string, _url: string | undefined, fn: (all: (sql: string) => Promise<Record<string, unknown>[]>) => Promise<T>) =>
+    fn(async (sql) => (/schema_migrations ORDER BY/.test(sql) ? rows.versions : name === "DATABASE_URL" ? rows.runtime : rows.owner));
+  const out: string[] = [];
+  assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: false, connect }), 0, out.join("\n"));
+  assert.ok(out.some((l) => /Deployment check passed/.test(l)));
+  out.length = 0;
+  assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: true, connect }), 1);
+  assert.ok(out.some((l) => /CHECK-ONLY build .* Nothing is deployed\./.test(l)), out.join("\n"));
+  for (const v of Object.values(secrets)) if (v.length > 4) assert.ok(!out.join("\n").includes(v) || v === "0", "no secret value printed");
+  // pending migrations still block, whatever the mode
+  rows.versions = rows.versions.slice(0, -1);
+  out.length = 0;
+  assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: false, connect }), 1);
+  assert.ok(out.some((l) => /BLOCKING 1 migration\(s\) would run \(version 26\)/.test(l)), out.join("\n"));
+});
