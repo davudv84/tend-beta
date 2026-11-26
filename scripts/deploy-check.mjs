@@ -16,10 +16,26 @@ function verifiedTls(url) {
   return u.toString();
 }
 
+/** Why a connection failed, in words, from the error code only (the driver's message can name the host, so it is not printed). */
+export function connectReason(e) {
+  const known = {
+    "3D000": "the database named in the URL does not exist on this endpoint (wrong name, or it was created on another Neon branch)",
+    "28P01": "password authentication failed (wrong or rotated password)",
+    "28000": "the login is not allowed to connect (no such role, or no LOGIN / CONNECT)",
+    "42501": "permission denied (the login lacks CONNECT on the database)",
+    "53300": "too many connections", "57P03": "the database is starting up or not accepting connections",
+    ENOTFOUND: "the host name does not resolve", ECONNREFUSED: "connection refused", ETIMEDOUT: "connection timed out",
+  };
+  if (known[e.code]) return known[e.code];
+  if (/password authentication/i.test(e.message ?? "")) return known["28P01"];
+  if (/does not exist/i.test(e.message ?? "")) return "something named in the URL does not exist (database or role)";
+  return "see the code";
+}
+
 /** One connection, one READ ONLY transaction, rolled back: `all(sql)` for the probes. Connection errors name the variable, never the URL. */
 async function readOnly(name, url, fn) {
   const client = new pg.Client({ connectionString: verifiedTls(url), connectionTimeoutMillis: 15_000, query_timeout: 15_000 });
-  try { await client.connect(); } catch (e) { throw new Error(`${name}: could not connect (${e.code ?? "error"}${/password authentication/i.test(e.message) ? ": password authentication failed" : ""})`); }
+  try { await client.connect(); } catch (e) { throw new Error(`${name}: could not connect (${e.code ?? "error"}: ${connectReason(e)})`); }
   try {
     await client.query("BEGIN TRANSACTION READ ONLY");
     await client.query("SET LOCAL statement_timeout = 15000");

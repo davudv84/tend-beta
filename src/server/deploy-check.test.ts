@@ -10,7 +10,7 @@ import { test } from "node:test";
 import pg from "pg";
 import { getDb, migrate, MIGRATIONS, postgres, runtimeGrantsSql } from "./db.ts";
 import { checkTargets, probeOwner, probeRuntime, SCHEMA_VERSION } from "./deploy-check.mjs";
-import { runDeployCheck } from "../../scripts/deploy-check.mjs";
+import { connectReason, runDeployCheck } from "../../scripts/deploy-check.mjs";
 
 const PW_RT = `rt_${randomBytes(12).toString("hex")}`, PW_OWN = `own_${randomBytes(12).toString("hex")}`;
 const EP = "ep-quiet-sky-a1b2c3d4", PROD = "ep-bold-main-z9y8x7w6";
@@ -273,4 +273,11 @@ test("DEPLOY-11 the usual paste mistakes are named precisely: spaces around the 
     assert.ok(out.some((l) => /BLOCKING TEND_APP_URL is not exactly https:\/\/<host>: /.test(l) && want.test(l)), `${url}: ${out.join("\n")}`);
     assert.ok(!out.some((l) => l.includes("tend.example.app")), "the value is not printed");
   }
+});
+
+test("DEPLOY-12 connection failures are explained from the error code, without the driver's message (which can name the host)", () => {
+  assert.match(connectReason({ code: "3D000", message: 'database "x" does not exist' }), /does not exist on this endpoint/);
+  assert.match(connectReason({ code: "28P01", message: "x" }), /password authentication failed/);
+  assert.match(connectReason({ code: "ENOTFOUND", message: "getaddrinfo ENOTFOUND ep-x.aws.neon.tech" }), /does not resolve/);
+  assert.ok(!connectReason({ code: "XX999", message: "ep-secret-host.aws.neon.tech" }).includes("neon.tech"));
 });
