@@ -8,8 +8,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import pg from "pg";
-import { getDb, migrate, MIGRATIONS, postgres, runtimeGrantsSql } from "./db.ts";
-import { BUILTINS, checkTargets, probeOwner, probeRuntime, SCHEMA_VERSION, TEND_FUNCTIONS, TEND_TABLES } from "./deploy-check.mjs";
+import { getDb, migrate, MIGRATIONS, postgres, RLS_TABLES, runtimeGrantsSql } from "./db.ts";
+import { createHash } from "node:crypto";
+import { AUDIT_TABLES, BUILTINS, checkTargets, probeIsolation, probeOwner, probeRuntime, RLS_TABLES as CHECK_RLS_TABLES, SCHEMA_VERSION, TEND_FUNCTIONS, TEND_TABLES } from "./deploy-check.mjs";
 import { CHECK_ONLY_MARKER, connectReason, missingDatabase, runDeployCheck } from "../../scripts/deploy-check.mjs";
 
 const PW_RT = `rt_${randomBytes(12).toString("hex")}`, PW_OWN = `own_${randomBytes(12).toString("hex")}`;
@@ -177,7 +178,39 @@ test("DEPLOY-PG probes on real PostgreSQL: a clean runtime login passes, every e
     assert.deepEqual(ow1.problems, []); assert.equal(ow1.version, MIGRATIONS.length); assert.equal(ow1.pending, 0);
     const rt1 = await readOnly(urlFor(login), (all) => probeRuntime(all, targets));
     assert.deepEqual(rt1.problems, [], rt1.facts.join(" | "));
-    assert.ok(rt1.facts[0].includes("access to tend_context_keys false"));
+    assert.ok(rt1.facts.some((f) => f.includes("access to tend_context_keys false")), rt1.facts.join(" | "));
+
+    // 3b. schema, rights and isolation probes on the migrated database, with a context key installed as start-up does
+    const ctxKey = Buffer.from(randomBytes(36).toString("base64url"), "utf8");
+    const kid = createHash("sha256").update(ctxKey).digest("hex").slice(0, 16);
+    const sign = (ws: string, sys: string, nonce: string) => ({ kid, mac: createHash("sha256").update(Buffer.concat([ctxKey, createHash("sha256").update(`${ws}|${sys}|${nonce}`, "utf8").digest()])).digest("hex") });
+    const asOwnerDb = async (sql: string, ...p: unknown[]) => { const c = new pg.Client({ connectionString: urlFor(owner) }); await c.connect(); try { await c.query(sql, p); } finally { await c.end(); } };
+    const sch = await readOnly(urlFor(owner), (all) => probeOwner(all, targets, { contextKid: kid }));
+    assert.ok(sch.facts.some((f) => new RegExp(`schema: \\d+ tables, all owned by ${owner} true, RLS on 18/18 tenant tables, 18 policies \\(all TEND's tenant rule true\\), context keys 0, this deployment's key installed false`).test(f)), sch.facts.join(" | "));
+    await asOwnerDb("INSERT INTO tend_context_keys (kid, secret, created_at) VALUES ($1, $2, 0)", kid, ctxKey);
+    assert.ok((await readOnly(urlFor(owner), (all) => probeOwner(all, targets, { contextKid: kid }))).facts.some((f) => /context keys 1, this deployment's key installed true/.test(f)));
+    const rights = await readOnly(urlFor(login), (all) => probeRuntime(all, targets));
+    assert.deepEqual(rights.problems, []);
+    assert.ok(rights.facts.some((f) => /runtime rights: SELECT\+INSERT on the 18 tenant tables yes, may change audit log no, may write schema_migrations false/.test(f)), rights.facts.join(" | "));
+    const iso = await readOnly(urlFor(login), (all) => probeIsolation(all, sign));
+    assert.deepEqual(iso.problems, [], iso.facts.join(" | "));
+    assert.match(iso.facts[0], /unsigned context refused true, replayed signature refused true, correctly signed context accepted true \(workspace only, no system rights true\)/);
+    // a key that is not this deployment's: the correctly signed context is refused, and that is reported
+    const wrongSign = (ws: string, sys: string, nonce: string) => ({ ...sign(ws, sys, nonce), mac: "0".repeat(64) });
+    assert.ok((await readOnly(urlFor(login), (all) => probeIsolation(all, wrongSign))).problems.some((p) => /signed with this deployment's TEND_CONTEXT_KEY was refused/.test(p)));
+    // no key installed: unsigned contexts are accepted, and that is reported
+    await asOwnerDb("DELETE FROM tend_context_keys");
+    assert.ok((await readOnly(urlFor(login), (all) => probeIsolation(all, sign))).problems.some((p) => /an unsigned tenant context was accepted/.test(p)));
+    // an audit table the runtime may rewrite, and a policy that is not TEND's rule
+    await asOwnerDb(`GRANT UPDATE ON events TO ${login}`);
+    assert.ok((await readOnly(urlFor(login), (all) => probeRuntime(all, targets))).problems.some((p) => /may change, delete or truncate the audit log tables events/.test(p)));
+    await asOwnerDb(`REVOKE UPDATE ON events FROM ${login}`);
+    await asOwnerDb("CREATE POLICY open ON agents USING (true)");
+    assert.ok((await readOnly(urlFor(owner), (all) => probeOwner(all, targets))).problems.some((p) => /policies that are not TEND's tenant rule: agents\.open/.test(p)));
+    await asOwnerDb("DROP POLICY open ON agents");
+    await asOwnerDb("ALTER TABLE invitations DISABLE ROW LEVEL SECURITY");
+    assert.ok((await readOnly(urlFor(owner), (all) => probeOwner(all, targets))).problems.some((p) => /row-level security is off on: invitations/.test(p)));
+    await asOwnerDb("ALTER TABLE invitations ENABLE ROW LEVEL SECURITY");
 
     // 4. each escalation of the runtime login is caught (and undone after)
     const caught = async (grant: string, revoke: string, want: RegExp) => {
@@ -251,19 +284,28 @@ test("DEPLOY-10 when every check passes: a normal build continues (exit 0); a ch
     versions: Array.from({ length: SCHEMA_VERSION }, (_, i) => ({ version: i + 1 })),
     rights: [{ dbowner: "neondb_owner", ownsdb: true, schemaowner: "pg_database_owner", createpublic: true, usagepublic: true, grantusage: true, plpgsql: true, sqllang: true,
       nofunctions: "", version: 170000, foreigntables: "", foreignfunctions: "", existing: "agents" }],
+    grants: [{ noaccess: "", auditwrite: "", historywrite: false, temp: false }],
+    schema: [{ notowned: "", tables: 22, norls: "", nopolicy: "", policies: 18, keys: 1, ourkey: true }],
+    policies: [{ t: "agents", n: "tenant", q: "(( SELECT tend_ctx_system() AS tend_ctx_system) OR (workspace_id = x))", w: "(( SELECT tend_ctx_system() AS tend_ctx_system) OR (workspace_id = x))" }],
+    ctx: [] as Record<string, unknown>[],
   };
+  const refill = () => { rows.ctx = [{ valid: false, sys: false, ws: null }, { valid: false, sys: false, ws: null }, { valid: true, sys: false, ws: "probe_ws" }]; };
+  refill();
   const connect = async <T>(name: string, _url: string | undefined, fn: (all: (sql: string) => Promise<Record<string, unknown>[]>) => Promise<T>) =>
-    fn(async (sql) => (/schema_migrations ORDER BY/.test(sql) ? rows.versions : /pg_get_userbyid\(d\.datdba\)/.test(sql) ? rows.rights : name === "DATABASE_URL" ? rows.runtime : rows.owner));
+    fn(async (sql) => (/schema_migrations ORDER BY/.test(sql) ? rows.versions : /pg_get_userbyid\(d\.datdba\)/.test(sql) ? rows.rights
+      : /AS noaccess/.test(sql) ? rows.grants : /AS notowned/.test(sql) ? rows.schema : /FROM pg_policies WHERE/.test(sql) ? rows.policies
+      : /AS nonce/.test(sql) ? [{ nonce: "123.456" }] : /set_config/.test(sql) ? [{}] : /tend_ctx_valid\(\) AS valid/.test(sql) ? [rows.ctx.shift()!]
+      : name === "DATABASE_URL" ? rows.runtime : rows.owner));
   const out: string[] = [];
   assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: false, connect }), 0, out.join("\n"));
   assert.ok(out.some((l) => /Deployment check passed/.test(l)));
-  out.length = 0;
+  out.length = 0; refill();
   assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: true, connect }), 1);
   assert.ok(out.some((l) => /CHECK-ONLY build .* Nothing is deployed\./.test(l)), out.join("\n"));
   for (const v of Object.values(secrets)) if (v.length > 4) assert.ok(!out.join("\n").includes(v) || v === "0", "no secret value printed");
   // pending migrations still block, whatever the mode
   rows.versions = rows.versions.slice(0, -1);
-  out.length = 0;
+  out.length = 0; refill();
   assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: false, connect }), 1);
   assert.ok(out.some((l) => /BLOCKING 1 migration\(s\) would run \(version 26\)/.test(l)), out.join("\n"));
 });
@@ -365,4 +407,9 @@ test("DEPLOY-15 the check-only marker is uploaded to Vercel: .vercelignore (an a
   }
   assert.equal(excluded, false, ".vercelignore removes DEPLOY_CHECK_ONLY before the build");
   assert.equal(CHECK_ONLY_MARKER.pathname, path.join(root, "DEPLOY_CHECK_ONLY"), "the check looks for the marker at the repository root");
+});
+
+test("DEPLOY-16 the probe's tenant and audit tables are the server's (RLS_TABLES) and exist in the migrations", () => {
+  assert.deepEqual([...CHECK_RLS_TABLES].sort(), [...RLS_TABLES].sort());
+  for (const t of AUDIT_TABLES) assert.ok(TEND_TABLES.includes(t), t);
 });

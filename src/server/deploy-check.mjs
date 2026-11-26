@@ -30,6 +30,15 @@ export const TEND_TABLES = ["meta", "agents", "events", "reviews", "asks", "rate
   "central_policies", "workspaces", "users", "user_tokens", "onboarding", "notifications", "push_subscriptions", "notification_prefs", "tend_context_keys", "user_mfa", "invitations"];
 export const TEND_FUNCTIONS = ["events_append_only", "events_chain", "meta_protect_chain", "tend_ws_visible", "tend_agent_visible", "tend_user_visible", "tend_ctx_valid",
   "tend_ctx_workspace", "tend_ctx_system"];
+/** The tables row-level security covers (db.ts RLS_TABLES; deploy-check.test.ts keeps them equal). */
+export const RLS_TABLES = ["workspaces", "agents", "central_policies", "users", "notifications", "events", "reviews", "asks", "authorizations", "verification_runs",
+  "operator_sessions", "auth_events", "user_tokens", "onboarding", "push_subscriptions", "notification_prefs", "user_mfa", "invitations"];
+/** The append-only audit tables: the runtime login may add rows, never change, delete or truncate them. */
+export const AUDIT_TABLES = ["events", "auth_events", "verification_runs"];
+/** The shape of every TEND policy (the same rule as db.ts enableIsolation): system context, or the row's tenant; WITH CHECK equal to USING. */
+export const POLICY_SHAPE = /^\(\( SELECT tend_ctx_system\(\) AS tend_ctx_system\) OR /;
+const lit = (xs) => `ARRAY[${xs.map((x) => `'${String(x).replace(/'/g, "''")}'`).join(", ")}]`;
+
 /** The built-in functions the migrations' SQL and the start-up call (EXECUTE is PUBLIC by default; a hardened database could revoke it). */
 export const BUILTINS = ["pg_catalog.sha256(bytea)", "pg_catalog.convert_to(text,name)", "pg_catalog.encode(bytea,text)", "pg_catalog.current_setting(text,boolean)",
   "pg_catalog.set_config(text,text,boolean)", "pg_catalog.pg_advisory_xact_lock(bigint)"];
@@ -136,12 +145,25 @@ export async function probeRuntime(all, targets) {
   if (r.owns) problems.push(`the runtime login ${r.login} owns TEND's tables, or is a member of their owner`);
   if (r.createpublic) problems.push(`the runtime login ${r.login} may create objects in schema public (it would own them)`);
   if (r.keys === true) problems.push(`the runtime login ${r.login} has privileges on tend_context_keys (the context-signing keys must be readable by the owner only)`);
+  if (r.schema) {
+    const [g] = await all(`SELECT
+        coalesce((SELECT string_agg(t, ', ') FROM unnest(${lit(RLS_TABLES)}) AS t WHERE to_regclass('public.' || t) IS NOT NULL
+                   AND NOT (has_table_privilege(session_user, 'public.' || t, 'SELECT') AND has_table_privilege(session_user, 'public.' || t, 'INSERT'))), '') AS noaccess,
+        coalesce((SELECT string_agg(t, ', ') FROM unnest(${lit(AUDIT_TABLES)}) AS t WHERE has_table_privilege(session_user, 'public.' || t, 'UPDATE')
+                   OR has_table_privilege(session_user, 'public.' || t, 'DELETE') OR has_table_privilege(session_user, 'public.' || t, 'TRUNCATE')), '') AS auditwrite,
+        has_table_privilege(session_user, 'public.schema_migrations', 'INSERT') OR has_table_privilege(session_user, 'public.schema_migrations', 'UPDATE')
+          OR has_table_privilege(session_user, 'public.schema_migrations', 'DELETE') AS historywrite,
+        has_database_privilege(session_user, current_database(), 'TEMPORARY') AS temp`);
+    if (g.auditwrite) problems.push(`the runtime login ${r.login} may change, delete or truncate the audit log tables ${g.auditwrite}`);
+    if (g.historywrite) problems.push(`the runtime login ${r.login} may write schema_migrations`);
+    facts.push(`runtime rights: SELECT+INSERT on the ${RLS_TABLES.length} tenant tables ${g.noaccess ? `MISSING on ${g.noaccess} (granted at the next start)` : "yes"}, may change audit log ${g.auditwrite || "no"}, may write schema_migrations ${g.historywrite}, TEMPORARY ${g.temp}${g.temp ? " (revoked at the next start)" : ""}`);
+  }
   facts.push(`runtime login ${r.login}: database ${r.db}, superuser ${r.sup}, BYPASSRLS ${r.bypass}, CREATEROLE ${r.createrole}, CREATEDB ${r.createdb}, privileged memberships ${r.privileged || "none"}, owns tables ${r.owns}, may create in public ${r.createpublic}, access to tend_context_keys ${r.keys === null ? "n/a (no schema yet)" : r.keys}`);
   return { problems, facts, schema: !!r.schema };
 }
 
 /** Read-only probe of the owner login and of the schema state. Same `all` contract as probeRuntime. */
-export async function probeOwner(all, targets, { allowMigrations = false, expectedVersion = SCHEMA_VERSION } = {}) {
+export async function probeOwner(all, targets, { allowMigrations = false, expectedVersion = SCHEMA_VERSION, contextKid = "" } = {}) {
   const [r] = await all(`SELECT session_user AS login, current_database() AS db, current_setting('transaction_read_only') AS ro,
       to_regclass('public.schema_migrations') IS NOT NULL AS history, to_regclass('public.meta') IS NOT NULL AS meta,
       (SELECT pg_has_role(session_user, c.relowner, 'MEMBER') FROM pg_class c WHERE c.oid = to_regclass('public.agents')) AS owns`);
@@ -162,7 +184,6 @@ export async function probeOwner(all, targets, { allowMigrations = false, expect
   // REVOKE/GRANT TEMPORARY ON DATABASE), create in public (tables, indexes, functions, triggers, policies), grant USAGE on public to the
   // runtime login, use the languages plpgsql and sql, execute the built-ins, PostgreSQL 11+ (sha256). And nothing already in public may
   // collide with what the migrations create: CREATE TABLE would fail, CREATE OR REPLACE FUNCTION would replace someone else's function.
-  const lit = (xs) => `ARRAY[${xs.map((x) => `'${x.replace(/'/g, "''")}'`).join(", ")}]`;
   const [c] = await all(`SELECT pg_get_userbyid(d.datdba) AS dbowner, pg_has_role(session_user, d.datdba, 'MEMBER') AS ownsdb,
       (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'public') AS schemaowner,
       has_schema_privilege(session_user, 'public', 'CREATE') AS createpublic, has_schema_privilege(session_user, 'public', 'USAGE') AS usagepublic,
@@ -191,7 +212,58 @@ export async function probeOwner(all, targets, { allowMigrations = false, expect
     if (!applied.length && !r.meta && c.existing) problems.push(`schema public has no migration history but already holds ${c.existing}: CREATE TABLE in migration 1 would fail; use an empty database`);
     facts.push(`owner rights: owns database ${c.ownsdb} (owner ${c.dbowner}), CREATE in public ${c.createpublic} (schema owner ${c.schemaowner}), may grant USAGE on public ${c.grantusage}, languages plpgsql ${c.plpgsql} / sql ${c.sqllang}, built-ins ${c.nofunctions ? `missing ${c.nofunctions}` : "all executable"}, PostgreSQL ${c.version}, conflicting objects ${c.foreigntables || c.foreignfunctions || (!applied.length && c.existing) || "none"}`);
   }
+  // Only for the real owner: another login cannot read tend_context_keys (that is the point), and was already reported above.
+  if (applied.length && r.owns === true) {
+    const [o] = await all(`SELECT
+        coalesce((SELECT string_agg(c.relname, ', ' ORDER BY c.relname) FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p')
+                   AND NOT pg_has_role(session_user, c.relowner, 'MEMBER')), '') AS notowned,
+        (SELECT count(*) FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p'))::int AS tables,
+        coalesce((SELECT string_agg(t, ', ') FROM unnest(${lit(RLS_TABLES)}) AS t WHERE NOT coalesce((SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = to_regclass('public.' || t)), false)), '') AS norls,
+        coalesce((SELECT string_agg(t, ', ') FROM unnest(${lit(RLS_TABLES)}) AS t WHERE NOT EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = t)), '') AS nopolicy,
+        (SELECT count(*) FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = ANY(${lit(RLS_TABLES)}))::int AS policies,
+        (SELECT count(*) FROM tend_context_keys)::int AS keys,
+        ${contextKid && /^[0-9a-f]{16}$/.test(contextKid) ? `EXISTS (SELECT 1 FROM tend_context_keys WHERE kid = '${contextKid}')` : "NULL::boolean"} AS ourkey`);
+    const pol = await all(`SELECT tablename AS t, policyname AS n, coalesce(qual, '') AS q, coalesce(with_check, '') AS w FROM pg_policies WHERE schemaname = 'public' AND tablename = ANY(${lit(RLS_TABLES)})`);
+    const loose = pol.filter((p) => !(POLICY_SHAPE.test(p.q) && p.w === p.q)).map((p) => `${p.t}.${p.n}`);
+    if (o.notowned) problems.push(`tables in public not owned by ${r.login}: ${o.notowned}`);
+    if (o.norls) problems.push(`row-level security is off on: ${o.norls}`);
+    if (o.nopolicy) problems.push(`tenant tables without a policy: ${o.nopolicy}`);
+    if (loose.length) problems.push(`policies that are not TEND's tenant rule: ${loose.join(", ")}`);
+    facts.push(`schema: ${o.tables} tables, all owned by ${r.login} ${!o.notowned}, RLS on ${RLS_TABLES.length - (o.norls ? o.norls.split(", ").length : 0)}/${RLS_TABLES.length} tenant tables, ${o.policies} policies (all TEND's tenant rule ${!loose.length}), context keys ${o.keys}${o.ourkey === null ? "" : `, this deployment's key installed ${o.ourkey}${o.ourkey ? "" : " (installed at the next start)"}`}`);
+  }
   const version = applied.length ? Math.max(...applied) : 0;
   facts.push(`owner login ${r.login}: database ${r.db}, owns tables ${r.owns === null ? "n/a (no schema yet)" : r.owns}, schema version ${version}${applied.length ? "" : " (empty database)"}, release expects ${expectedVersion}, pending migrations ${missing.length}${missing.length ? (allowMigrations ? " (approved: TEND_ALLOW_MIGRATIONS=1)" : " (not approved)") : ""}`);
   return { problems, facts, version, pending: missing.length };
+}
+
+/**
+ * Tenant isolation, as the runtime login, read only: with the context keys installed, a forged tenant context (plain settings, or a
+ * signature for another transaction) must be refused by tend_ctx_valid(), and a context signed with this deployment's TEND_CONTEXT_KEY for
+ * THIS transaction must be accepted. Only transaction-local settings change, inside a READ ONLY transaction that is rolled back. `sign` is
+ * (workspace, system, nonce) => { kid, mac } as db.ts contextSignature computes it; the key itself never leaves the caller.
+ */
+export async function probeIsolation(all, sign) {
+  const problems = [], facts = [];
+  const tx = "pg_backend_pid()::text || '.' || (extract(epoch FROM now()) * 1000000)::bigint::text"; // db.ts TX_BINDING
+  const ctx = (ws, sys, nonce, kid, mac) => all(`SELECT set_config('tend.workspace', '${ws}', true), set_config('tend.system', '${sys}', true),
+      set_config('tend.ctx_nonce', '${nonce}', true), set_config('tend.ctx_kid', '${kid}', true), set_config('tend.ctx_mac', '${mac}', true)`);
+  const state = async () => (await all("SELECT tend_ctx_valid() AS valid, tend_ctx_system() AS sys, tend_ctx_workspace() AS ws, (SELECT count(*) FROM agents)::int AS agents"))[0];
+  const [{ nonce }] = await all(`SELECT ${tx} AS nonce`);
+  if (!/^[0-9]+\.[0-9]+$/.test(nonce)) return { problems: ["internal: could not read the transaction binding"], facts };
+  // 1. forged: system flag and a workspace, no signature
+  await ctx("probe_ws", "on", "", "", "");
+  const forged = await state();
+  // 2. forged: a signature for this workspace, but made for another transaction
+  const stale = sign("probe_ws", "", "1.1");
+  await ctx("probe_ws", "", nonce, stale.kid, stale.mac);
+  const replay = await state();
+  // 3. signed for this transaction with this deployment's key
+  const good = sign("probe_ws", "", nonce);
+  await ctx("probe_ws", "", nonce, good.kid, good.mac);
+  const signed = await state();
+  if (forged.valid || forged.sys || forged.ws) problems.push("an unsigned tenant context was accepted (no context key installed, or tend_ctx_valid() replaced): tenant isolation would not hold");
+  if (replay.valid || replay.ws) problems.push("a context signed for another transaction was accepted: signatures can be replayed");
+  if (!signed.valid || signed.ws !== "probe_ws" || signed.sys) problems.push("a context signed with this deployment's TEND_CONTEXT_KEY was refused: the installed key is not this deployment's (every request would see nothing)");
+  facts.push(`tenant isolation (as the runtime login, read only): unsigned context refused ${!forged.valid && !forged.sys && !forged.ws}, replayed signature refused ${!replay.valid && !replay.ws}, correctly signed context accepted ${!!signed.valid && signed.ws === "probe_ws"} (workspace only, no system rights ${!signed.sys})`);
+  return { problems, facts };
 }

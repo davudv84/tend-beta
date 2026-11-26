@@ -3,9 +3,10 @@
 // production build it validates the REAL environment variables (Sensitive ones included, which `vercel env pull` cannot show) and runs the
 // read-only database checks; any problem exits 1, so the build fails and nothing is deployed. Elsewhere (local, CI) it reports that it does
 // not apply and exits 0. It never writes to a database and never prints a password, token, connection string or host.
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import pg from "pg";
-import { checkTargets, probeOwner, probeRuntime } from "../src/server/deploy-check.mjs";
+import { checkTargets, probeIsolation, probeOwner, probeRuntime } from "../src/server/deploy-check.mjs";
 import { checkProductionConfig } from "./check-production-config.mjs";
 
 // The server's TLS rule (db.ts verifiedTls): anything weaker than verify-full is upgraded; never downgraded.
@@ -102,17 +103,27 @@ export async function runDeployCheck(env = process.env, log = console.log, { che
     facts.push(`settings present: ${present.join(", ")}`);
   }
   if (t.enforced && !problems.length) {
+    // The context key as db.ts contextKey/contextSignature use it. Only its 16-hex id and per-transaction MACs leave this function.
+    const key = Buffer.from(env.TEND_CONTEXT_KEY ?? "", "utf8");
+    const kid = createHash("sha256").update(key).digest("hex").slice(0, 16);
+    const sign = (ws, sys, nonce) => ({ kid, mac: createHash("sha256").update(Buffer.concat([key, createHash("sha256").update(`${ws}|${sys}|${nonce}`, "utf8").digest()])).digest("hex") });
     // Each login is probed on its own, so one failing connection does not hide what the other finds.
+    let schema = false;
     for (const [name, probe] of [
       ["DATABASE_URL", (all) => probeRuntime(all, t.targets)],
-      ["DATABASE_MIGRATE_URL", (all) => probeOwner(all, t.targets, { allowMigrations: env.TEND_ALLOW_MIGRATIONS === "1" })],
+      ["DATABASE_MIGRATE_URL", (all) => probeOwner(all, t.targets, { allowMigrations: env.TEND_ALLOW_MIGRATIONS === "1", contextKid: kid })],
     ]) {
-      try { const r = await connect(name, env[name], probe); problems.push(...r.problems); facts.push(...r.facts); }
+      try { const r = await connect(name, env[name], probe); problems.push(...r.problems); facts.push(...r.facts); if (name === "DATABASE_URL") schema = !!r.schema; }
       catch (e) {
         problems.push(e.message);
         if (e.code === "3D000") problems.push(await missingDatabase(name, env[name], t.targets.db, connect));
       }
     }
+    // Isolation needs the schema and a clean runtime login; on an empty database it is the server's start-up self-test that proves it.
+    if (schema && !problems.length) {
+      try { const r = await connect("DATABASE_URL", env.DATABASE_URL, (all) => probeIsolation(all, sign)); problems.push(...r.problems); facts.push(...r.facts); }
+      catch (e) { problems.push(`tenant isolation probe failed: ${e.code ?? "error"}`); }
+    } else if (!schema) facts.push("tenant isolation probe not run: no schema yet (the server's start-up self-test checks it after migrating)");
   } else if (t.enforced) facts.push("database checks not run: the variables above must be fixed first (nothing was connected to)");
   log(`TEND deployment check (VERCEL_ENV=${t.vercelEnv}${env.VERCEL_GIT_COMMIT_REF ? `, branch ${env.VERCEL_GIT_COMMIT_REF}` : ""})`);
   for (const f of facts) log(`  info     ${f}`);
