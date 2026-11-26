@@ -3,14 +3,14 @@
 // TEND_TEST_DATABASE_URL points at a local superuser (as rls.test.ts).
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import pg from "pg";
 import { getDb, migrate, MIGRATIONS, postgres, runtimeGrantsSql } from "./db.ts";
 import { BUILTINS, checkTargets, probeOwner, probeRuntime, SCHEMA_VERSION, TEND_FUNCTIONS, TEND_TABLES } from "./deploy-check.mjs";
-import { connectReason, missingDatabase, runDeployCheck } from "../../scripts/deploy-check.mjs";
+import { CHECK_ONLY_MARKER, connectReason, missingDatabase, runDeployCheck } from "../../scripts/deploy-check.mjs";
 
 const PW_RT = `rt_${randomBytes(12).toString("hex")}`, PW_OWN = `own_${randomBytes(12).toString("hex")}`;
 const EP = "ep-quiet-sky-a1b2c3d4", PROD = "ep-bold-main-z9y8x7w6";
@@ -351,4 +351,18 @@ test("DEPLOY-PG-OWNER a database the owner does not own, no CREATE in public, an
     for (const r of [other, owner]) await admin.query(`DROP ROLE IF EXISTS ${r}`).catch(() => {});
     await admin.end();
   }
+});
+
+test("DEPLOY-15 the check-only marker is uploaded to Vercel: .vercelignore (an allowlist) lets DEPLOY_CHECK_ONLY through", () => {
+  // Vercel removes every file .vercelignore excludes BEFORE the build; a marker removed there is never seen by the check, and a check-only
+  // build deploys. This happened once (dpl_AiCtagLpFAqUZEVdfbfVRozayeE6): the rules below are read the way Vercel applies them.
+  const root = path.join(import.meta.dirname, "..", "..");
+  const rules = readFileSync(path.join(root, ".vercelignore"), "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  let excluded = false;
+  for (const r of rules) {
+    const neg = r.startsWith("!"), pat = neg ? r.slice(1) : r;
+    if (pat === "/*" || pat === "*" || pat === "/DEPLOY_CHECK_ONLY" || pat === "DEPLOY_CHECK_ONLY" || pat === "**/DEPLOY_CHECK_ONLY") excluded = !neg;
+  }
+  assert.equal(excluded, false, ".vercelignore removes DEPLOY_CHECK_ONLY before the build");
+  assert.equal(CHECK_ONLY_MARKER.pathname, path.join(root, "DEPLOY_CHECK_ONLY"), "the check looks for the marker at the repository root");
 });
