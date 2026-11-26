@@ -9,7 +9,7 @@ import path from "node:path";
 import { test } from "node:test";
 import pg from "pg";
 import { getDb, migrate, MIGRATIONS, postgres, runtimeGrantsSql } from "./db.ts";
-import { checkTargets, probeOwner, probeRuntime, SCHEMA_VERSION } from "./deploy-check.mjs";
+import { BUILTINS, checkTargets, probeOwner, probeRuntime, SCHEMA_VERSION, TEND_FUNCTIONS, TEND_TABLES } from "./deploy-check.mjs";
 import { connectReason, missingDatabase, runDeployCheck } from "../../scripts/deploy-check.mjs";
 
 const PW_RT = `rt_${randomBytes(12).toString("hex")}`, PW_OWN = `own_${randomBytes(12).toString("hex")}`;
@@ -155,7 +155,9 @@ test("DEPLOY-PG probes on real PostgreSQL: a clean runtime login passes, every e
     const ow0 = await readOnly(urlFor(owner), (all) => probeOwner(all, targets));
     assert.equal(ow0.pending, MIGRATIONS.length);
     assert.ok(ow0.problems.some((p) => new RegExp(`^${MIGRATIONS.length} migration\\(s\\) would run .* set TEND_ALLOW_MIGRATIONS=1`).test(p)), ow0.problems.join(" | "));
-    assert.deepEqual((await readOnly(urlFor(owner), (all) => probeOwner(all, targets, { allowMigrations: true }))).problems, []);
+    const ok0 = await readOnly(urlFor(owner), (all) => probeOwner(all, targets, { allowMigrations: true }));
+    assert.deepEqual(ok0.problems, []);
+    assert.ok(ok0.facts.some((f) => new RegExp(`owner rights: owns database true \\(owner ${owner}\\), CREATE in public true .* may grant USAGE on public true, languages plpgsql true / sql true, built-ins all executable, PostgreSQL \\d+, conflicting objects none`).test(f)), ok0.facts.join(" | "));
     assert.equal((await admin.query(`SELECT 1 FROM pg_database WHERE datname = '${name}'`)).rowCount, 1);
     const tables = async () => { const c = new pg.Client({ connectionString: urlFor(owner) }); await c.connect(); try { return (await c.query("SELECT count(*)::int AS n FROM pg_class WHERE relnamespace = 'public'::regnamespace")).rows[0].n; } finally { await c.end(); } };
     assert.equal(await tables(), 0, "the probes created nothing");
@@ -247,9 +249,11 @@ test("DEPLOY-10 when every check passes: a normal build continues (exit 0); a ch
     runtime: [{ login: "tend_runtime", who: "tend_runtime", db: "tend_preview", sup: false, bypass: false, createrole: false, createdb: false, privileged: "", owns: false, createpublic: false, schema: true, keys: false, ro: "on" }],
     owner: [{ login: "neondb_owner", db: "tend_preview", ro: "on", history: true, meta: true, owns: true }],
     versions: Array.from({ length: SCHEMA_VERSION }, (_, i) => ({ version: i + 1 })),
+    rights: [{ dbowner: "neondb_owner", ownsdb: true, schemaowner: "pg_database_owner", createpublic: true, usagepublic: true, grantusage: true, plpgsql: true, sqllang: true,
+      nofunctions: "", version: 170000, foreigntables: "", foreignfunctions: "", existing: "agents" }],
   };
   const connect = async <T>(name: string, _url: string | undefined, fn: (all: (sql: string) => Promise<Record<string, unknown>[]>) => Promise<T>) =>
-    fn(async (sql) => (/schema_migrations ORDER BY/.test(sql) ? rows.versions : name === "DATABASE_URL" ? rows.runtime : rows.owner));
+    fn(async (sql) => (/schema_migrations ORDER BY/.test(sql) ? rows.versions : /pg_get_userbyid\(d\.datdba\)/.test(sql) ? rows.rights : name === "DATABASE_URL" ? rows.runtime : rows.owner));
   const out: string[] = [];
   assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: false, connect }), 0, out.join("\n"));
   assert.ok(out.some((l) => /Deployment check passed/.test(l)));
@@ -308,4 +312,43 @@ test("DEPLOY-13 database missing (3D000): the endpoint's own database list tells
   assert.deepEqual(seen, ["DATABASE_URL/tend_preview", "DATABASE_URL/postgres", "DATABASE_MIGRATE_URL/tend_preview", "DATABASE_MIGRATE_URL/postgres"]);
   assert.ok(out.some((l) => /BLOCKING DATABASE_MIGRATE_URL: the endpoint in this URL has the databases "neondb", "postgres"/.test(l)), out.join("\n"));
   leaksNothing(out);
+});
+
+test("DEPLOY-14 the owner probe's lists are exactly what migrations 1–26 create and call", () => {
+  const all = MIGRATIONS.join("\n");
+  const uniq = (re: RegExp) => [...new Set([...all.matchAll(re)].map((m) => m[1].toLowerCase()))].sort();
+  assert.deepEqual([...TEND_TABLES].sort(), uniq(/CREATE TABLE (?:IF NOT EXISTS )?(\w+)/gi));
+  assert.deepEqual([...TEND_FUNCTIONS].sort(), uniq(/CREATE (?:OR REPLACE )?FUNCTION (?:public\.)?(\w+)/gi));
+  assert.deepEqual(uniq(/LANGUAGE (\w+)/gi), ["plpgsql", "sql"], "a new function language must be added to the owner probe");
+  for (const f of ["sha256(", "convert_to(", "encode(", "current_setting("]) assert.ok(all.includes(f) && BUILTINS.some((b) => b.includes(f)), f);
+});
+
+test("DEPLOY-PG-OWNER a database the owner does not own, no CREATE in public, and objects of another role are all caught before migrating", { skip }, async () => {
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const tag = randomBytes(4).toString("hex"), name = `tend_dco2_${tag}`, owner = `tend_dco2o_${tag}`, other = `tend_dco2x_${tag}`;
+  const urlFor = (user: string) => { const u = new URL(URL_); u.username = user; u.password = ROLE_PW; u.pathname = `/${name}`; return u.toString(); };
+  const asSuper = async (sql: string) => { const u = new URL(URL_); u.pathname = `/${name}`; const c = new pg.Client({ connectionString: u.toString() }); await c.connect(); try { await c.query(sql); } finally { await c.end(); } };
+  try {
+    await admin.query(`CREATE ROLE ${owner} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER CREATEDB CREATEROLE NOBYPASSRLS`);
+    await admin.query(`CREATE ROLE ${other} NOLOGIN`);
+    await admin.query(`CREATE DATABASE ${name}`); // owned by the test superuser, not by the migration login
+    await asSuper("REVOKE CREATE ON SCHEMA public FROM PUBLIC");
+    const r1 = await readOnly(urlFor(owner), (all) => probeOwner(all, { db: name, migrateUser: owner }, { allowMigrations: true }));
+    assert.ok(r1.problems.some((p) => new RegExp(`${owner} does not own database ${name} \\(its owner is tend_test\\)`).test(p)), r1.problems.join(" | "));
+    assert.ok(r1.problems.some((p) => /may not CREATE in schema public/.test(p)));
+    assert.ok(r1.problems.some((p) => /may not grant USAGE on schema public/.test(p)));
+    // the owner owns the database now, but another role's table and function sit where the migrations will create theirs
+    await admin.query(`ALTER DATABASE ${name} OWNER TO ${owner}`);
+    await asSuper(`CREATE TABLE public.agents (id text); ALTER TABLE public.agents OWNER TO ${other}; CREATE FUNCTION public.tend_ctx_valid() RETURNS boolean LANGUAGE sql AS 'SELECT true'; ALTER FUNCTION public.tend_ctx_valid() OWNER TO ${other}`);
+    const r2 = await readOnly(urlFor(owner), (all) => probeOwner(all, { db: name, migrateUser: owner }, { allowMigrations: true }));
+    assert.ok(!r2.problems.some((p) => /does not own database|may not CREATE/.test(p)), r2.problems.join(" | "));
+    assert.ok(r2.problems.some((p) => /schema public already has agents, owned by another role/.test(p)), r2.problems.join(" | "));
+    assert.ok(r2.problems.some((p) => /function\(s\) tend_ctx_valid owned by another role/.test(p)));
+    assert.ok(r2.problems.some((p) => /no migration history but already holds agents/.test(p)));
+  } finally {
+    await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`).catch(() => {});
+    for (const r of [other, owner]) await admin.query(`DROP ROLE IF EXISTS ${r}`).catch(() => {});
+    await admin.end();
+  }
 });

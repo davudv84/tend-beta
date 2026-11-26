@@ -25,6 +25,15 @@
 /** The migration count this release ships (db.ts MIGRATIONS.length; deploy-check.test.ts keeps them equal). */
 export const SCHEMA_VERSION = 26;
 
+/** What migrations 1–26 create in schema public (deploy-check.test.ts keeps these lists equal to db.ts MIGRATIONS). */
+export const TEND_TABLES = ["meta", "agents", "events", "reviews", "asks", "rate_limits", "authorizations", "verification_runs", "operator_sessions", "auth_events",
+  "central_policies", "workspaces", "users", "user_tokens", "onboarding", "notifications", "push_subscriptions", "notification_prefs", "tend_context_keys", "user_mfa", "invitations"];
+export const TEND_FUNCTIONS = ["events_append_only", "events_chain", "meta_protect_chain", "tend_ws_visible", "tend_agent_visible", "tend_user_visible", "tend_ctx_valid",
+  "tend_ctx_workspace", "tend_ctx_system"];
+/** The built-in functions the migrations' SQL and the start-up call (EXECUTE is PUBLIC by default; a hardened database could revoke it). */
+export const BUILTINS = ["pg_catalog.sha256(bytea)", "pg_catalog.convert_to(text,name)", "pg_catalog.encode(bytea,text)", "pg_catalog.current_setting(text,boolean)",
+  "pg_catalog.set_config(text,text,boolean)", "pg_catalog.pg_advisory_xact_lock(bigint)"];
+
 const IDENT = /^[a-z_][a-z0-9_]{0,62}$/;
 const ENDPOINT = /^ep-[a-z0-9]+(-[a-z0-9]+)*$/;
 const LOCAL = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -149,6 +158,39 @@ export async function probeOwner(all, targets, { allowMigrations = false, expect
   if (!applied.length && r.meta) problems.push("database_not_baselined: TEND's tables exist but schema_migrations records no migration; nothing will be migrated over them");
   else if (missing.length && !allowMigrations)
     problems.push(`${missing.length} migration(s) would run (version${missing.length > 1 ? "s" : ""} ${missing.length > 3 ? `${missing[0]}–${missing.at(-1)}` : missing.join(", ")}) and this deployment has no approval: set TEND_ALLOW_MIGRATIONS=1 for it to allow them`);
+  // What the migrations and the start-up need from the owner, read from the catalogs (nothing is tried): own the database (start-up runs
+  // REVOKE/GRANT TEMPORARY ON DATABASE), create in public (tables, indexes, functions, triggers, policies), grant USAGE on public to the
+  // runtime login, use the languages plpgsql and sql, execute the built-ins, PostgreSQL 11+ (sha256). And nothing already in public may
+  // collide with what the migrations create: CREATE TABLE would fail, CREATE OR REPLACE FUNCTION would replace someone else's function.
+  const lit = (xs) => `ARRAY[${xs.map((x) => `'${x.replace(/'/g, "''")}'`).join(", ")}]`;
+  const [c] = await all(`SELECT pg_get_userbyid(d.datdba) AS dbowner, pg_has_role(session_user, d.datdba, 'MEMBER') AS ownsdb,
+      (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'public') AS schemaowner,
+      has_schema_privilege(session_user, 'public', 'CREATE') AS createpublic, has_schema_privilege(session_user, 'public', 'USAGE') AS usagepublic,
+      has_schema_privilege(session_user, 'public', 'USAGE WITH GRANT OPTION')
+        OR pg_has_role(session_user, (SELECT nspowner FROM pg_namespace WHERE nspname = 'public'), 'MEMBER') AS grantusage,
+      has_language_privilege(session_user, 'plpgsql', 'USAGE') AS plpgsql, has_language_privilege(session_user, 'sql', 'USAGE') AS sqllang,
+      coalesce((SELECT string_agg(f, ', ') FROM unnest(${lit(BUILTINS)}) AS f WHERE to_regprocedure(f) IS NULL OR NOT has_function_privilege(session_user, to_regprocedure(f), 'EXECUTE')), '') AS nofunctions,
+      current_setting('server_version_num')::int AS version,
+      coalesce((SELECT string_agg(c.relname, ', ' ORDER BY c.relname) FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace
+                 AND c.relname = ANY(${lit(TEND_TABLES)}) AND NOT pg_has_role(session_user, c.relowner, 'MEMBER')), '') AS foreigntables,
+      coalesce((SELECT string_agg(DISTINCT p.proname, ', ') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+                 AND p.proname = ANY(${lit(TEND_FUNCTIONS)}) AND NOT pg_has_role(session_user, p.proowner, 'MEMBER')), '') AS foreignfunctions,
+      coalesce((SELECT string_agg(c.relname, ', ' ORDER BY c.relname) FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace
+                 AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f') AND c.relname = ANY(${lit(TEND_TABLES)})), '') AS existing
+    FROM pg_database d WHERE d.datname = current_database()`);
+  if (c) {
+    if (!c.ownsdb) problems.push(`the owner login ${r.login} does not own database ${r.db} (its owner is ${c.dbowner}): start-up must REVOKE/GRANT TEMPORARY ON DATABASE, which only the owner may do`);
+    if (!c.createpublic) problems.push(`the owner login ${r.login} may not CREATE in schema public (owned by ${c.schemaowner}): the migrations create their tables and functions there`);
+    if (!c.usagepublic) problems.push(`the owner login ${r.login} has no USAGE on schema public`);
+    if (!c.grantusage) problems.push(`the owner login ${r.login} may not grant USAGE on schema public to the runtime login (not the schema owner ${c.schemaowner}, no grant option)`);
+    if (!c.plpgsql || !c.sqllang) problems.push(`the owner login ${r.login} may not use the function language${!c.plpgsql && !c.sqllang ? "s plpgsql and sql" : c.plpgsql ? " sql" : " plpgsql"}`);
+    if (c.nofunctions) problems.push(`the owner login ${r.login} may not execute, or the server lacks: ${c.nofunctions}`);
+    if (Number(c.version) < 110000) problems.push(`PostgreSQL ${c.version} is too old: the migrations need 11 or later (sha256)`);
+    if (c.foreigntables) problems.push(`schema public already has ${c.foreigntables}, owned by another role: the migrations would fail on them or leave them out of TEND's control`);
+    if (c.foreignfunctions) problems.push(`schema public already has function(s) ${c.foreignfunctions} owned by another role: CREATE OR REPLACE would fail or the start-up would refuse them`);
+    if (!applied.length && !r.meta && c.existing) problems.push(`schema public has no migration history but already holds ${c.existing}: CREATE TABLE in migration 1 would fail; use an empty database`);
+    facts.push(`owner rights: owns database ${c.ownsdb} (owner ${c.dbowner}), CREATE in public ${c.createpublic} (schema owner ${c.schemaowner}), may grant USAGE on public ${c.grantusage}, languages plpgsql ${c.plpgsql} / sql ${c.sqllang}, built-ins ${c.nofunctions ? `missing ${c.nofunctions}` : "all executable"}, PostgreSQL ${c.version}, conflicting objects ${c.foreigntables || c.foreignfunctions || (!applied.length && c.existing) || "none"}`);
+  }
   const version = applied.length ? Math.max(...applied) : 0;
   facts.push(`owner login ${r.login}: database ${r.db}, owns tables ${r.owns === null ? "n/a (no schema yet)" : r.owns}, schema version ${version}${applied.length ? "" : " (empty database)"}, release expects ${expectedVersion}, pending migrations ${missing.length}${missing.length ? (allowMigrations ? " (approved: TEND_ALLOW_MIGRATIONS=1)" : " (not approved)") : ""}`);
   return { problems, facts, version, pending: missing.length };
