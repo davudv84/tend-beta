@@ -81,7 +81,7 @@ export function checkTargets(env) {
     if (!user) problems.push(`${name} names no database user`);
     if (!u.password && !LOCAL.has(u.hostname)) problems.push(`${name} has no password in it`);
     if (expectedUser && user && user !== expectedUser) problems.push(`${name} logs in as "${user}", expected the ${role} login "${expectedUser}"`);
-    if (want.db && dbName(u) !== want.db) problems.push(`${name} targets database "${dbName(u) || "none"}", expected "${want.db}"`);
+    if (want.db && dbName(u) !== want.db) problems.push(`${name} targets database "${dbName(u) || "none"}", expected "${want.db}"${dbName(u).trim() === want.db ? " (the name has spaces around it: remove them after the last / of the URL)" : ""}`);
     if (!isNeon(u)) problems.push(`${name} is not a Neon host (*.neon.tech), so its branch cannot be verified`);
     else {
       const ep = neonEndpoint(u);

@@ -46,6 +46,18 @@ export async function runDeployCheck(env = process.env, log = console.log, { che
     // distinctness only, never a value.
     const pre = checkProductionConfig(env, { db: t.targets?.db, runtimeUser: t.targets?.runtimeUser, migrateUser: t.targets?.migrateUser, endpoint: t.targets?.endpoint });
     for (const p of pre.problems) if (!problems.includes(p)) problems.push(p);
+    // What is wrong with TEND_APP_URL, from its shape only (it is not secret, but the rule is the same: the value is never printed).
+    const app = env.TEND_APP_URL ?? "";
+    if (app && pre.problems.some((p) => p.startsWith("TEND_APP_URL"))) {
+      const why = [];
+      if (app !== app.trim()) why.push("it has spaces or a line break before or after it");
+      const a = app.trim();
+      if (!/^https:\/\//.test(a)) why.push(/^http:\/\//.test(a) ? "it starts with http:// (https:// is required)" : "it does not start with https://");
+      if (/^https?:\/\/[^/]+\/$/.test(a)) why.push("it ends with a slash (remove it)");
+      else if (/^https?:\/\/[^/]+\/./.test(a)) why.push("it has a path after the host (only https://host is allowed)");
+      if (/\s/.test(a)) why.push("it contains a space");
+      problems.push(`TEND_APP_URL is not exactly https://<host>: ${why.join("; ") || "unrecognised shape"}`);
+    }
     warnings.push(...pre.warnings);
     if (env.TEND_ACCOUNTS !== "0" && !(env.RESEND_API_KEY && env.TEND_EMAIL_FROM))
       warnings.push("RESEND_API_KEY and TEND_EMAIL_FROM are not both set: e-mail accounts (sign-up, sign-in) stay off; only the admin token can sign in");

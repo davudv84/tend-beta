@@ -263,3 +263,14 @@ test("DEPLOY-10 when every check passes: a normal build continues (exit 0); a ch
   assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: false, connect }), 1);
   assert.ok(out.some((l) => /BLOCKING 1 migration\(s\) would run \(version 26\)/.test(l)), out.join("\n"));
 });
+
+test("DEPLOY-11 the usual paste mistakes are named precisely: spaces around the database name, a slash, path or http in TEND_APP_URL", async () => {
+  const spaced = checkTargets({ ...good, DATABASE_URL: neon("tend_runtime", PW_RT, EP, true, "%20%20%20%20tend_preview") });
+  assert.ok(spaced.problems.some((p) => /DATABASE_URL targets database "    tend_preview", expected "tend_preview" \(the name has spaces around it/.test(p)), spaced.problems.join(" | "));
+  for (const [url, want] of [["https://tend.example.app/", /ends with a slash/], ["https://tend.example.app/home", /has a path after the host/], ["http://tend.example.app", /starts with http:\/\//], [" https://tend.example.app", /spaces or a line break/]] as const) {
+    const out: string[] = [];
+    await runDeployCheck({ ...good, TEND_APP_URL: url }, (l: string) => out.push(l), { checkOnly: true });
+    assert.ok(out.some((l) => /BLOCKING TEND_APP_URL is not exactly https:\/\/<host>: /.test(l) && want.test(l)), `${url}: ${out.join("\n")}`);
+    assert.ok(!out.some((l) => l.includes("tend.example.app")), "the value is not printed");
+  }
+});
