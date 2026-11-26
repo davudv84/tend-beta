@@ -10,7 +10,7 @@ import { test } from "node:test";
 import pg from "pg";
 import { getDb, migrate, MIGRATIONS, postgres, runtimeGrantsSql } from "./db.ts";
 import { checkTargets, probeOwner, probeRuntime, SCHEMA_VERSION } from "./deploy-check.mjs";
-import { connectReason, runDeployCheck } from "../../scripts/deploy-check.mjs";
+import { connectReason, missingDatabase, runDeployCheck } from "../../scripts/deploy-check.mjs";
 
 const PW_RT = `rt_${randomBytes(12).toString("hex")}`, PW_OWN = `own_${randomBytes(12).toString("hex")}`;
 const EP = "ep-quiet-sky-a1b2c3d4", PROD = "ep-bold-main-z9y8x7w6";
@@ -280,4 +280,32 @@ test("DEPLOY-12 connection failures are explained from the error code, without t
   assert.match(connectReason({ code: "28P01", message: "x" }), /password authentication failed/);
   assert.match(connectReason({ code: "ENOTFOUND", message: "getaddrinfo ENOTFOUND ep-x.aws.neon.tech" }), /does not resolve/);
   assert.ok(!connectReason({ code: "XX999", message: "ep-secret-host.aws.neon.tech" }).includes("neon.tech"));
+});
+
+test("DEPLOY-13 database missing (3D000): the endpoint's own database list tells a wrong branch from a wrong name; both logins are probed", async () => {
+  const list = (names: string[]) => async <T>(_n: string, url: string | undefined, fn: (all: (sql: string) => Promise<Record<string, unknown>[]>) => Promise<T>) => {
+    assert.equal(new URL(url!).pathname, "/postgres", "the listing uses the postgres database of the same endpoint");
+    return fn(async () => names.map((datname) => ({ datname })));
+  };
+  const url = neon("tend_runtime", PW_RT, EP, true, "tend_preview");
+  assert.match(await missingDatabase("DATABASE_URL", url, "tend_preview", list(["neondb", "postgres"])), /has the databases "neondb", "postgres", without "tend_preview"\. So this endpoint is NOT the Neon branch/);
+  assert.match(await missingDatabase("DATABASE_URL", url, "tend_preview", list(["Tend_Preview", "postgres"])), /"Tend_Preview" \(12 characters\), which differs .* in case or invisible characters/);
+  assert.match(await missingDatabase("DATABASE_URL", url, "tend_preview", list(["tend_preview\u200b", "postgres"])), /in case or invisible characters/);
+  assert.match(await missingDatabase("DATABASE_URL", url, "tend_preview", list(["tend_preview", "postgres"])), /lists "tend_preview" .* refused to open it/);
+  const r = await missingDatabase("DATABASE_URL", url, "tend_preview", list(["neondb"]));
+  assert.ok(!r.includes(PW_RT) && !r.includes("neon.tech"), "no password or host in the message");
+
+  // in the build step: a 3D000 on the runtime URL is explained, and the owner URL is still probed
+  const secrets = { TEND_CONTEXT_KEY: randomBytes(36).toString("base64url"), TEND_MFA_KEY: randomBytes(36).toString("base64url"), TEND_ADMIN_TOKEN: randomBytes(32).toString("hex"), TEND_APP_URL: "https://tend-preview.example.app", TEND_DEMO: "0" };
+  const seen: string[] = [];
+  const connect = async <T>(name: string, u: string | undefined, fn: (all: (sql: string) => Promise<Record<string, unknown>[]>) => Promise<T>) => {
+    seen.push(`${name}${new URL(u!).pathname}`);
+    if (new URL(u!).pathname === "/postgres") return fn(async () => [{ datname: "neondb" }, { datname: "postgres" }]);
+    throw Object.assign(new Error(`${name}: could not connect (3D000: ${connectReason({ code: "3D000" })})`), { code: "3D000" });
+  };
+  const out: string[] = [];
+  assert.equal(await runDeployCheck({ ...good, ...secrets }, (l: string) => out.push(l), { checkOnly: true, connect }), 1);
+  assert.deepEqual(seen, ["DATABASE_URL/tend_preview", "DATABASE_URL/postgres", "DATABASE_MIGRATE_URL/tend_preview", "DATABASE_MIGRATE_URL/postgres"]);
+  assert.ok(out.some((l) => /BLOCKING DATABASE_MIGRATE_URL: the endpoint in this URL has the databases "neondb", "postgres"/.test(l)), out.join("\n"));
+  leaksNothing(out);
 });

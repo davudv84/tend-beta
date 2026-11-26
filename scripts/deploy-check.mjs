@@ -32,10 +32,27 @@ export function connectReason(e) {
   return "see the code";
 }
 
+/**
+ * The URL's database does not exist on its endpoint (3D000). Which databases DOES that endpoint have? Same URL, same login, the always-present
+ * "postgres" database, read only. Database names are not secret; the answer tells a wrong endpoint (another Neon branch) from a wrong name.
+ */
+export async function missingDatabase(name, url, expected, connect = readOnly) {
+  let names;
+  try {
+    const u = new URL(url); u.pathname = "/postgres";
+    names = (await connect(name, u.toString(), (all) => all("SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1"))).map((r) => String(r.datname));
+  } catch (e) { return `${name}: could not list the endpoint's databases either (${e.code ?? "error"}: ${connectReason(e)})`; }
+  const list = names.map((n) => JSON.stringify(n)).join(", ") || "none";
+  if (names.includes(expected)) return `${name}: the endpoint lists "${expected}" (databases: ${list}) but refused to open it: if this URL is pooled, try the direct host; otherwise the database was created moments ago or is being dropped`;
+  const near = names.filter((n) => n.normalize("NFKC").replace(/[\s\u200b-\u200d\ufeff]/g, "").toLowerCase() === expected.toLowerCase());
+  if (near.length) return `${name}: the endpoint has ${near.map((n) => `${JSON.stringify(n)} (${n.length} characters)`).join(", ")}, which differs from "${expected}" (${expected.length} characters) in case or invisible characters: the database was created with another exact name`;
+  return `${name}: the endpoint in this URL has the databases ${list}, without "${expected}". So this endpoint is NOT the Neon branch where "${expected}" exists: TEND_EXPECT_NEON_ENDPOINT and the URL's host belong to another branch. Copy the host from that branch's Connect dialog (and its ep-… id into TEND_EXPECT_NEON_ENDPOINT)`;
+}
+
 /** One connection, one READ ONLY transaction, rolled back: `all(sql)` for the probes. Connection errors name the variable, never the URL. */
 async function readOnly(name, url, fn) {
   const client = new pg.Client({ connectionString: verifiedTls(url), connectionTimeoutMillis: 15_000, query_timeout: 15_000 });
-  try { await client.connect(); } catch (e) { throw new Error(`${name}: could not connect (${e.code ?? "error"}: ${connectReason(e)})`); }
+  try { await client.connect(); } catch (e) { throw Object.assign(new Error(`${name}: could not connect (${e.code ?? "error"}: ${connectReason(e)})`), { code: e.code }); }
   try {
     await client.query("BEGIN TRANSACTION READ ONLY");
     await client.query("SET LOCAL statement_timeout = 15000");
@@ -85,12 +102,17 @@ export async function runDeployCheck(env = process.env, log = console.log, { che
     facts.push(`settings present: ${present.join(", ")}`);
   }
   if (t.enforced && !problems.length) {
-    try {
-      const rt = await connect("DATABASE_URL", env.DATABASE_URL, (all) => probeRuntime(all, t.targets));
-      problems.push(...rt.problems); facts.push(...rt.facts);
-      const ow = await connect("DATABASE_MIGRATE_URL", env.DATABASE_MIGRATE_URL, (all) => probeOwner(all, t.targets, { allowMigrations: env.TEND_ALLOW_MIGRATIONS === "1" }));
-      problems.push(...ow.problems); facts.push(...ow.facts);
-    } catch (e) { problems.push(e.message); }
+    // Each login is probed on its own, so one failing connection does not hide what the other finds.
+    for (const [name, probe] of [
+      ["DATABASE_URL", (all) => probeRuntime(all, t.targets)],
+      ["DATABASE_MIGRATE_URL", (all) => probeOwner(all, t.targets, { allowMigrations: env.TEND_ALLOW_MIGRATIONS === "1" })],
+    ]) {
+      try { const r = await connect(name, env[name], probe); problems.push(...r.problems); facts.push(...r.facts); }
+      catch (e) {
+        problems.push(e.message);
+        if (e.code === "3D000") problems.push(await missingDatabase(name, env[name], t.targets.db, connect));
+      }
+    }
   } else if (t.enforced) facts.push("database checks not run: the variables above must be fixed first (nothing was connected to)");
   log(`TEND deployment check (VERCEL_ENV=${t.vercelEnv}${env.VERCEL_GIT_COMMIT_REF ? `, branch ${env.VERCEL_GIT_COMMIT_REF}` : ""})`);
   for (const f of facts) log(`  info     ${f}`);
