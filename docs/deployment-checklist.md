@@ -32,16 +32,30 @@ Remove the integration's `POSTGRES_URL*` variables from the preview scope if the
 
 ## 3. Preflight (locally, values never printed)
 
+The preflight reads a file of `KEY=value` lines (or the shell's environment when no file is given) and prints only what is wrong, never a value.
+
 ```bash
-vercel env pull --environment=preview .env.preflight
+vercel env pull --environment=preview --git-branch=security/release-redesign .env.preflight
 ```
 ```bash
-node scripts/check-production-config.mjs .env.preflight
+node scripts/check-production-config.mjs .env.preflight --expect-db tend_preview_fresh --runtime-user tend_runtime_v2 --migrate-user neondb_owner
 ```
 ```bash
 rm .env.preflight
 ```
-It must print "No blocking problems".
+It must print "No blocking problems". The three `--expect-…` flags pin the preview database and the two logins by name, so a URL that points at another database or role fails here, before any deploy.
+
+**If it says several variables "all hold exactly the same value"**: the file does not contain your real settings. It is a placeholder, or Vercel did not
+export the values (a variable marked *Sensitive* cannot be read back, and a pull may write a stand-in for it; check Vercel's current documentation).
+That is not something to fix variable by variable. Check the variables with `vercel env ls preview` (names and scope only), then run the preflight on a
+file you build from your own copies of the values (the ones you generated and stored), readable only by you, and delete it afterwards:
+
+```bash
+umask 077 && ${EDITOR:-nano} .env.preflight
+```
+
+Also in the Preview scope: `TEND_DEMO=0`. The demo (on by default) seeds synthetic agents on every dashboard poll and its retention needs DELETE rights the
+restricted login deliberately lacks.
 
 ## 4. Deploy the preview and check
 

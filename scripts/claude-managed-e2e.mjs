@@ -48,7 +48,7 @@ async function main() {
     const reg = (await call("POST", "/api/v1/agents", { cookie, body: { name: "Claude Code (managed)", model: "Claude Code", provider: "Anthropic" } })).body;
     key = reg.apiKey;
     const pol = await call("GET", `/api/v1/agents/${reg.agent.id}/policy`, { cookie });
-    await call("POST", `/api/v1/agents/${reg.agent.id}/policy`, { cookie, body: { rules: presetRules("balanced"), enforcement: "enforce", expectedVersion: pol.body.version } });
+    await call("POST", `/api/v1/agents/${reg.agent.id}/policy`, { cookie, body: { rules: presetRules("balanced", 1), /* v1 on purpose: this suite needs an allowed command that writes a file (its control); Balanced v2 asks before any write, which claude-hooks-e2e and agent-presets.test.ts cover */ enforcement: "enforce", expectedVersion: pol.body.version } });
     const BLOCKED = "tend-blocked-test", ALLOWED = "tend-control-test";
 
     console.log("\n-- install --managed (real installer, run as root)");

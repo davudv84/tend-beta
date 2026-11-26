@@ -649,6 +649,21 @@ export async function enableIsolation(db: DB, role = config.dbRuntimeRole) {
   if (problem || keyProblem) { db.isolation.on = false; throw new Error(`tenant isolation cannot be guaranteed: ${problem || keyProblem}. Fix the database roles (docs/database-roles.md) or set TEND_DB_ISOLATION=off explicitly.`); }
 }
 
+/**
+ * Read-only: can the connection's LOGIN get past row-level security? A superuser, BYPASSRLS or CREATEROLE role, a member of one, a member of
+ * the role that owns a table in public, or (no TEND schema yet) a login that may create tables in public and so would own them.
+ */
+export async function loginCanEscalate(db: DB) {
+  const r = await db.get<{ name: string; escalates: boolean }>(
+    `SELECT r.rolname AS name,
+            r.rolsuper OR r.rolbypassrls OR r.rolcreaterole
+            OR EXISTS (SELECT 1 FROM pg_roles p WHERE p.oid <> r.oid AND (p.rolsuper OR p.rolbypassrls OR p.rolcreaterole) AND pg_has_role(r.oid, p.oid, 'MEMBER'))
+            OR EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p') AND pg_has_role(r.oid, c.relowner, 'MEMBER'))
+            OR (to_regclass('public.schema_migrations') IS NULL AND has_schema_privilege(r.oid, 'public', 'CREATE')) AS escalates
+       FROM pg_roles r WHERE r.rolname = session_user`);
+  return { name: r?.name ?? "unknown", escalates: r ? !!r.escalates : true };
+}
+
 /** Fails unless every migration this code knows has been applied (a newer schema is allowed: rolling deploys): the application role must not run on an older one. It checks versions, not privileges. */
 export async function assertSchemaCurrent(db: DB) {
   const rows = await db.all<{ version: number }>("SELECT version FROM schema_migrations");
@@ -663,6 +678,11 @@ export async function migrate(db: DB) {
     await q.get("SELECT pg_advisory_xact_lock(?)", LOCK.MIGRATE);
     await q.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at BIGINT NOT NULL)");
     const done = new Set((await q.all<{ version: number }>("SELECT version FROM schema_migrations")).map((r) => r.version));
+    // TEND's tables with no migration history (a schema-only copy, a restore that left schema_migrations out, a database set up by hand): there
+    // is no way to know which migrations those tables already carry, and replaying them fails on the first one ("relation meta already exists")
+    // or, worse, half-applies. Nothing is written: the operator decides (docs/database-roles.md), never a guess made here.
+    if (done.size === 0 && (await q.get<{ r: string | null }>("SELECT to_regclass('meta')::text AS r"))?.r)
+      throw new Error("database_not_baselined: this database already has TEND tables (meta) but schema_migrations records no migration. Refusing to run the migrations over them and to guess which were applied. Use an empty database (for a Neon preview, a new empty database or a branch with its data) or restore the schema_migrations rows that match the schema.");
     for (const [i, sql] of MIGRATIONS.entries()) {
       if (done.has(i + 1)) continue;
       await q.exec(sql);
@@ -869,6 +889,16 @@ async function open() {
     return runtime;
   }
   const db = url ? await postgres(url) : await pglite(path.join(config.dataDir, "pglite"));
+  // One login for everything, in production: if it is (or would become, by creating the tables) the schema owner or a privileged role, the
+  // self-test after the migrations refuses it anyway. Refuse it here, BEFORE the migrations, so a misconfigured deployment changes nothing in
+  // the database it was pointed at (a release once migrated production and then refused to start).
+  if (url && config.dbIsolation && config.dbStrict && !config.dbAllowOwnerLogin) {
+    const login = await loginCanEscalate(db).catch(async (e) => { await db.close().catch(() => {}); throw e; });
+    if (login.escalates) {
+      await db.close().catch(() => {});
+      throw new Error(`tenant isolation cannot be guaranteed: the database login ${login.name} owns the tables or can become a privileged role (or would own the tables by creating them), so SQL injection could RESET ROLE past row-level security. Nothing was changed in the database. In production use a restricted login (DATABASE_URL) and the owner only for migrations (DATABASE_MIGRATE_URL); see docs/database-roles.md. TEND_DB_ALLOW_OWNER_LOGIN=1 accepts the risk explicitly.`);
+    }
+  }
   await migrate(db);
   if (url && config.dbIsolation) {
     try { await enableIsolation(db); } catch (e) { await db.close().catch(() => {}); throw e; }

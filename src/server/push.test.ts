@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { createDecipheriv, createECDH, createPublicKey, hkdfSync, verify } from "node:crypto";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { encrypt, flushPush, newVapidKeys, vapidHeader } from "./push.ts";
+import { encrypt, flushPush, newVapidKeys, p256PrivateKey, vapidHeader } from "./push.ts";
+import { config } from "./config.ts";
 import { memoryDb } from "./db.ts";
 import { createTestNotification, saveSubscription } from "./notifications.ts";
 
@@ -94,3 +95,22 @@ test("a queued notification is delivered once, encrypted for the browser, with f
     await db.close();
   }
 }));
+
+test("PUSH-KEY every generated VAPID key pair is accepted by the server: the private key is always 32 bytes (Node drops leading zero bytes in about 1 of 256)", () => {
+  // Before the fix, about 1 pair in 256 had a 31-byte private key; the server's own check refused it and push stayed off.
+  const saved = { a: process.env.TEND_VAPID_PUBLIC_KEY, b: process.env.TEND_VAPID_PRIVATE_KEY, c: process.env.TEND_VAPID_SUBJECT };
+  try {
+    for (let i = 0; i < 3000; i++) {
+      const k = newVapidKeys();
+      assert.equal(Buffer.from(k.privateKey, "base64url").length, 32, `pair ${i}`);
+      Object.assign(process.env, { TEND_VAPID_PUBLIC_KEY: k.publicKey, TEND_VAPID_PRIVATE_KEY: k.privateKey, TEND_VAPID_SUBJECT: "mailto:ops@example.com" });
+      assert.ok(config.vapid, `pair ${i} accepted by the server's VAPID check`);
+    }
+    // The padding keeps the same key: a short key and its padded form give the same public key.
+    const short = Buffer.from("01".repeat(31), "hex");
+    const a = createECDH("prime256v1"); a.setPrivateKey(short);
+    const b = createECDH("prime256v1"); b.setPrivateKey(p256PrivateKey(short));
+    assert.equal(p256PrivateKey(short).length, 32);
+    assert.ok(a.getPublicKey().equals(b.getPublicKey()));
+  } finally { for (const [k, v] of [["TEND_VAPID_PUBLIC_KEY", saved.a], ["TEND_VAPID_PRIVATE_KEY", saved.b], ["TEND_VAPID_SUBJECT", saved.c]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+});

@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { assertSchemaCurrent, getDb, memoryDb, MIGRATIONS } from "./db.ts";
+import { assertSchemaCurrent, getDb, memoryDb, migrate, MIGRATIONS } from "./db.ts";
 
 const g = globalThis as { __tendDb?: Promise<unknown> };
 async function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void>) {
@@ -49,5 +49,24 @@ test("a schema that is missing a migration is not accepted by the application ro
   await db.run("DELETE FROM schema_migrations WHERE version = ?", MIGRATIONS.length);
   const e = await rejects(assertSchemaCurrent(db));
   assert.match(String(e?.message), new RegExp(`missing migrations ${MIGRATIONS.length}\\b`));
+  await db.close();
+});
+
+test("migrate is idempotent, and a database that has TEND's tables but no migration history is refused before anything is written", async () => {
+  const db = await memoryDb();
+  const history = async () => (await db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version")).map((r) => r.version);
+  await migrate(db); // again: nothing to do, nothing fails
+  assert.equal((await history()).length, MIGRATIONS.length, "every migration recorded once");
+  // A schema-only copy: the tables are there, the history is not. Replaying the migrations would fail on the first ("relation meta already
+  // exists", the Preview outage) or half-apply; they must not be guessed at either.
+  await db.exec("DELETE FROM schema_migrations");
+  const before = (await db.all<{ n: number }>("SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'"))[0].n;
+  const e = await rejects(migrate(db));
+  assert.match(e?.message ?? "", /database_not_baselined/);
+  assert.deepEqual(await history(), [], "no history row was written");
+  assert.equal((await db.all<{ n: number }>("SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'"))[0].n, before, "and no table was touched");
+  // The same database with its history intact starts normally again.
+  await db.exec(`INSERT INTO schema_migrations (version, applied_at) SELECT g, 0 FROM generate_series(1, ${MIGRATIONS.length}) g`);
+  await migrate(db);
   await db.close();
 });

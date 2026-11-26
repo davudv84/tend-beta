@@ -73,7 +73,7 @@ async function main() {
   vapid.generateKeys();
   const server = await startIsolatedServer({ root, env: {
     TEND_ADMIN_TOKEN: `e2e_admin_${randomBytes(20).toString("hex")}`, TEND_ADMIN: "0", TEND_DATA_DIR: dir, TEND_PUSH_TEST_ENDPOINTS: "loopback",
-    TEND_VAPID_PUBLIC_KEY: vapid.getPublicKey().toString("base64url"), TEND_VAPID_PRIVATE_KEY: vapid.getPrivateKey().toString("base64url"), TEND_VAPID_SUBJECT: "mailto:e2e@example.com",
+    TEND_VAPID_PUBLIC_KEY: vapid.getPublicKey().toString("base64url"), TEND_VAPID_PRIVATE_KEY: Buffer.concat([Buffer.alloc(Math.max(0, 32 - vapid.getPrivateKey().length)), vapid.getPrivateKey()]).toString("base64url"), TEND_VAPID_SUBJECT: "mailto:e2e@example.com",
   } });
   URL_ = server.url;
   try {

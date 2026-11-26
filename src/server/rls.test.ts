@@ -8,7 +8,7 @@ import pg from "pg";
 import { decide, registerAgent, agentInWorkspace, setPolicy, agentByKey, ingestEvents, workspaceOf } from "./repo.ts";
 import { requestAuthorization, spendApproved } from "./authz.ts";
 import { asSystem, bindWorkspace, withRequestContext } from "./db-context.ts";
-import { contextSignature, enableIsolation, migrate, postgres, RLS_TABLES, runtimeGrantsSql, type DB } from "./db.ts";
+import { contextSignature, enableIsolation, loginCanEscalate, migrate, MIGRATIONS, postgres, RLS_TABLES, runtimeGrantsSql, type DB } from "./db.ts";
 import { HttpError } from "./http.ts";
 
 const URL_ = process.env.TEND_TEST_DATABASE_URL ?? "";
@@ -461,5 +461,77 @@ test("RLS-13 session state left by injected SQL dies with its transaction (advis
     if (saved === undefined) delete process.env.TEND_CONTEXT_KEY; else process.env.TEND_CONTEXT_KEY = saved;
     await rt?.close().catch(() => {}); await w.close();
     await admin.query(`DROP OWNED BY ${login}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${login}`).catch(() => {}); await admin.end();
+  }
+});
+
+test("RLS-15 the production incident: a release started with only the owner login refuses BEFORE migrating, so the database it was pointed at stays unchanged", { skip }, async () => {
+  const { getDb } = await import("./db.ts");
+  const g = globalThis as { __tendDb?: Promise<unknown> };
+  const admin = new pg.Client({ connectionString: URL_ });
+  await admin.connect();
+  const id = randomBytes(4).toString("hex");
+  const name = `tend_inc_${id}`, owner = `tend_inco_${id}`, login = `tend_inca_${id}`;
+  const urlFor = (user: string) => { const u = new URL(URL_); u.pathname = `/${name}`; u.username = user; return u.toString(); };
+  const keys = ["DATABASE_URL", "DATABASE_MIGRATE_URL", "POSTGRES_URL", "VERCEL", "TEND_DB_STRICT", "TEND_DB_ISOLATION", "TEND_DB_ALLOW_OWNER_LOGIN", "TEND_CONTEXT_KEY", "TEND_DB_RUNTIME_ROLE"] as const;
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const start = async () => { g.__tendDb = undefined; try { return { db: (await getDb()) as DB }; } catch (e) { return { error: (e as Error).message }; } };
+  const started: DB[] = [];
+  let ownerDb: DB | undefined;
+  try {
+    await admin.query(`CREATE ROLE ${owner} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER CREATEDB CREATEROLE NOBYPASSRLS`); // like neondb_owner
+    await admin.query(`CREATE DATABASE ${name} OWNER ${owner}`);
+    await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${ROLE_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${name} TO ${login}`);
+    // Production as it was before the release: the first 15 migrations, applied by the owner.
+    ownerDb = await postgres(urlFor(owner));
+    await ownerDb.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at BIGINT NOT NULL)");
+    for (const [i, sql] of MIGRATIONS.slice(0, 15).entries()) { await ownerDb.exec(sql); await ownerDb.run("INSERT INTO schema_migrations VALUES (?, 0)", i + 1); }
+    const state = async () => ({
+      versions: Number((await ownerDb!.get<{ n: number }>("SELECT count(*)::int AS n FROM schema_migrations"))!.n),
+      mfaTable: (await ownerDb!.get<{ r: string | null }>("SELECT to_regclass('public.user_mfa')::text AS r"))!.r,
+      rlsOn: Number((await ownerDb!.get<{ n: number }>("SELECT count(*)::int AS n FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relrowsecurity"))!.n),
+    });
+    const before = await state();
+    assert.deepEqual(before, { versions: 15, mfaTable: null, rlsOn: 0 });
+    for (const k of keys) delete process.env[k];
+    process.env.TEND_DB_STRICT = "1"; process.env.TEND_DB_ISOLATION = "on"; process.env.TEND_DB_RUNTIME_ROLE = `tend_incr_${id}`;
+    // The release with one owner URL (what reached production): refused, and nothing in the database changed.
+    process.env.DATABASE_URL = urlFor(owner);
+    const r = await start();
+    assert.match(r.error ?? "", /owns the tables or can become a privileged role.*Nothing was changed in the database/);
+    assert.deepEqual(await state(), before, "no migration ran, no table was created, row-level security untouched");
+    // The same on an empty database: the owner would own every table it created, so it is refused before creating any.
+    await admin.query(`CREATE DATABASE ${name}_e OWNER ${owner}`);
+    const emptyUrl = new URL(urlFor(owner)); emptyUrl.pathname = `/${name}_e`;
+    process.env.DATABASE_URL = emptyUrl.toString();
+    assert.match((await start()).error ?? "", /Nothing was changed/);
+    const e = await postgres(emptyUrl.toString());
+    assert.equal((await e.get<{ r: string | null }>("SELECT to_regclass('public.schema_migrations')::text AS r"))!.r, null, "the empty database stays empty");
+    await e.close();
+    // The explicit, logged exception still starts (and migrates): existing single-URL deployments keep working when they opt in.
+    process.env.DATABASE_URL = urlFor(owner); process.env.TEND_DB_ALLOW_OWNER_LOGIN = "1";
+    const ok = await start();
+    assert.ok(ok.db, ok.error); started.push(ok.db!);
+    assert.equal((await state()).versions, MIGRATIONS.length);
+    delete process.env.TEND_DB_ALLOW_OWNER_LOGIN;
+    // The start-up self-test still refuses the owner login on its own (defence in depth, and the only guard for a caller that skips the
+    // pre-check and calls enableIsolation directly): mutation M-18 removes it and must be caught here.
+    const direct = await postgres(urlFor(owner));
+    await assert.rejects(enableIsolation(direct), /owns the tables or can become a privileged role/);
+    await direct.close();
+    // A restricted login is not flagged by the pre-check (it neither owns nor can create the tables).
+    await ownerDb.exec(runtimeGrantsSql(login));
+    const restricted = await postgres(urlFor(login));
+    assert.deepEqual(await loginCanEscalate(restricted), { name: login, escalates: false });
+    assert.equal((await loginCanEscalate(ownerDb)).escalates, true);
+    await restricted.close();
+  } finally {
+    for (const d of started) await d.close().catch(() => {});
+    await ownerDb?.close().catch(() => {});
+    for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    g.__tendDb = undefined;
+    for (const d of [name, `${name}_e`]) await admin.query(`DROP DATABASE IF EXISTS ${d} WITH (FORCE)`).catch(() => {});
+    for (const r of [`tend_incr_${id}`, login, owner]) { await admin.query(`DROP OWNED BY ${r}`).catch(() => {}); await admin.query(`DROP ROLE IF EXISTS ${r}`).catch(() => {}); }
+    await admin.end();
   }
 });

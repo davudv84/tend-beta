@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { checkProductionConfig } from "../check-production-config.mjs";
+import { checkProductionConfig, explainShape, parseEnvFile } from "../check-production-config.mjs";
 
 const good = {
   DATABASE_URL: "postgres://tend_app@db.example.net/tend?sslmode=require", DATABASE_MIGRATE_URL: "postgres://owner@db.example.net/tend?sslmode=require",
@@ -38,4 +38,53 @@ test("PROD-2 the command line prints no value and exits 1 on a blocking problem"
   assert.equal(code, 1);
   assert.match(out, /BLOCKING  TEND_CONTEXT_KEY/);
   for (const v of [...Object.values(good), "tooshortsecretvalue"]) assert.ok(!out.includes(v), "no value printed");
+});
+
+const cli = (text, ...args) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "tend-preflight-"));
+  const file = path.join(dir, ".env.preflight");
+  writeFileSync(file, text);
+  try { return { out: execFileSync(process.execPath, ["scripts/check-production-config.mjs", file, ...args], { encoding: "utf8", env: { PATH: process.env.PATH } }), code: 0 }; } catch (e) { return { out: e.stdout, code: e.status }; }
+};
+const asFile = (env) => Object.entries(env).map(([k, v]) => `${k}="${v}"`).join("\n");
+
+test("PROD-3 five settings that all hold one identical short value (a placeholder, or values that were not exported) give the seven blocking errors, and the output says so without printing the value", () => {
+  const placeholder = "plc0holder1"; // 11 characters, the shape seen on a Vercel Preview pull
+  const env = { DATABASE_URL: placeholder, DATABASE_MIGRATE_URL: placeholder, TEND_CONTEXT_KEY: placeholder, TEND_MFA_KEY: placeholder, TEND_ADMIN_TOKEN: placeholder, TEND_APP_URL: good.TEND_APP_URL };
+  assert.equal(checkProductionConfig(env).problems.length, 7);
+  const { out, code } = cli(asFile(env));
+  assert.equal(code, 1);
+  assert.match(out, /7 blocking problem/);
+  assert.match(out, /hint .*DATABASE_URL, DATABASE_MIGRATE_URL, TEND_CONTEXT_KEY, TEND_MFA_KEY, TEND_ADMIN_TOKEN all hold exactly the same value \(11 characters\)/);
+  assert.match(out, /DATABASE_URL is 11 characters and has no postgres:\/\/ scheme/);
+  assert.ok(!out.includes(placeholder), "the value is never printed");
+});
+
+test("PROD-4 a missing variable and an empty one are told apart, and a file from Windows or with export lines is read correctly", () => {
+  assert.deepEqual(explainShape({ DATABASE_URL: "" }).filter((l) => /DATABASE_URL/.test(l)), ["DATABASE_URL is present but empty."]);
+  assert.ok(explainShape({}).some((l) => /TEND_ADMIN_TOKEN is not in the file/.test(l)));
+  const parsed = parseEnvFile(`export DATABASE_URL="${good.DATABASE_URL}"\r\nTEND_ADMIN_TOKEN='${good.TEND_ADMIN_TOKEN}'\r\n# a comment\r\nTEND_APP_URL=${good.TEND_APP_URL}\r\n`);
+  assert.equal(parsed.DATABASE_URL, good.DATABASE_URL);
+  assert.equal(parsed.TEND_ADMIN_TOKEN, good.TEND_ADMIN_TOKEN);
+  assert.equal(parsed.TEND_APP_URL, good.TEND_APP_URL, "no carriage return left in the value");
+  const ok = cli(asFile(good).replace(/\n/g, "\r\n"));
+  assert.equal(ok.code, 0, ok.out);
+});
+
+test("PROD-5 the two URLs must lead to the same database, and --expect-db / --runtime-user / --migrate-user pin names (names only are printed)", () => {
+  // Built at run time: no credential-shaped URL in a file the repository publishes (the export scan and gitleaks would rightly flag one).
+  const neon = (user, host) => { const u = new URL(`postgres://${host}.eu.neon.tech/tend_preview_fresh?sslmode=require`); u.username = user; u.password = "pw-not-printed"; return u.toString(); };
+  const pooled = neon("tend_runtime_v2", "ep-x-pooler"), direct = neon("neondb_owner", "ep-x");
+  const env = { ...good, DATABASE_URL: pooled, DATABASE_MIGRATE_URL: direct };
+  assert.deepEqual(checkProductionConfig(env, { db: "tend_preview_fresh", runtimeUser: "tend_runtime_v2", migrateUser: "neondb_owner" }), { problems: [], warnings: [] }, "Neon's pooled and direct hosts of one endpoint are the same");
+  const blocks = (e, x, re) => assert.ok(checkProductionConfig(e, x).problems.some((p) => re.test(p)), re.source);
+  blocks({ ...env, DATABASE_MIGRATE_URL: direct.replace("/tend_preview_fresh", "/neondb") }, {}, /name different databases/);
+  blocks(env, { db: "tend_production" }, /expected "tend_production"/);
+  blocks(env, { runtimeUser: "neondb_owner" }, /expected the runtime login "neondb_owner"/);
+  blocks(env, { migrateUser: "tend_runtime_v2" }, /expected the migration login/);
+  assert.ok(checkProductionConfig({ ...env, DATABASE_MIGRATE_URL: direct.replace("ep-x.", "ep-y.") }).warnings.some((w) => /different hosts/.test(w)));
+  const { out, code } = cli(asFile(env), "--expect-db", "neondb");
+  assert.equal(code, 1);
+  assert.match(out, /DATABASE_URL targets database "tend_preview_fresh", expected "neondb"/);
+  assert.ok(!out.includes("pw-not-printed") && !out.includes("ep-x"), "no password and no host printed");
 });

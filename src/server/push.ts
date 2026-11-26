@@ -51,10 +51,14 @@ export function vapidHeader(endpoint: string, now = Date.now()) {
 }
 
 /** A fresh VAPID key pair, for setting up a server (scripts/vapid-keys.mjs prints one). */
+/** A P-256 private key as exactly 32 bytes. Node's ECDH drops leading zero bytes (about 1 key in 256 comes out shorter), and a short key is
+ *  refused by the VAPID check (config.ts), which would leave push switched off. Left-padding keeps the same number. */
+export const p256PrivateKey = (k: Buffer) => (k.length >= 32 ? k : Buffer.concat([Buffer.alloc(32 - k.length), k]));
+
 export function newVapidKeys() {
   const ecdh = createECDH("prime256v1");
   ecdh.generateKeys();
-  return { publicKey: b64(ecdh.getPublicKey()), privateKey: b64(ecdh.getPrivateKey()) };
+  return { publicKey: b64(ecdh.getPublicKey()), privateKey: b64(p256PrivateKey(ecdh.getPrivateKey())) };
 }
 
 interface Sub { id: string; endpoint: string; p256dh: string; auth: string; locale: string; failures: number }
