@@ -1,0 +1,5 @@
+While this file is in a commit, a Vercel build of that commit is CHECK-ONLY: scripts/deploy-check.mjs runs every
+deployment check (variables, secrets, Neon targets, read-only database probes) and then stops the build before
+`next build`, even when everything passes. Nothing is deployed and nothing is written to any database.
+
+Deploying is a separate, approved commit that deletes this file.
