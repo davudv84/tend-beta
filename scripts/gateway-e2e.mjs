@@ -1,29 +1,24 @@
 #!/usr/bin/env node
 // End-to-end check of the secure execution gateway over real HTTP, against an isolated server it starts itself:
-// a fresh embedded database in a temp directory, a random throwaway admin token and gateway credential, demo off,
-// no DATABASE_URL. Only fake agents, a fake payments API and fake data. Needs a build first:
+// a fresh embedded database in a temp directory, a random throwaway admin token and gateway credential, demo off.
+// Only fake agents, a fake payments API and fake data. Needs a build first:
 //   npm run build && npm run e2e:gateway
 // Takes about 75 seconds, most of it waiting for a token to expire.
+// The server is started by scripts/isolated-server.mjs like every other suite: nothing of your .env.local, the whole process tree stopped at the
+// end, and with TEND_E2E_DATABASE_URL a fresh PostgreSQL database (production roles and row-level security) instead of the embedded one.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { startIsolatedServer } from "./isolated-server.mjs";
 
-const PORT = 3990 + Math.floor(Math.random() * 9);
-const URL_ = `http://127.0.0.1:${PORT}`;
 const ADMIN = `fake_admin_${randomBytes(18).toString("hex")}`;
 const GW_KEY = `fake_gateway_${randomBytes(18).toString("hex")}`;
 const dir = mkdtempSync(path.join(tmpdir(), "tend-gateway-e2e-"));
-const env = {
-  ...process.env, TEND_ADMIN_TOKEN: ADMIN, TEND_GATEWAY_PAYMENTS_KEY: GW_KEY, TEND_DATA_DIR: dir, TEND_DEMO: "0", TEND_PUBLIC: "0",
-  DATABASE_URL: "", POSTGRES_URL: "", ANTHROPIC_API_KEY: "", NODE_ENV: "production",
-};
-const server = spawn("npx", ["next", "start", "-p", String(PORT), "-H", "127.0.0.1"], { env, stdio: ["ignore", "pipe", "pipe"] });
-let serverOut = "";
-server.stdout.on("data", (b) => (serverOut += b));
-server.stderr.on("data", (b) => (serverOut += b));
+const root = path.resolve(import.meta.dirname, "..");
+const server = await startIsolatedServer({ root, env: { TEND_ADMIN_TOKEN: ADMIN, TEND_GATEWAY_PAYMENTS_KEY: GW_KEY, TEND_DATA_DIR: dir, TEND_LOCAL_HTTP: "0" } });
+const URL_ = server.url;
 
 const results = [];
 const seen = []; // every agent-facing response body except token claims
@@ -69,12 +64,6 @@ async function approved(key, params = pay()) {
 }
 
 try {
-  for (let i = 0; ; i++) {
-    if (server.exitCode !== null) throw new Error(`server exited: ${serverOut.slice(-500)}`);
-    if (i > 120) throw new Error("server did not start within 60s");
-    if (await fetch(`${URL_}/api/health`).then((r) => r.ok, () => false)) break;
-    await new Promise((r) => setTimeout(r, 500));
-  }
   const login = await call("POST", "/api/operator/session", { body: { token: ADMIN } });
   assert.equal(login.status, 200);
   cookie = login.headers.get("set-cookie").split(";")[0];
@@ -190,7 +179,7 @@ try {
   await step("secrets: the gateway credential, admin token and tokens never appear in any response or server output", async () => {
     const all = seen.join("\n");
     assert.equal(all.includes(GW_KEY), false, "gateway credential leaked to a response");
-    assert.equal(serverOut.includes(GW_KEY), false, "gateway credential leaked to server logs");
+    assert.equal(server.output().includes(GW_KEY), false, "gateway credential leaked to server logs");
     assert.equal(all.includes(ADMIN), false, "admin token leaked");
     assert.equal(/tend_az_[A-Za-z0-9_-]{43}/.test(all.replaceAll(/tend_az_a{43}/g, "")), false, "token leaked");
     assert.equal(/token_hash|fingerprint|"debug"/.test(all), false, "internal field leaked");
@@ -198,8 +187,7 @@ try {
 } catch (e) {
   results.push(["FAIL", "harness", e.message]);
 } finally {
-  server.kill("SIGTERM");
-  await new Promise((r) => setTimeout(r, 500));
+  await server.stop(); // the whole process tree: a plain kill of npx left the next-server child running
   rmSync(dir, { recursive: true, force: true });
 }
 

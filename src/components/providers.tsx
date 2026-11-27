@@ -1,5 +1,6 @@
 "use client";
 
+import "@/lib/style-nonce";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
@@ -8,7 +9,7 @@ import { useStore } from "@/lib/store";
 
 /** The public website's pages (app/page.tsx and app/(site)): no snapshot, no polling. */
 const PUBLIC = ["/how-it-works", "/docs", "/threat-model", "/compare", "/changelog", "/security", "/verification-report", "/about", "/contact", "/imprint", "/privacy", "/terms"];
-const isPublicSite = (p: string) => p === "/" || p.startsWith("/product/") || PUBLIC.includes(p);
+const isPublicSite = (p: string) => p === "/" || p === "/design-system" || p.startsWith("/product/") || PUBLIC.includes(p);
 
 /** Loads the server snapshot, then polls for new events while the tab is visible. */
 export function Providers({ children }: { children: React.ReactNode }) {

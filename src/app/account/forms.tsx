@@ -92,14 +92,18 @@ export function SignIn({ admin = true }: { admin?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; code?: string } | null>(null);
   const [resent, setResent] = useState(false);
+  // Shown once the server says this account has two-step sign-in (only after the password was right).
+  const [needsCode, setNeedsCode] = useState(false);
+  const [code, setCode] = useState("");
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await signIn(email, password);
+    const r = await signIn(email, password, needsCode ? code : undefined);
     setBusy(false);
     if (r.ok) return router.push("/home");
-    setError({ text: errorText(t, r), code: r.code });
+    if (r.code === "mfa_required" || r.code === "mfa_invalid") setNeedsCode(true);
+    setError(r.code === "mfa_required" ? null : { text: errorText(t, r), code: r.code });
   };
   const resend = async () => {
     await call("/api/account/resend", { email });
@@ -112,6 +116,7 @@ export function SignIn({ admin = true }: { admin?: boolean }) {
         <Field label={a.email} type="email" autoComplete="email" placeholder={a.emailPlaceholder} value={email} onChange={(e) => setEmail(e.target.value)} required />
         <PasswordField label={a.password} autoComplete="current-password" placeholder={a.passwordPlaceholder} value={password} onChange={setPassword}
           aside={<Link href="/account/forgot" className="rounded-sm text-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{a.signIn.forgot}</Link>} />
+        {needsCode && <Field label={a.signIn.code} hint={a.signIn.codeHint} autoComplete="one-time-code" inputMode="text" value={code} onChange={(e) => setCode(e.target.value)} autoFocus required />}
         {error && <Alert>{error.text}</Alert>}
         {error?.code === "email_unverified" && (resent
           ? <p role="status" className="text-small text-muted-foreground">{a.signIn.resent}</p>
@@ -336,9 +341,10 @@ export function Forgot() {
   );
 }
 
-export function Reset() {
+export function Reset({ invitation = false }: { invitation?: boolean }) {
   const t = useT();
   const a = t.account;
+  const copy = invitation ? a.accept : a.reset;
   const token = useLinkToken();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -348,21 +354,21 @@ export function Reset() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await call("/api/account/reset", { token, password });
+    const r = await call(invitation ? "/api/account/invitation" : "/api/account/reset", { token, password });
     setBusy(false);
     if (!r.ok) return setError(errorText(t, r));
     forgetLink();
     setDone(true);
   };
-  if (done) return <Done icon="check" title={a.reset.doneTitle} body={a.reset.done}><Foot><A href="/account/sign-in">{a.back}</A></Foot></Done>;
-  if (!token) return <><Title body={a.verify.missing}>{a.reset.title}</Title><Foot><A href="/account/forgot">{a.forgot.submit}</A></Foot></>;
+  if (done) return <Done icon="check" title={copy.doneTitle} body={copy.done}><Foot><A href="/account/sign-in">{a.back}</A></Foot></Done>;
+  if (!token) return <><Title body={a.verify.missing}>{copy.title}</Title>{!invitation && <Foot><A href="/account/forgot">{a.forgot.submit}</A></Foot>}</>;
   return (
     <>
-      <Title body={a.reset.body}>{a.reset.title}</Title>
+      <Title body={copy.body}>{copy.title}</Title>
       <form onSubmit={submit} className="grid gap-4">
         <PasswordField label={a.newPassword} hint={a.passwordHint(MIN)} autoComplete="new-password" value={password} onChange={setPassword} />
         {error && <Alert>{error}</Alert>}
-        <Submit busy={busy} label={a.reset.submit} busyLabel={a.reset.busy} disabled={password.length < MIN} />
+        <Submit busy={busy} label={copy.submit} busyLabel={copy.busy} disabled={password.length < MIN} />
       </form>
       <Foot><A href="/account/sign-in">{a.back}</A></Foot>
     </>

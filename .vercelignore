@@ -14,6 +14,8 @@
 !/components.json
 !/vercel.json
 !/.nvmrc
+# The check-only marker must reach the build, or a check-only build would deploy (scripts/deploy-check.mjs; deploy-check.test.ts DEPLOY-15).
+!/DEPLOY_CHECK_ONLY
 **/node_modules
 **/.DS_Store
 **/__pycache__

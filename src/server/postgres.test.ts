@@ -424,8 +424,8 @@ test("the read-only demo account on PostgreSQL: overlapping first sign-ins creat
     for (const r of results) {
       const cookie = (r as PromiseFulfilledResult<{ value: string }>).value.value;
       const as = (method: string) => new Request("http://tend.test/api/v1/agents", { method, headers: { host: "tend.test", cookie: `${sessionCookieName()}=${cookie}` } });
-      assert.equal(await requireOperator(as("GET"), t.db).then(() => "ok", (e) => e.code), "ok");
-      for (const method of ["POST", "DELETE"]) assert.equal(await requireOperator(as(method), t.db).then(() => "ok", (e) => e.code), "read_only_account", method);
+      assert.equal(await requireOperator(as("GET"), t.db, "view").then(() => "ok", (e) => e.code), "ok");
+      for (const method of ["POST", "DELETE"]) assert.equal(await requireOperator(as(method), t.db, "view").then(() => "ok", (e) => e.code), "read_only_account", method);
     }
   } finally {
     delete process.env.TEND_DEMO_ACCOUNT;

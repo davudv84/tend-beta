@@ -20,7 +20,7 @@
 // The agent key is kept in ~/.tend/<host>.json (readable only by you), never in the host's settings, never printed, never sent anywhere but
 // TEND. What TEND receives about a tool call: its kind, the tool's name, and a shortened copy of the command, path, URL or MCP tool, with
 // things that look like secrets replaced by ***. Never file contents, prompts or tool output.
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, chownSync, closeSync, constants, existsSync, fchmodSync, fchownSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -119,14 +119,66 @@ export function readConfig(host) {
   if (!HOOK_MODE && envUrl && envKey) return { url: envUrl.replace(/\/$/, ""), key: envKey };
   try {
     // Only a regular file (not a link to one) owned by you and readable by nobody else: the key decides what the assistant may do.
-    const st = lstatSync(configPath(host));
-    if (!st.isFile() || (st.mode & 0o077) !== 0 || (typeof process.getuid === "function" && st.uid !== process.getuid())) return null;
-    const c = JSON.parse(readFileSync(configPath(host), "utf8"));
-    return { url: String(c.url).replace(/\/$/, ""), key: String(c.key) };
+    // One open file, checked and read through the same descriptor, so it cannot be swapped between the check and the read.
+    const fd = openSync(configPath(host), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const st = fstatSync(fd);
+      if (!st.isFile() || !(ownedByYou(st) || managedFile(st, lstatSync(HOME)))) return null;
+      const c = JSON.parse(readFileSync(fd, "utf8"));
+      return { url: String(c.url).replace(/\/$/, ""), key: String(c.key) };
+    } finally { closeSync(fd); }
   } catch { return null; }
+}
+/** The agent key goes with every request: plain http only to this computer itself (an older install may have written another address). */
+const keySafeUrl = (url) => { try { const u = new URL(url); return u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)); } catch { return false; } };
+
+/** A key file you own that nobody else can read or write. */
+const ownedByYou = (st) => (st.mode & 0o077) === 0 && (typeof process.getuid !== "function" || st.uid === process.getuid());
+/**
+ * A key file from a managed install (see "install --managed"): owned by root, readable by one group at most, writable by nobody but root, in a folder
+ * that only root can change. The person (and the agent running as them) can read it but cannot point the hook at another server or key, and cannot
+ * swap the hook script or the file, because replacing either needs write access to a folder they do not have.
+ */
+const managedFile = (st, dir) => typeof process.getuid === "function" && st.uid === 0 && (st.mode & 0o037) === 0 && dir.isDirectory() && dir.uid === 0 && (dir.mode & 0o022) === 0;
+
+/**
+ * The host's settings file, opened once and never through a symbolic link: it is read now and rewritten later through the same open file
+ * (after the person confirms), so it cannot be swapped in between. A file that does not exist yet: no handle, created only when written.
+ */
+function openSettings(file) {
+  try {
+    const fd = openSync(file, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0));
+    return { fd, text: readFileSync(fd, "utf8") };
+  } catch (e) {
+    if (e.code === "ENOENT") return { fd: undefined, text: "" };
+    if (e.code === "ELOOP") fail(`${file} is a symbolic link; TEND does not write through links. Nothing was changed.`);
+    throw e;
+  }
+}
+/** Writes the settings through the file opened before (or as a new file that must not exist yet), keeping the text that was read as a backup. */
+/** Writes a whole file through one descriptor that is not a symbolic link, then sets owner and mode on that same descriptor (a key file, the script). */
+function writeOwnFile(file, data, mode, owner) {
+  const fd = openSync(file, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0), mode);
+  try { writeSync(fd, data); if (owner) fchownSync(fd, owner.uid, owner.gid); fchmodSync(fd, mode); } finally { closeSync(fd); }
+}
+function writeSettings(file, opened, text, { mode = 0o644, owner, backup = true } = {}) {
+  const noFollow = constants.O_NOFOLLOW ?? 0;
+  if (backup && opened.text) {
+    const b = openSync(`${file}.before-tend`, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | noFollow, 0o600);
+    try { writeSync(b, opened.text); } finally { closeSync(b); }
+  }
+  const fd = opened.fd ?? openSync(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow, mode);
+  try {
+    ftruncateSync(fd, 0);
+    writeSync(fd, text, 0);
+    if (owner) fchownSync(fd, owner.uid, owner.gid);
+    if (opened.fd === undefined || owner) fchmodSync(fd, mode);
+  } finally { closeSync(fd); }
 }
 
 async function tend(cfg, p, body, headers = {}) {
+  // Nothing (no key) goes over plain http to another computer, whatever the caller: a refusal here fails closed like an unreachable TEND.
+  if (!keySafeUrl(cfg.url)) throw new Error("insecure TEND address");
   const res = await fetch(cfg.url + p, {
     method: body ? "POST" : "GET",
     headers: { authorization: `Bearer ${cfg.key}`, ...(body && { "content-type": "application/json" }), ...headers },
@@ -137,7 +189,8 @@ async function tend(cfg, p, body, headers = {}) {
 }
 
 // A pre-tool hook remembers which authorization it used, so the post-tool hook (a separate process) can link the outcome to it.
-const stateDir = (host) => path.join(HOME, "state", host);
+// In a managed install the script's folder belongs to root and nobody else can write there, so the small per-call notes go to the user's own folder.
+const stateDir = (host) => path.join(HOOK_MODE && (() => { try { return lstatSync(HOME).uid === 0 && typeof process.getuid === "function" && process.getuid() !== 0; } catch { return false; } })() ? path.join(homedir(), ".tend") : HOME, "state", host);
 function remember(host, toolUseId, authorizationId) {
   if (!toolUseId || !authorizationId) return;
   try { mkdirSync(stateDir(host), { recursive: true, mode: 0o700 }); writeFileSync(path.join(stateDir(host), safeId(toolUseId)), authorizationId, { mode: 0o600 }); } catch {}
@@ -156,6 +209,7 @@ function sweepState(host) {
  * answer that is not an explicit yes (a refusal, an error, TEND unreachable, nobody deciding in time) is a no.
  */
 export async function decide(cfg, request, { idempotencyKey, waitMs = 540_000, pollMs = 2_000, onWait } = {}) {
+  if (!keySafeUrl(cfg.url)) return { allow: false, reason: "TEND's address on this computer is plain http to another machine, so the agent key would travel unencrypted. Nothing ran and nothing was sent. Install the hooks again with an https:// address." };
   let r;
   try {
     r = await tend(cfg, "/api/v1/authorize", request, idempotencyKey && ID.test(idempotencyKey) ? { "idempotency-key": idempotencyKey } : {});
@@ -236,11 +290,11 @@ export async function runHook(host, input, { out = (s) => process.stdout.write(s
 // ---- installing ------------------------------------------------------------------------------------------------------
 
 /** The host settings file this installs into, and the hook entries TEND adds. Entries are recognised by "tend-hooks.mjs" in their command. */
-export function plan(host, { project } = {}) {
-  const script = path.join(HOME, "tend-hooks.mjs");
+export function plan(host, { project, managed } = {}) {
+  const script = path.join(managed ? managed.home : HOME, "tend-hooks.mjs");
   const cmd = `node "${script}" hook ${host}`, pre = `${cmd} pre`;
   if (host === "claude-code") {
-    const file = project ? path.join(project, ".claude", "settings.local.json") : path.join(homedir(), ".claude", "settings.json");
+    const file = managed ? path.join(managed.dir, "managed-settings.json") : project ? path.join(project, ".claude", "settings.local.json") : path.join(homedir(), ".claude", "settings.json");
     const h = (timeout, extra = {}) => [{ type: "command", command: cmd, timeout, ...extra }];
     return { file, hooks: {
       PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: pre, timeout: 600, onFailure: "block" }] }],
@@ -283,11 +337,29 @@ async function ask(question, { hidden = false } = {}) {
 
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
 
+/**
+ * Claude Code's organization-managed settings folder. Settings there outrank the user's and the repository's and cannot be switched off by them:
+ * a repository's own `disableAllHooks`, the `--setting-sources user` flag, a `--settings` file, bypass-permissions mode and another config folder
+ * were all tried against real Claude Code 2.1.327 (npm run e2e:claude-managed) and the managed hooks still ran. Needs administrator rights to write.
+ */
+export const managedDefaults = () => process.platform === "darwin" ? "/Library/Application Support/ClaudeCode" : process.platform === "win32" ? "C:\\Program Files\\ClaudeCode" : "/etc/claude-code";
+const managedOf = () => {
+  if (!process.argv.includes("--managed")) return undefined;
+  const dir = path.resolve(arg("--managed-dir") ?? managedDefaults());
+  return { dir, home: path.join(dir, "tend") };
+};
+
 async function install(host) {
+  const managed = managedOf();
+  if (managed && host !== "claude-code") fail("--managed is for Claude Code (Cursor has no organization-managed hooks that TEND has tested).");
+  if (managed && typeof process.getuid === "function" && process.getuid() !== 0) fail(`--managed writes to ${managed.dir}, which only an administrator can change; that is the point (a repository or the person running Claude Code cannot undo it). Run it with administrator rights, for example: sudo -E node tend-hooks.mjs install claude-code --managed --url <TEND address> --yes   (TEND_AGENT_KEY must be set; -E keeps it). Nothing was changed.`);
   const project = arg("--project") ? path.resolve(arg("--project")) : undefined;
+  if (managed && project) fail("--managed and --project cannot be combined.");
   const yes = process.argv.includes("--yes");
   const url = (arg("--url") ?? process.env.TEND_URL ?? "").replace(/\/$/, "");
   if (!/^https?:\/\/[A-Za-z0-9.:[\]-]+$/.test(url)) fail("Give TEND's address: --url https://your-tend.example");
+  // The agent key travels with every tool call: plain http only to this computer itself, never across a network.
+  if (url.startsWith("http://") && !["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname)) fail("TEND's address must start with https:// (plain http only for localhost). The agent key would otherwise cross the network unencrypted.");
   const key = process.env.TEND_AGENT_KEY || (process.stdin.isTTY ? await ask("Paste the agent key from TEND (it is not shown): ", { hidden: true }) : "");
   if (!/^tend_sk_[A-Za-z0-9_-]{24,64}$/.test(key)) fail("That is not a TEND agent key (it starts with tend_sk_). Copy it from TEND and run this again.");
   let check;
@@ -295,41 +367,99 @@ async function install(host) {
   if (check.status !== 200) fail(`TEND did not accept this key (${check.status} ${check.body.error ?? ""}). Create a new key in TEND and run this again.`);
 
   if (host === "claude-code") checkClaudeVersion();
-  const { file, hooks } = plan(host, { project });
+  const { file, hooks } = plan(host, { project, managed });
+  const opened = openSettings(file);
   let current = {};
-  if (existsSync(file)) {
-    try { current = JSON.parse(readFileSync(file, "utf8")); } catch { fail(`${file} is not valid JSON. Fix or move it, then run this again; nothing was changed.`); }
+  if (opened.text) {
+    try { current = JSON.parse(opened.text); } catch { fail(`${file} is not valid JSON. Fix or move it, then run this again; nothing was changed.`); }
   }
   console.error(`\nTEND will add hooks to ${file} so ${HOSTS[host]} asks TEND before each tool runs`);
-  console.error(`(${Object.keys(hooks).join(", ")}). Your other settings stay as they are${existsSync(file) ? `; a copy of the current file is kept next to it` : ""}.`);
-  console.error(`The agent key goes to ${configPath(host)}, readable only by you.`);
+  console.error(`(${Object.keys(hooks).join(", ")}). Your other settings stay as they are${opened.text ? `; a copy of the current file is kept next to it` : ""}.`);
+  if (managed) {
+    console.error(`MANAGED INSTALL: the hooks, this script and the key file go to ${managed.home}, owned by root. Claude Code treats ${file} as organization policy:`);
+    console.error(`a repository's settings, a command-line flag or the person running Claude Code cannot turn the hooks off. "allowManagedHooksOnly" is set, so hooks from user`);
+    console.error(`and project settings stop running (only managed hooks do). The key file is readable by group ${process.env.SUDO_GID ?? "0 (root only)"} and by nobody else.`);
+  } else console.error(`The agent key goes to ${configPath(host)}, readable only by you.`);
   if (!yes && (!process.stdin.isTTY || !/^y(es)?$/i.test(await ask("Add the hooks? [y/N] ")))) fail("Nothing was changed.");
 
+  if (managed) return installManaged(host, { managed, file, opened, hooks, current, url, key, check });
   mkdirSync(HOME, { recursive: true, mode: 0o700 });
-  writeFileSync(configPath(host), JSON.stringify({ url, key }, null, 2) + "\n", { mode: 0o600 });
-  chmodSync(configPath(host), 0o600);
+  writeOwnFile(configPath(host), JSON.stringify({ url, key }, null, 2) + "\n", 0o600);
   const self = fileURLToPath(import.meta.url);
-  if (path.resolve(self) !== path.join(HOME, "tend-hooks.mjs")) copyFileSync(self, path.join(HOME, "tend-hooks.mjs"));
+  if (path.resolve(self) !== path.join(HOME, "tend-hooks.mjs")) writeOwnFile(path.join(HOME, "tend-hooks.mjs"), readFileSync(self), 0o644);
   mkdirSync(path.dirname(file), { recursive: true });
-  if (existsSync(file)) copyFileSync(file, `${file}.before-tend`);
-  writeFileSync(file, JSON.stringify(merge(host, current, hooks), null, 2) + "\n");
+  writeSettings(file, opened, JSON.stringify(merge(host, current, hooks), null, 2) + "\n");
   console.error(`\nDone. TEND recognised this computer as "${check.body.agentId}".`);
   console.error(host === "claude-code" ? "Start (or restart) Claude Code; TEND sees it start and checks each tool call from now on." : "Restart Cursor; TEND checks each agent tool call from now on.");
   console.error(`To remove: node "${path.join(HOME, "tend-hooks.mjs")}" uninstall ${host}${project ? ` --project "${project}"` : ""}`);
 }
 
+/** The managed variant of install: root-owned folder, script and key file; the host's managed settings carry the hooks and allowManagedHooksOnly. */
+function installManaged(host, { managed, file, opened, hooks, current, url, key, check }) {
+  const gid = Number(process.env.SUDO_GID ?? 0);
+  mkdirSync(managed.dir, { recursive: true, mode: 0o755 });
+  mkdirSync(managed.home, { recursive: true, mode: 0o755 });
+  for (const d of [managed.dir, managed.home]) {
+    if (lstatSync(d).isSymbolicLink()) fail(`${d} is a symbolic link; TEND does not install through links. Nothing was changed.`);
+    chownSync(d, 0, 0); chmodSync(d, 0o755);
+  }
+  const cfg = path.join(managed.home, `${host}.json`), script = path.join(managed.home, "tend-hooks.mjs");
+  writeOwnFile(cfg, JSON.stringify({ url, key }, null, 2) + "\n", 0o640, { uid: 0, gid });
+  writeOwnFile(script, readFileSync(fileURLToPath(import.meta.url)), 0o755, { uid: 0, gid: 0 });
+  writeSettings(file, opened, JSON.stringify({ ...merge(host, current, hooks), allowManagedHooksOnly: true }, null, 2) + "\n", { mode: 0o644, owner: { uid: 0, gid: 0 } });
+  console.error(`\nDone. TEND recognised this computer as "${check.body.agentId}". Start (or restart) Claude Code.`);
+  console.error(`Check it: node "${script}" status claude-code --managed     Remove: sudo node "${script}" uninstall claude-code --managed --yes`);
+  console.error(`Not covered: Claude Code's --bare mode skips settings hooks (not tested here: it needs API-key login), and anyone with administrator rights can remove this.`);
+}
+
 async function uninstall(host) {
+  const managed = managedOf();
+  if (managed && typeof process.getuid === "function" && process.getuid() !== 0) fail("Removing a managed install needs administrator rights (run it with sudo). Nothing was changed.");
   const project = arg("--project") ? path.resolve(arg("--project")) : undefined;
-  const { file } = plan(host, { project });
-  if (!existsSync(file)) return console.error(`Nothing to remove: ${file} does not exist.`);
-  const current = JSON.parse(readFileSync(file, "utf8"));
+  const { file } = plan(host, { project, managed });
+  const opened = openSettings(file);
+  if (opened.fd === undefined) return console.error(`Nothing to remove: ${file} does not exist.`);
+  const current = JSON.parse(opened.text);
   if (!process.argv.includes("--yes") && (!process.stdin.isTTY || !/^y(es)?$/i.test(await ask(`Remove TEND's hooks from ${file}? [y/N] `)))) fail("Nothing was changed.");
-  writeFileSync(file, JSON.stringify(merge(host, current, {}), null, 2) + "\n");
-  rmSync(configPath(host), { force: true });
+  const rest = merge(host, current, {});
+  if (managed) delete rest.allowManagedHooksOnly;
+  if (managed && !Object.keys(rest).length) { closeSync(opened.fd); rmSync(file, { force: true }); } else writeSettings(file, opened, JSON.stringify(rest, null, 2) + "\n", { backup: false });
+  rmSync(managed ? path.join(managed.home, `${host}.json`) : configPath(host), { force: true });
+  if (managed) rmSync(path.join(managed.home, "tend-hooks.mjs"), { force: true });
   console.error(`Removed. ${HOSTS[host]} no longer asks TEND, and TEND will show it as not connected.`);
 }
 
+/** What a status check can say about managed enforcement without trusting it: is the policy there, and could the current user change it? */
+export function managedStatus(host, dir) {
+  const file = path.join(dir, "managed-settings.json"), home = path.join(dir, "tend");
+  const out = { present: false, tendHooks: false, managedOnly: false, folderRootOnly: false, scriptRootOnly: false, keyFileTrusted: false, problems: [] };
+  if (!existsSync(file)) { out.problems.push(`${file} does not exist: no managed enforcement on this computer.`); return out; }
+  out.present = true;
+  let s = {};
+  try { s = JSON.parse(readFileSync(file, "utf8")); } catch { out.problems.push(`${file} is not valid JSON, so Claude Code cannot apply it.`); return out; }
+  out.tendHooks = ours(s.hooks ?? {});
+  out.managedOnly = s.allowManagedHooksOnly === true;
+  if (s.disableAllHooks === true) out.problems.push("managed settings set disableAllHooks: true, so hooks are OFF.");
+  if (!out.tendHooks) out.problems.push("the managed settings hold no TEND hook.");
+  if (!out.managedOnly) out.problems.push("allowManagedHooksOnly is not set, so a repository can still switch hooks off with its own settings (not verified to be enough without it).");
+  const root = (p) => { try { const st = lstatSync(p); return st.uid === 0 && (st.mode & 0o022) === 0; } catch { return false; } };
+  out.folderRootOnly = root(dir) && root(home) && root(file);
+  out.scriptRootOnly = root(path.join(home, "tend-hooks.mjs"));
+  try { out.keyFileTrusted = managedFile(lstatSync(path.join(home, `${host}.json`)), lstatSync(home)); } catch {}
+  if (!out.folderRootOnly) out.problems.push("the managed folder or file is writable by someone other than root, so it is not tamper-proof.");
+  if (!out.scriptRootOnly) out.problems.push("the managed hook script is missing or writable by someone other than root.");
+  if (!out.keyFileTrusted) out.problems.push("the managed key file is missing or not root-owned and write-protected: the hook will block every call.");
+  return out;
+}
+
 async function status(host) {
+  const managed = managedOf();
+  if (managed) {
+    const m = managedStatus(host, managed.dir);
+    console.log(m.problems.length ? `Managed enforcement for ${HOSTS[host]} is NOT in order:\n- ${m.problems.join("\n- ")}` : `Managed enforcement for ${HOSTS[host]} is in place (${managed.dir}). It does not cover --bare mode or someone with administrator rights.`);
+    process.exitCode = m.problems.length ? 1 : 0;
+    return;
+  }
   const cfg = readConfig(host);
   if (!cfg) return console.log(`${HOSTS[host]}: not connected to TEND on this computer.`);
   try {

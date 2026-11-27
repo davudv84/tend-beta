@@ -37,10 +37,17 @@ server or key.
   them (for example with hooks disabled). TEND then sees nothing; the agent's page shows it as not running.
 - **Claude Code's own settings can switch hooks off, and a repository can do it for itself.** Tested 2026-10-31 with Claude Code 2.1.314
   (`npm run e2e:claude-coverage`): with `{"disableAllHooks": true}` in a project's `.claude/settings.json`, a command TEND's policy blocks ran
-  and TEND recorded nothing. Open repositories you do not trust with care. Organizations that need hooks enforced should look at Claude
-  Code's managed settings; that was not tested here.
-- **Claude Code's bypass-permissions mode was not tested** (deliberately not enabled). Whether hooks run when Claude Code is started that way
-  is not established here.
+  and TEND recorded nothing. The flag `--setting-sources user` (which leaves a project's settings out) does the same. Re-tested 2026-11-18
+  with Claude Code 2.1.327.
+- **Managed install closes those two, and was tested against real Claude Code.** `sudo -E node tend-hooks.mjs install claude-code --managed --url <TEND> --yes`
+  puts the hooks, the script and the key file in Claude Code's organization settings folder (`/etc/claude-code`), owned by root, with
+  `allowManagedHooksOnly`. With it, a repository's `disableAllHooks`, `--setting-sources user`, a `--settings` file that sets `disableAllHooks`,
+  `--dangerously-skip-permissions` / `bypassPermissions` mode, and another `CLAUDE_CONFIG_DIR` all still ran the hook and the blocked command
+  did not run; with TEND stopped, even an allowed command was blocked (`TEND_E2E_MANAGED=1 npm run e2e:claude-managed`, 15 checks). Check a
+  machine with `node tend-hooks.mjs status claude-code --managed`. Not covered: **`--bare` mode** (Claude Code's help says it skips settings hooks;
+  it could not be tested because it needs API-key login), anyone with administrator rights, a machine where Claude Code's managed settings
+  are not applied, and every agent that is not Claude Code. Side effect: hooks from user and project settings stop running.
+- **Claude Code's bypass-permissions mode does not skip hooks** (tested with and without managed settings: the hook still blocked).
 - **The before-tool hook is never silent.** Its installed command carries the role (`hook claude-code pre`), so unreadable or incomplete input
   is blocked; the installer refuses Claude Code older than 2.1.295, where a crashing hook would not block.
 - **macOS, Linux and WSL only.** The install command uses a POSIX shell, `curl` and Node 18.

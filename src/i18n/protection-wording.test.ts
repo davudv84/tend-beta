@@ -23,7 +23,7 @@ const ALLOWED = [/weder sicher noch unsicher/i, /not the same as safe or unsafe/
 
 test("no protection, Home, Connect or homepage text claims safety, security or a guarantee, in English or German", () => {
   for (const locale of ["en", "de"] as const) {
-    const bad = [...strings(DICTS[locale].protection), ...strings(DICTS[locale].home), ...strings(DICTS[locale].ui), ...strings(DICTS[locale].connect), ...strings(DICTS[locale].front)].filter((s) => OVERCLAIM.test(s) && !ALLOWED.some((a) => a.test(s)));
+    const bad = [...strings(DICTS[locale].protection), ...strings(DICTS[locale].home), ...strings(DICTS[locale].ui), ...strings(DICTS[locale].connect), ...strings(DICTS[locale].front), ...strings(DICTS[locale].land)].filter((s) => OVERCLAIM.test(s) && !ALLOWED.some((a) => a.test(s)));
     assert.deepEqual(bad, [], `${locale}: overclaiming text`);
   }
 });

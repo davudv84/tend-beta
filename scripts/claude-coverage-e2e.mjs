@@ -61,7 +61,7 @@ async function main() {
     const agentId = reg.body.agent.id;
     let key = reg.body.apiKey;
     const pol = await call("GET", `/api/v1/agents/${agentId}/policy`, { cookie });
-    await call("POST", `/api/v1/agents/${agentId}/policy`, { cookie, body: { rules: presetRules("balanced"), enforcement: "enforce", expectedVersion: pol.body.version } });
+    await call("POST", `/api/v1/agents/${agentId}/policy`, { cookie, body: { rules: presetRules("balanced", 1), /* v1 on purpose: this suite needs an allowed command that writes a file (its control); Balanced v2 asks before any write, which claude-hooks-e2e and agent-presets.test.ts cover */ enforcement: "enforce", expectedVersion: pol.body.version } });
     const install = () => spawnSync(process.execPath, [path.join(root, "public/sdk/tend-hooks.mjs"), "install", "claude-code", "--project", project, "--url", URL_, "--yes"],
       { env: { ...process.env, TEND_HOME: tendHome, TEND_AGENT_KEY: key }, encoding: "utf8" });
     check(install().status === 0, "hooks installed into the throwaway project");

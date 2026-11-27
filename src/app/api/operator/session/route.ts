@@ -1,3 +1,4 @@
+import { asSystem } from "@/server/db-context";
 import { getDb } from "@/server/db";
 import { HttpError, json, readJson, route } from "@/server/http";
 import { SESSION_TTL, sessionHeader, signOut, viewerOf } from "@/server/session";
@@ -12,7 +13,7 @@ export const GET = route(async (req) => json({ viewer: await viewerOf(await getD
 export const POST = route(async (req) => {
   // A body that is too large or not JSON is a failed attempt like any other: it is counted and logged, not waved through.
   const input = await readJson(req, 2_000).catch((e) => (e instanceof HttpError ? undefined : Promise.reject(e)));
-  const s = await signIn(await getDb(), req, input);
+  const s = await asSystem(async () => signIn(await getDb(), req, input));
   return json({ ok: true }, 200, { "set-cookie": sessionHeader(s.value, SESSION_TTL, req) });
 });
 

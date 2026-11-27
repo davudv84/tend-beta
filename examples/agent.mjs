@@ -13,6 +13,12 @@ if (!KEY) {
   console.error("Set TEND_AGENT_KEY (shown once when an operator registers the agent).");
   process.exit(1);
 }
+// The agent key goes with every request: plain http only to this computer itself, https everywhere else.
+const safe = (() => { try { const u = new URL(URL_); return u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)); } catch { return false; } })();
+if (!safe) {
+  console.error("TEND_URL must start with https:// (plain http only for localhost): the agent key would otherwise cross the network unencrypted. Nothing was sent.");
+  process.exit(1);
+}
 
 async function tend(path, body) {
   const res = await fetch(URL_ + path, {

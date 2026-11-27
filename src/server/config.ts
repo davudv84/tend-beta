@@ -1,4 +1,5 @@
 import { createECDH } from "node:crypto";
+import { canonicalSecret } from "./totp.ts";
 import path from "node:path";
 
 /**
@@ -80,6 +81,15 @@ export const config = {
     return t && !problem ? t : "";
   },
   /** True when a token is set but refused as weak, so sign-in can say why instead of "not configured". */
+  /**
+   * The admin's optional second factor: TEND_ADMIN_TOTP_SECRET, a base32 secret (at least 128 bits) shared with an authenticator app. Unset: the
+   * token alone signs in, as before. Set but unusable: "invalid", and admin sign-in is refused until it is fixed (never silently skipped).
+   */
+  get adminTotp(): string | "invalid" | null {
+    const raw = process.env.TEND_ADMIN_TOTP_SECRET ?? "";
+    if (!raw) return null;
+    return canonicalSecret(raw) ?? "invalid";
+  },
   get adminTokenWeak() {
     if (this.adminDisabled) return false;
     const t = process.env.TEND_ADMIN_TOKEN ?? "";
@@ -89,7 +99,10 @@ export const config = {
   get public() {
     if (this.adminDisabled) return false;
     const v = process.env.TEND_PUBLIC;
-    return v ? v === "1" || v === "true" : !this.adminToken;
+    if (v) return v === "1" || v === "true";
+    // Unset: development and tests keep the old behaviour (no admin token → a read-only look at the sample data). A production build never opens
+    // the dashboard to visitors by default: a missing or weak admin token then leaves it locked, not public. Making it public is an explicit TEND_PUBLIC=1.
+    return process.env.NODE_ENV === "production" ? false : !this.adminToken;
   },
   /** Run the server-side demo simulation for demo agents. */
   get demo() {
@@ -155,7 +168,15 @@ export const config = {
   /** Where people open TEND, for links in mails. Never taken from a request header, which a client controls. */
   get appUrl() {
     const v = (process.env.TEND_APP_URL ?? "").replace(/\/+$/, "");
-    return /^https?:\/\/[^\s/]+$/.test(v) ? v : "";
+    // Verification and reset links are secrets in a mail: a production server (not a local-only one) sends them over https or not at all.
+    const https = process.env.NODE_ENV === "production" && !this.localHttp;
+    return (https ? /^https:\/\/[^\s/]+$/ : /^https?:\/\/[^\s/]+$/).test(v) ? v : "";
+  },
+  /** Where security alerts are POSTed (src/server/security-events.ts). HTTPS required on a production server that is not local-only; otherwise ignored. */
+  get alertWebhookUrl() {
+    const v = process.env.TEND_ALERT_WEBHOOK_URL ?? "";
+    const https = process.env.NODE_ENV === "production" && !this.localHttp;
+    try { const u = new URL(v); return (u.protocol === "https:" || (!https && u.protocol === "http:")) ? u.toString() : ""; } catch { return ""; }
   },
   /** Who is told by mail that a new account waits for approval (optional). */
   get adminEmail() {
@@ -169,7 +190,68 @@ export const config = {
     const v = Number(process.env.TEND_AGENT_RPM ?? "");
     return Number.isInteger(v) && v >= 10 && v <= 10_000 ? v : 120;
   },
+  /**
+   * TEND_KEY_MAX_AGE_DAYS (1–3650): every agent key issued from now on expires after at most this many days (a caller may ask for less, never
+   * more). Unset: keys do not expire, as before. Keys already issued keep their (empty) expiry; rotate them to apply it.
+   */
+  get keyMaxAgeDays(): number | undefined {
+    const v = Number(process.env.TEND_KEY_MAX_AGE_DAYS ?? "");
+    return Number.isInteger(v) && v >= 1 && v <= 3650 ? v : undefined;
+  },
+  /**
+   * Authenticated agent requests per minute for ALL agents of one workspace together (TEND_WORKSPACE_RPM, 100–100000; default 3000, which is
+   * 25 agents at the default per-agent rate). Past it callers get 429 and nothing is let through.
+   */
+  get workspaceRequestsPerMinute() {
+    const v = Number(process.env.TEND_WORKSPACE_RPM ?? "");
+    return Number.isInteger(v) && v >= 100 && v <= 100_000 ? v : 3000;
+  },
+  /**
+   * Database-enforced tenant isolation (row-level security, src/server/db-context.ts). On by default for every production server that uses
+   * PostgreSQL; TEND_DB_ISOLATION=off turns it off (the application's own workspace checks remain), =on forces it everywhere PostgreSQL is used.
+   * With it on, a database where it cannot be guaranteed stops the start.
+   */
+  get dbIsolation() {
+    const v = (process.env.TEND_DB_ISOLATION ?? "").toLowerCase();
+    if (v === "off" || v === "0") return false;
+    if (v === "on" || v === "1") return true;
+    return process.env.NODE_ENV === "production";
+  },
+  /**
+   * Production database requirements (on by default in production, TEND_DB_STRICT=0 turns them off for local experiments): the login itself
+   * cannot become the schema owner or any privileged role, the tenant context is signed (TEND_CONTEXT_KEY), and the runtime role cannot create
+   * temporary tables. Checked by actual privileges at start-up (enableIsolation); a failure stops the start.
+   */
+  get dbStrict() {
+    const v = (process.env.TEND_DB_STRICT ?? "").toLowerCase();
+    if (v === "0" || v === "off") return false;
+    if (v === "1" || v === "on") return true;
+    return process.env.NODE_ENV === "production" && this.dbIsolation;
+  },
+  /** Encrypts accounts' TOTP secrets at rest (src/server/mfa.ts). At least 32 random characters; production refuses two-step setup without it. */
+  get mfaKey() {
+    const k = process.env.TEND_MFA_KEY ?? "";
+    return k.length >= 32 ? k : "";
+  },
+  /** Explicit, logged exception to dbStrict for deployments that still log in as the schema owner (one DATABASE_URL). RLS is then bypassable by SQL injection. */
+  get dbAllowOwnerLogin() {
+    return process.env.TEND_DB_ALLOW_OWNER_LOGIN === "1";
+  },
+  /** The NOLOGIN role every transaction switches to when the application connects as the schema owner (TEND_DB_RUNTIME_ROLE, default tend_runtime). */
+  get dbRuntimeRole() {
+    return process.env.TEND_DB_RUNTIME_ROLE || "tend_runtime";
+  },
+  /**
+   * TEND_CONTEXT_KEY: signs the tenant context of every transaction (src/server/db.ts, migration 20), so SQL injected into the application's
+   * session cannot choose its own tenant. At least 32 characters of random data; keep it in the deployment's secret store. Unset: unsigned.
+   * Set but too short: the start is refused (enableIsolation), never silently unsigned.
+   */
+  get contextKey() {
+    return process.env.TEND_CONTEXT_KEY ?? "";
+  },
   get localHttp() {
-    return process.env.TEND_LOCAL_HTTP === "1" && !process.env.VERCEL && this.trustedProxy === 0 && !this.databaseUrl;
+    // A database URL normally means a hosted deployment; a PostgreSQL on this same machine (loopback) does not.
+    const localDb = (() => { try { return ["127.0.0.1", "localhost", "[::1]", "::1"].includes(new URL(this.databaseUrl).hostname); } catch { return false; } })();
+    return process.env.TEND_LOCAL_HTTP === "1" && !process.env.VERCEL && this.trustedProxy === 0 && (!this.databaseUrl || localDb);
   },
 };

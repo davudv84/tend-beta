@@ -82,7 +82,7 @@ test("an unsupported Node version stops the command-line tools with one clear se
   for (const v of ["18.19.0", "20.11.1", "16.0.0"]) {
     const r = run(v);
     assert.equal(r.status, 2, v);
-    assert.match(r.stderr, new RegExp(`needs Node 20\\.12 or newer, and this is Node ${v.replace(/\./g, "\\.")}`));
+    assert.match(r.stderr, new RegExp(`needs Node 20\\.12 or newer, and this is Node ${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   }
   for (const v of ["20.12.0", "20.19.5", "22.1.0", "24.0.0"]) assert.equal(run(v).status, 0, v);
 });
@@ -117,4 +117,17 @@ test("the operator command line reads rules strictly and says in the audit when 
   assert.equal(describeEvent(e, { a1: "My agent" }), "My agent: denied send_email.send team-2 (policy_denied, by central policy v3)");
   assert.equal(describeEvent({ ...e, data: { ...e.data, policySource: undefined } }, { a1: "My agent" }), "My agent: denied send_email.send team-2 (policy_denied)");
   assert.equal(describeEvent({ type: "task.started", agentId: "a1", data: {} }), "", "unrelated events are left out");
+});
+
+test("the SDK client refuses to send its agent key over plain http to another computer; https and loopback are fine", async () => {
+  const { connectTend, keySafeUrl } = await import("./tend-client.mjs");
+  for (const url of ["http://tend.example.com", "http://10.0.0.5:3000", "http://localhost.example.com", "ftp://x", "not a url"]) {
+    assert.equal(keySafeUrl(url), false, url);
+    assert.throws(() => connectTend({ url, key: "tend_sk_" + "a".repeat(32) }), /must start with https:\/\//, url);
+  }
+  for (const url of ["https://tend.example.com", "http://localhost:3000", "http://127.0.0.1:9", "http://[::1]:3000"]) assert.equal(keySafeUrl(url), true, url);
+  // the Python client follows the same rule
+  const py = spawnSync("python3", ["-c", "import sys; sys.path.insert(0, 'examples/python'); import tend_gate\nfor u in ['http://tend.example.com', 'https://tend.example.com', 'http://localhost:3000']:\n    try:\n        tend_gate.Gate(url=u, key='tend_sk_' + 'a' * 32); print(u, 'ok')\n    except RuntimeError as e: print(u, 'refused')"], { encoding: "utf8", cwd: path.resolve(import.meta.dirname, "../..") });
+  if (py.status === null || /No such file|not found/.test(py.stderr)) return; // no python3 on this machine
+  assert.deepEqual(py.stdout.trim().split("\n"), ["http://tend.example.com refused", "https://tend.example.com ok", "http://localhost:3000 ok"], py.stderr);
 });

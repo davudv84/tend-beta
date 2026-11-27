@@ -1,0 +1,423 @@
+/* ============================================================================================================
+   TEND Design System 2.0: tokens.
+
+   Scoped on purpose. Everything lives under `.tds` (the design-system scope), so no existing screen changes. A scope
+   carries its own theme (`data-theme="light|dark"`), density (`data-density="app|marketing"`) and motion
+   (`data-motion="reduced"`). Nesting scopes is allowed: a dark `.tds` inside a light one is how the theme preview works.
+
+   Tailwind utilities for these tokens (`bg-t-canvas`, `text-t-ink`, `rounded-t-md`, `text-t-small`…) are mapped in a
+   marked block at the end of app/globals.css; the VALUES live only here.
+   ============================================================================================================ */
+
+.tds {
+  /* ---- Raw scales: theme-independent. Components never read these directly; they read the semantic tokens below. ---- */
+
+  /* Cobalt: a muted, ink-leaning blue (hue ~228). Deliberately duller and darker than a SaaS blue. */
+  --t-cobalt-50: #f0f2fb;
+  --t-cobalt-100: #e1e6f7;
+  --t-cobalt-200: #c5cef0;
+  --t-cobalt-300: #a6b4ee;
+  --t-cobalt-400: #7a8dd6;
+  --t-cobalt-500: #4d63bc;
+  --t-cobalt-600: #354ca6;
+  --t-cobalt-700: #2a3c88;
+  --t-cobalt-800: #212f6b;
+  --t-cobalt-900: #19244f;
+  --t-cobalt-950: #101736;
+
+  /* Paper to charcoal: a warm neutral. Never pure white, never pure black. */
+  --t-paper-0: #ffffff;
+  --t-paper-25: #fdfcfa;
+  --t-paper-50: #f7f5f0;
+  --t-paper-100: #efece4;
+  --t-paper-200: #e4e0d5;
+  --t-paper-300: #cfc9ba;
+  --t-paper-400: #aaa493;
+  --t-paper-500: #858073;
+  --t-paper-600: #68645a;
+  --t-paper-700: #4b483f;
+  --t-paper-800: #3b3934;
+  --t-paper-900: #1b1a17;
+  --t-paper-950: #151413;
+
+  /* ---- Type families ---- */
+  --t-font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --t-font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- Spacing: a 4px base. Names are the multiplier, so `--t-space-6` is 24px. ---- */
+  --t-space-0: 0;
+  --t-space-px: 1px;
+  --t-space-0-5: 2px;
+  --t-space-1: 4px;
+  --t-space-2: 8px;
+  --t-space-3: 12px;
+  --t-space-4: 16px;
+  --t-space-5: 20px;
+  --t-space-6: 24px;
+  --t-space-8: 32px;
+  --t-space-10: 40px;
+  --t-space-12: 48px;
+  --t-space-16: 64px;
+  --t-space-20: 80px;
+  --t-space-24: 96px;
+  --t-space-32: 128px;
+  --t-space-40: 160px;
+
+  /* ---- Containers ---- */
+  --t-w-prose: 40rem;     /* 640: reading column */
+  --t-w-narrow: 60rem;    /* 960: forms, settings, docs */
+  --t-w-content: 75rem;   /* 1200: marketing and app content */
+  --t-w-wide: 90rem;      /* 1440: app shells, full-width tables */
+
+  /* ---- Shape ---- */
+  --t-radius-xs: 4px;     /* tags, kbd, inline code */
+  --t-radius-sm: 6px;     /* badges, small controls */
+  --t-radius-md: 8px;     /* buttons, inputs, menu items */
+  --t-radius-lg: 12px;    /* plates, panels, popovers */
+  --t-radius-xl: 16px;    /* dialogs, drawers */
+
+  /* ---- Motion. One vocabulary for CSS and for framer-motion (motion/tokens.ts mirrors it). ---- */
+  --t-dur-instant: 80ms;   /* colour change on press */
+  --t-dur-fast: 140ms;     /* hover, focus, press, tooltips */
+  --t-dur-base: 220ms;     /* menus, tabs, toggles, popovers */
+  --t-dur-slow: 360ms;     /* dialogs, drawers, toasts */
+  --t-dur-slower: 560ms;   /* content reveals, page changes */
+  --t-dur-cinematic: 900ms;/* stacks, handoffs: marketing only */
+  --t-ease-out: cubic-bezier(0.22, 1, 0.36, 1);      /* things arriving */
+  --t-ease-in: cubic-bezier(0.5, 0, 0.9, 0.4);       /* things leaving: quick, never lingering */
+  --t-ease-inout: cubic-bezier(0.65, 0, 0.35, 1);    /* things moving between two places */
+  --t-move-xs: 2px;        /* press, hover lift */
+  --t-move-sm: 6px;        /* menus, tooltips */
+  --t-move-md: 12px;       /* dialogs, toasts, tab panels */
+  --t-move-lg: 24px;       /* content reveals, page changes */
+  --t-drawer-x: 100%;
+
+  /* ---- Defaults for density: Application. ---- */
+  --t-control-h: 36px;
+  --t-control-px: 14px;
+  --t-row-h: 44px;
+  --t-pad-panel: 16px;
+  --t-gap-stack: 12px;
+  --t-section-y: 40px;
+
+  font-family: var(--t-font-sans);
+  font-feature-settings: "calt", "kern";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Density. Application is efficient and structured; Marketing is spacious and expressive. Same system, different dials. */
+.tds[data-density="marketing"] {
+  --t-control-h: 44px;
+  --t-control-px: 20px;
+  --t-row-h: 64px;
+  --t-pad-panel: 28px;
+  --t-gap-stack: 20px;
+  --t-section-y: 128px;
+}
+
+/* ============================================================================================================
+   Semantic tokens: light. "Premium and editorial": warm paper, charcoal ink, one cobalt.
+   ============================================================================================================ */
+.tds,
+.tds[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces: canvas is the page; sunken is below it; surface sits on it; raised floats above it. */
+  --t-canvas: #f7f5f0;
+  --t-sunken: #efece4;
+  --t-surface: #fdfcfa;
+  --t-raised: #ffffff;
+  --t-scrim: rgb(27 26 23 / 0.38);
+  --t-inverse: #1b1a17;
+  --t-inverse-text: #f7f5f0;
+
+  /* Text */
+  --t-ink: #1b1a17;          /* headings, values */
+  --t-text: #3b3934;         /* body */
+  --t-muted: #68645a;        /* secondary copy, labels */
+  --t-subtle: #858073;       /* placeholders, disabled, decoration. Never the only carrier of meaning. */
+
+  /* Borders */
+  --t-line: #e4e0d5;         /* hairlines, dividers */
+  --t-line-strong: #cfc9ba;  /* control borders */
+  --t-focus: #4d63bc;
+
+  /* Interactive: the one accent */
+  --t-accent: #354ca6;
+  --t-accent-hover: #2a3c88;
+  --t-accent-press: #212f6b;
+  --t-accent-fg: #ffffff;
+  --t-accent-soft: #e8ecfa;
+  --t-accent-line: #c5cef0;
+  --t-accent-text: #2a3c88;  /* links and emphasis on canvas */
+
+  /* Status: each is a solid (fills, dots, icons), a soft (backgrounds), an ink (text on soft or canvas) and a line. */
+  --t-ok: #2e7452;
+  --t-ok-soft: #e5f0e8;
+  --t-ok-ink: #1f5239;
+  --t-ok-line: #bbd6c4;
+  --t-warn: #b26a00;
+  --t-warn-soft: #faefd8;
+  --t-warn-ink: #7a4a00;
+  --t-warn-line: #ebcf9b;
+  --t-danger: #b3372a;
+  --t-danger-hover: #9b2b20;
+  --t-danger-fg: #ffffff;
+  --t-danger-soft: #fae7e3;
+  --t-danger-ink: #8e241a;
+  --t-danger-line: #efbfb7;
+  --t-info: #354ca6;
+  --t-info-soft: #e8ecfa;
+  --t-info-ink: #2a3c88;
+  --t-info-line: #c5cef0;
+
+  /* Code */
+  --t-code-bg: #f1eee6;
+  --t-code-key: #2a3c88;
+  --t-code-string: #1f5239;
+  --t-code-number: #8e5200;
+  --t-code-comment: #66625a;
+  --t-code-punct: #68645a;
+
+  /* Elevation: soft, warm, low-contrast. A shadow is a hint; the hairline does the work. */
+  --t-shadow-1: 0 1px 0 rgb(27 26 23 / 0.04), 0 1px 2px rgb(27 26 23 / 0.06);
+  --t-shadow-2: 0 0 0 1px rgb(27 26 23 / 0.05), 0 6px 16px -6px rgb(27 26 23 / 0.16), 0 2px 4px rgb(27 26 23 / 0.04);
+  --t-shadow-3: 0 0 0 1px rgb(27 26 23 / 0.06), 0 28px 64px -20px rgb(27 26 23 / 0.32), 0 8px 20px -8px rgb(27 26 23 / 0.12);
+  --t-shadow-button: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 1px 2px rgb(27 26 23 / 0.2);
+  --t-ring: 0 0 0 3px rgb(77 99 188 / 0.22);
+}
+
+/* ============================================================================================================
+   Semantic tokens: dark. "Calm and sophisticated": warm charcoal, never black; the accent lightens to stay legible.
+   ============================================================================================================ */
+.tds[data-theme="dark"] {
+  color-scheme: dark;
+
+  --t-canvas: #161513;
+  --t-sunken: #100f0e;
+  --t-surface: #1d1c19;
+  --t-raised: #252420;
+  --t-scrim: rgb(8 8 7 / 0.6);
+  --t-inverse: #f3efe6;
+  --t-inverse-text: #161513;
+
+  --t-ink: #f3efe6;
+  --t-text: #d9d4c8;
+  --t-muted: #a19b8d;
+  --t-subtle: #7b7669;
+
+  --t-line: #2a2824;
+  --t-line-strong: #3b3830;
+  --t-focus: #a6b4ee;
+
+  --t-accent: #a6b4ee;
+  --t-accent-hover: #b9c4f3;
+  --t-accent-press: #c9d2f6;
+  --t-accent-fg: #101736;
+  --t-accent-soft: #1d2340;
+  --t-accent-line: #34407a;
+  --t-accent-text: #b9c4f3;
+
+  --t-ok: #6fbf93;
+  --t-ok-soft: #1a2a21;
+  --t-ok-ink: #8ed0ac;
+  --t-ok-line: #2c4638;
+  --t-warn: #d9a13e;
+  --t-warn-soft: #2a2314;
+  --t-warn-ink: #e5b867;
+  --t-warn-line: #5a4520;
+  --t-danger: #e0705f;
+  --t-danger-hover: #e98878;
+  --t-danger-fg: #1a0907;
+  --t-danger-soft: #2d1b18;
+  --t-danger-ink: #f09a8c;
+  --t-danger-line: #5e2e27;
+  --t-info: #a6b4ee;
+  --t-info-soft: #1d2340;
+  --t-info-ink: #b9c4f3;
+  --t-info-line: #34407a;
+
+  --t-code-bg: #121110;
+  --t-code-key: #b9c4f3;
+  --t-code-string: #8ed0ac;
+  --t-code-number: #e5b867;
+  --t-code-comment: #8a8577;
+  --t-code-punct: #a19b8d;
+
+  --t-shadow-1: 0 1px 0 rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.3);
+  --t-shadow-2: 0 0 0 1px rgb(255 255 255 / 0.05), 0 8px 20px -6px rgb(0 0 0 / 0.55);
+  --t-shadow-3: 0 0 0 1px rgb(255 255 255 / 0.07), 0 32px 72px -20px rgb(0 0 0 / 0.75);
+  --t-shadow-button: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.4);
+  --t-ring: 0 0 0 3px rgb(166 180 238 / 0.28);
+}
+
+/* "System": the same dark tokens, applied by the visitor's own setting. The server cannot know it, so CSS decides, and the first paint is
+   already right. tokens.test.ts checks that this block and the dark one never drift apart. */
+@media (prefers-color-scheme: dark) {
+  .tds[data-theme="system"] {
+    color-scheme: dark;
+  
+    --t-canvas: #161513;
+    --t-sunken: #100f0e;
+    --t-surface: #1d1c19;
+    --t-raised: #252420;
+    --t-scrim: rgb(8 8 7 / 0.6);
+    --t-inverse: #f3efe6;
+    --t-inverse-text: #161513;
+  
+    --t-ink: #f3efe6;
+    --t-text: #d9d4c8;
+    --t-muted: #a19b8d;
+    --t-subtle: #7b7669;
+  
+    --t-line: #2a2824;
+    --t-line-strong: #3b3830;
+    --t-focus: #a6b4ee;
+  
+    --t-accent: #a6b4ee;
+    --t-accent-hover: #b9c4f3;
+    --t-accent-press: #c9d2f6;
+    --t-accent-fg: #101736;
+    --t-accent-soft: #1d2340;
+    --t-accent-line: #34407a;
+    --t-accent-text: #b9c4f3;
+  
+    --t-ok: #6fbf93;
+    --t-ok-soft: #1a2a21;
+    --t-ok-ink: #8ed0ac;
+    --t-ok-line: #2c4638;
+    --t-warn: #d9a13e;
+    --t-warn-soft: #2a2314;
+    --t-warn-ink: #e5b867;
+    --t-warn-line: #5a4520;
+    --t-danger: #e0705f;
+    --t-danger-hover: #e98878;
+    --t-danger-fg: #1a0907;
+    --t-danger-soft: #2d1b18;
+    --t-danger-ink: #f09a8c;
+    --t-danger-line: #5e2e27;
+    --t-info: #a6b4ee;
+    --t-info-soft: #1d2340;
+    --t-info-ink: #b9c4f3;
+    --t-info-line: #34407a;
+  
+    --t-code-bg: #121110;
+    --t-code-key: #b9c4f3;
+    --t-code-string: #8ed0ac;
+    --t-code-number: #e5b867;
+    --t-code-comment: #8a8577;
+    --t-code-punct: #a19b8d;
+  
+    --t-shadow-1: 0 1px 0 rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.3);
+    --t-shadow-2: 0 0 0 1px rgb(255 255 255 / 0.05), 0 8px 20px -6px rgb(0 0 0 / 0.55);
+    --t-shadow-3: 0 0 0 1px rgb(255 255 255 / 0.07), 0 32px 72px -20px rgb(0 0 0 / 0.75);
+    --t-shadow-button: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.4);
+    --t-ring: 0 0 0 3px rgb(166 180 238 / 0.28);
+  }
+}
+
+/* ============================================================================================================
+   Base
+   ============================================================================================================ */
+.tds {
+  background: var(--t-canvas);
+  color: var(--t-text);
+}
+.tds ::selection {
+  background: color-mix(in srgb, var(--t-accent) 26%, transparent);
+}
+.tds :focus-visible {
+  outline: 2px solid var(--t-focus);
+  outline-offset: 2px;
+}
+/* A target that is only ever focused by a link or by script (the skip link's <main>) is not a control: no ring around the whole page. */
+.tds [tabindex="-1"]:focus-visible {
+  outline: none;
+}
+.tds .t-num {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.tds button:not(:disabled),
+.tds [role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+/* Reduced motion. System preference, or the showcase's own switch. Durations collapse, travel goes to zero, so every
+   transition becomes an instant state change or an opacity change. Nothing loops. */
+@media (prefers-reduced-motion: reduce) {
+  .tds {
+    --t-dur-instant: 1ms; --t-dur-fast: 1ms; --t-dur-base: 1ms; --t-dur-slow: 1ms; --t-dur-slower: 1ms; --t-dur-cinematic: 1ms;
+    --t-move-xs: 0px; --t-move-sm: 0px; --t-move-md: 0px; --t-move-lg: 0px; --t-drawer-x: 0%;
+  }
+}
+.tds[data-motion="reduced"] {
+  --t-dur-instant: 1ms; --t-dur-fast: 1ms; --t-dur-base: 1ms; --t-dur-slow: 1ms; --t-dur-slower: 1ms; --t-dur-cinematic: 1ms;
+  --t-move-xs: 0px; --t-move-sm: 0px; --t-move-md: 0px; --t-move-lg: 0px; --t-drawer-x: 0%;
+}
+
+/* ============================================================================================================
+   Keyframes. Radix overlays animate with CSS (it waits for the exit animation); everything else uses framer-motion.
+   ============================================================================================================ */
+@keyframes t-fade-in { from { opacity: 0; } }
+@keyframes t-fade-out { to { opacity: 0; } }
+@keyframes t-rise-in { from { opacity: 0; transform: translateY(var(--t-move-lg)); } }
+@keyframes t-panel-in { from { opacity: 0; transform: translateY(var(--t-move-md)); } }
+@keyframes t-pop-in-down { from { opacity: 0; transform: translateY(calc(var(--t-move-sm) * -1)) scale(0.97); } }
+@keyframes t-pop-in-up { from { opacity: 0; transform: translateY(var(--t-move-sm)) scale(0.97); } }
+@keyframes t-pop-out { to { opacity: 0; transform: scale(0.97); } }
+@keyframes t-dialog-in { from { opacity: 0; transform: translate(-50%, calc(-50% + var(--t-move-md))) scale(0.985); } }
+@keyframes t-dialog-out { to { opacity: 0; transform: translate(-50%, -50%) scale(0.99); } }
+@keyframes t-drawer-in { from { transform: translateX(var(--t-drawer-x)); opacity: var(--t-drawer-fade, 1); } }
+@keyframes t-drawer-out { to { transform: translateX(var(--t-drawer-x)); opacity: var(--t-drawer-fade, 1); } }
+@keyframes t-spin { to { transform: rotate(360deg); } }
+@keyframes t-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes t-breathe { 0%, 100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(2.2); opacity: 0; } }
+
+.t-fade-in { animation: t-fade-in var(--t-dur-base) var(--t-ease-out) both; }
+.t-panel-in { animation: t-panel-in var(--t-dur-base) var(--t-ease-out) both; }
+.t-spin { animation: t-spin 700ms linear infinite; }
+.t-pulse { animation: t-pulse 1.6s var(--t-ease-inout) infinite; }
+.t-breathe::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; background: currentColor;
+  animation: t-breathe 2.8s var(--t-ease-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-spin { animation: t-pulse 1.4s ease-in-out infinite; }
+  .t-pulse, .t-breathe::after { animation: none; }
+}
+.tds[data-motion="reduced"] .t-spin { animation: t-pulse 1.4s ease-in-out infinite; }
+.tds[data-motion="reduced"] .t-pulse,
+.tds[data-motion="reduced"] .t-breathe::after { animation: none; }
+
+/* Radix open / close, by data attribute. Menus grow from where they were opened. */
+.t-menu[data-state="open"][data-side="bottom"],
+.t-menu[data-state="open"][data-side="right"],
+.t-menu[data-state="open"][data-side="left"] { animation: t-pop-in-down var(--t-dur-base) var(--t-ease-out); }
+.t-menu[data-state="open"][data-side="top"] { animation: t-pop-in-up var(--t-dur-base) var(--t-ease-out); }
+.t-menu[data-state="closed"] { animation: t-pop-out var(--t-dur-fast) var(--t-ease-in) both; }
+.t-menu { transform-origin: var(--radix-popper-transform-origin); }
+.t-tip[data-state="delayed-open"], .t-tip[data-state="instant-open"] { animation: t-pop-in-down var(--t-dur-fast) var(--t-ease-out); }
+.t-tip { transform-origin: var(--radix-popper-transform-origin); }
+.t-scrim[data-state="open"] { animation: t-fade-in var(--t-dur-slow) var(--t-ease-out); }
+.t-scrim[data-state="closed"] { animation: t-fade-out var(--t-dur-base) var(--t-ease-in) both; }
+.t-dialog[data-state="open"] { animation: t-dialog-in var(--t-dur-slow) var(--t-ease-out); }
+.t-dialog[data-state="closed"] { animation: t-dialog-out var(--t-dur-base) var(--t-ease-in) both; }
+.t-drawer[data-state="open"] { animation: t-drawer-in var(--t-dur-slow) var(--t-ease-out); }
+.t-drawer[data-state="closed"] { animation: t-drawer-out var(--t-dur-base) var(--t-ease-in) both; }
+.tds[data-motion="reduced"] .t-drawer { --t-drawer-fade: 0; }
+@media (prefers-reduced-motion: reduce) { .tds .t-drawer { --t-drawer-fade: 0; } }
+
+/* A thin scrollbar that stays out of the way. */
+.t-scroll { scrollbar-width: thin; scrollbar-color: var(--t-line-strong) transparent; }
+
+/* The gate: TEND's one recurring graphic motif. A hairline with an opening, the way the mark's frame is open, and a
+   single square that can pass through it. Used as a divider, and as the object the motion system moves. */
+.t-gate {
+  --gate: 56px;
+  height: 1px;
+  background:
+    linear-gradient(to right, var(--t-line-strong) calc(50% - var(--gate) / 2), transparent calc(50% - var(--gate) / 2), transparent calc(50% + var(--gate) / 2), var(--t-line-strong) calc(50% + var(--gate) / 2));
+}

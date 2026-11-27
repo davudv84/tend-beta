@@ -15,11 +15,18 @@ export const DETAIL_MAX = 200;
 // Also characters that render as nothing or as a blank and can carry hidden text: the combining grapheme joiner, the Hangul fillers, the
 // braille blank, the tag characters (invisible ASCII look-alikes) and the supplementary variation selectors. Kept in step with the hooks
 // adapter (examples/hooks/tend-hooks.mjs), which turns the same characters into spaces before it asks.
-const INVISIBLE = new RegExp(`[${[
+export const INVISIBLE = new RegExp(`[${[
   [0x00, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x34f, 0x34f], [0x61c, 0x61c], [0x115f, 0x1160], [0x180e, 0x180e], [0x200b, 0x200f],
   [0x2028, 0x202e], [0x2060, 0x206f], [0x2800, 0x2800], [0x3164, 0x3164], [0xfeff, 0xfeff], [0xffa0, 0xffa0], [0xfff9, 0xfffb],
   [0xe0000, 0xe007f], [0xe0100, 0xe01ef],
 ].map(([a, b]) => `${String.fromCodePoint(a)}-${String.fromCodePoint(b)}`).join("")}]`, "u");
+// Like INVISIBLE, but newline and tab stay: a multi-line command is legitimate and is shown as written.
+const INVISIBLE_ARG = { test: (v: string) => INVISIBLE.test(v.replace(/[\n\t]/g, "")) };
+/**
+ * Whether one word mixes Latin letters with Cyrillic or Greek ones ("pаyment" with a Cyrillic "а"): look-alike letters that read as a different word
+ * to a person and as the same word to nobody else. Whole words in another alphabet are fine; only a word that mixes them is flagged.
+ */
+export const mixesAlphabets = (s: string) => (s.match(/\p{L}[\p{L}\p{M}]*/gu) ?? []).some((w) => /\p{Script=Latin}/u.test(w) && /[\p{Script=Cyrillic}\p{Script=Greek}]/u.test(w));
 const MAX_RULES = 50;
 
 export type Effect = "allow" | "approve" | "deny";
@@ -96,10 +103,22 @@ function insidePath(path: string, root: string) {
 type Match = boolean | "unknown";
 const UNKNOWN = Symbol("unknown");
 const summarized = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v) && typeof (v as { sha256?: unknown }).sha256 === "string";
-/** The value at a dot path in the request's arguments, undefined, or UNKNOWN when the path runs into a summary. */
+/** A key as a lenient consumer might read it: case, width, whitespace and invisible characters folded away ("Amount", "amount ", "ａmount", "amount\u200b"). */
+const foldKey = (k: string) => k.normalize("NFKC").toLowerCase().replace(new RegExp(INVISIBLE.source, "gu"), "").replace(/\s+/g, "");
+/**
+ * The value at a dot path in the request's arguments, undefined, or UNKNOWN when the path runs into a summary or is ambiguous: an object that
+ * also carries a key that folds to the same name ({ amount: 1, Amount: 5000 }, or a literal "a.b" next to { a: { b } }) is read differently by
+ * different consumers, so a rule on it can neither be said to match nor not to (decidingRule then takes the stricter reading).
+ */
 const at = (args: Record<string, unknown> | null, path: string) => {
-  const v = path.split(".").reduce<unknown>((v, k) => (v === UNKNOWN || summarized(v) ? UNKNOWN
-    : v && typeof v === "object" && !Array.isArray(v) && Object.hasOwn(v, k) ? (v as Record<string, unknown>)[k] : undefined), args);
+  if (args && path.includes(".") && Object.hasOwn(args, path)) return UNKNOWN;
+  const v = path.split(".").reduce<unknown>((v, k) => {
+    if (v === UNKNOWN || summarized(v)) return UNKNOWN;
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+    const o = v as Record<string, unknown>, want = foldKey(k);
+    if (Object.keys(o).some((own) => own !== k && foldKey(own) === want)) return UNKNOWN;
+    return Object.hasOwn(o, k) ? o[k] : undefined;
+  }, args);
   return summarized(v) ? UNKNOWN : v;
 };
 /** Compared as text, case-insensitive: 1001 and "1001" are one value, so a type change cannot step around a rule. */
@@ -109,12 +128,35 @@ function holds(c: Condition, value: unknown): Match {
   const onlyExists = Object.keys(c).every((k) => k === "exists");
   if (value === UNKNOWN) return onlyExists ? c.exists !== false : "unknown";
   if (c.exists !== undefined && (value !== undefined) !== c.exists) return false;
-  if (value === undefined) return onlyExists;
+  // A missing argument cannot be compared. For an allow rule that still means "does not apply" (unknown allow rules are ignored); for a deny
+  // or approve rule it must not mean "does not apply", or leaving the argument out would step around the rule.
+  if (value === undefined) return onlyExists ? c.exists === false : "unknown";
   if (onlyExists) return true;
   const values = Array.isArray(value) ? value : [value];
-  if (!values.length) return false;
+  if (!values.length) return "unknown"; // an empty list is no value to compare
   if (!values.every(scalar)) return "unknown"; // an object, a nested list or a summary where a plain value belongs
+  // A list is judged element by element. If the elements disagree (amount: [5000, 1] against "amount > 50") the answer is UNKNOWN, not "no":
+  // a tool that uses any one of them would otherwise be handed a way around an approve or deny rule. Unknown applies deny and approve rules
+  // and ignores allow rules, so a mixed list can only make a request stricter.
+  if (values.length > 1) {
+    const each1 = values.map((v) => holds(c, v));
+    return each1.every((r) => r === true) ? true : each1.every((r) => r === false) ? false : "unknown";
+  }
   const each = (test: (v: unknown) => boolean) => values.every(test);
+  // A value of the wrong type for a text or number condition (the string "5000" for amount > 50, a number for contains) cannot be compared:
+  // it is UNKNOWN, never "does not match", so a type change can make a request stricter and never looser.
+  const numeric = c.lt !== undefined || c.lte !== undefined || c.gt !== undefined || c.gte !== undefined;
+  const textual = !!(c.startsWith || c.endsWith || c.contains || c.pathUnder || c.emailDomainIn);
+  const wrongType = (numeric && !each((v) => typeof v === "number" && Number.isFinite(v))) || (textual && !each((v) => typeof v === "string"));
+  if (wrongType) return "unknown";
+  // A string a consumer might read differently from how it is compared here (a NUL, a zero-width or direction-changing character) cannot be judged
+  // either way. Treated as "no match" it would let a deny or approve rule on that argument be stepped around ("evil.com\u200b", "rm\u0000 -rf").
+  const comparesText = c.equals !== undefined || !!c.in || !!c.notIn || textual;
+  if (comparesText && values.some((v) => typeof v === "string" && INVISIBLE_ARG.test(v))) return "unknown";
+  // Same for a path that is not a plain absolute one (".." segments, backslashes, relative): where it points depends on who resolves it.
+  if (c.pathUnder && values.some((v) => typeof v === "string" && (!v.startsWith("/") || v.split("/").includes("..") || v.includes("\\")))) return "unknown";
+  // And an e-mail value that is not one plain address (a display name, a list, a comment): which address it sends to depends on the mailer.
+  if (c.emailDomainIn && values.some((v) => typeof v === "string" && !ADDRESS.test(v))) return "unknown";
   if (c.equals !== undefined && !each((v) => v !== null && text(v) === text(c.equals))) return false;
   if (c.in && !each((v) => v !== null && c.in!.some((x) => text(x) === text(v)))) return false;
   // Not in the list: only for plain text or numbers; null or true is not a value outside the list, it is no value.
@@ -229,13 +271,20 @@ export function parseAuthRequest(input: unknown): { ok: true; request: AuthReque
   let detail: string | null = null;
   if (o.detail !== undefined && o.detail !== null) {
     if (typeof o.detail !== "string" || o.detail.length === 0 || o.detail.length > DETAIL_MAX || INVISIBLE.test(o.detail)) errors.push(`detail must be 1–${DETAIL_MAX} printable characters`);
+    else if (mixesAlphabets(o.detail)) errors.push("detail must not mix look-alike letters from different alphabets in one word (for example Latin with Cyrillic)");
     else detail = o.detail;
   }
   let args: Record<string, unknown> | null = null;
   if (o.args !== undefined && o.args !== null) {
     if (typeof o.args !== "object" || Array.isArray(o.args)) errors.push("args must be a JSON object");
     else if (tooDeep(o.args, 5) || canonical(o.args).length > ARGS_MAX) errors.push(`args must be at most ${ARGS_MAX} characters of JSON, nested at most 5 deep`);
-    else args = o.args as Record<string, unknown>;
+    else {
+      // The text a person reads as "the exact request" comes from these arguments (authz.ts exactOf), so it gets the same rule as `detail`:
+      // nothing that renders differently from what it is (bidi overrides, zero-width, control characters other than newline and tab).
+      const shown = ["command", "path", "url"].find((k) => typeof (o.args as Record<string, unknown>)[k] === "string" && INVISIBLE_ARG.test((o.args as Record<string, string>)[k]));
+      if (shown) errors.push(`args.${shown} must not contain control, zero-width or direction-changing characters`);
+      else args = o.args as Record<string, unknown>;
+    }
   }
   if (errors.length || !tool || !action) return { ok: false, errors };
   return { ok: true, request: { tool, action, resource, detail, ...(args && { args }) } };

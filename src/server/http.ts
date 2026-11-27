@@ -1,9 +1,12 @@
 import { isIP } from "node:net";
 import { currentSession, type Session } from "./session.ts";
+import { bindSystem, bindWorkspace, dbContext, setActor, withRequestContext } from "./db-context.ts";
+import { securityEvent } from "./security-events.ts";
 import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { spend } from "./limits.ts";
 import { takePushDue } from "./push-due.ts";
+import { authorize, type Need } from "./rbac.ts";
 
 export { spend };
 
@@ -17,6 +20,16 @@ export class HttpError extends Error {
     this.code = code;
     this.extra = extra;
   }
+}
+
+/**
+ * An error as one log entry: its kind, code and a short message, plus the stack. Never the error object itself: a database error carries the query's
+ * detail and parameters (an e-mail address, a key fragment), and a fetch error can carry the request. Everything is cut to a safe length.
+ */
+export function describeError(e: unknown): string {
+  if (!(e instanceof Error)) return String(typeof e === "string" ? e : typeof e).slice(0, 200);
+  const code = (e as { code?: unknown }).code;
+  return `${e.name}${typeof code === "string" || typeof code === "number" ? ` [${String(code).slice(0, 20)}]` : ""}: ${e.message.slice(0, 300)}\n${(e.stack ?? "").split("\n").filter((l) => l.trimStart().startsWith("at ")).slice(0, 8).join("\n")}`;
 }
 
 export const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -43,18 +56,30 @@ async function deliverQueued() {
 
 /** Wraps a route handler: known errors become JSON, unknown ones are logged and hidden. */
 export function route<C>(fn: (req: Request, ctx: C) => Promise<Response> | Response) {
-  return async (req: Request, ctx: C) => {
+  // Every request starts with an empty database context (nothing tenant-scoped visible) until authentication binds one.
+  return (req: Request, ctx: C) => withRequestContext(async () => {
+    // Site-only showcase (src/lib/site-only.ts): no API at all; refused before the route's own code (or the database) is reached.
+    if (process.env.TEND_SITE_ONLY === "1") return json({ error: "not_found", message: "Not available on this site." }, 404);
     try {
       const res = await fn(req, ctx);
       await deliverQueued();
       return res;
     } catch (e) {
       await deliverQueued();
-      if (e instanceof HttpError) return json({ error: e.code, message: e.message, ...e.extra }, e.status, e.status === 429 ? { "retry-after": String(e.extra?.retryAfter ?? 10) } : {});
-      console.error("[tend] unhandled error", e);
+      const path = new URL(req.url).pathname;
+      if (e instanceof HttpError) {
+        // Refused operator requests: missing rights, or another tenant's id (answered as "not found"). Visitors without a session are not counted.
+        // Counted per authenticated caller (session or agent): refusals before authentication (no session, a wrong Origin) are not.
+        const actor = dbContext()?.actor;
+        if (actor && ((e.status === 403 && e.code !== "read_only_account") || (e.status === 404 && e.code.endsWith("_not_found") && path.startsWith("/api/v1/"))))
+          securityEvent("authz.denied", { code: e.code, route: path.replace(/\/[a-z]+_[A-Za-z0-9]+/g, "/:id"), session: actor, client: clientIp(req), workspace: dbContext()?.workspace });
+        return json({ error: e.code, message: e.message, ...e.extra }, e.status, e.status === 429 ? { "retry-after": String(e.extra?.retryAfter ?? 10) } : {});
+      }
+      if (/^\/api\/v1\/(authoriz|gateway|agent\/)/.test(path)) securityEvent("enforcement.error", { route: path.replace(/\/[a-z]+_[A-Za-z0-9]+/g, "/:id") });
+      console.error("[tend] unhandled error", describeError(e));
       return json({ error: "internal_error", message: "Something went wrong on the server." }, 500);
     }
-  };
+  });
 }
 
 export async function readJson(req: Request, max = 64_000): Promise<unknown> {
@@ -150,19 +175,23 @@ export function requireSameSite(req: Request) {
  * revoked one stops working at once. Returns the session: `id` is recorded with what the operator did, and `workspace` bounds what the
  * route may read or change (an id from another workspace must be answered as not found). Always `await` it: an unawaited call checks nothing.
  */
-export async function requireOperator(req: Request, db: Q): Promise<Session> {
+export async function requireOperator(req: Request, db: Q, need: Need): Promise<Session> {
   requireSameSite(req);
   const s = await currentSession(db, req);
   if (!s) throw new HttpError(403, "operator_required", "Sign in to make changes. Visitors have read-only access.");
+  setActor(s.id);
   // Every operator route goes through here, so this one check makes a read-only account read-only everywhere: it may look, never change.
   if (s.readOnly && req.method !== "GET" && req.method !== "HEAD") throw new HttpError(403, "read_only_account", "This is a read-only demo account with sample data. Nothing here can be changed.");
+  authorize(s.role, need); // the workspace role, from the server-side account (src/server/rbac.ts)
+  bindWorkspace(s.workspace); // from the server-side session, never from the request
   return s;
 }
 
 /** The admin token's session only: approving accounts, the demo. With the admin turned off (TEND_ADMIN=0) these routes do not exist. */
 export async function requireAdmin(req: Request, db: Q): Promise<Session> {
   if (config.adminDisabled) throw new HttpError(404, "not_found", "Not found.");
-  const s = await requireOperator(req, db);
+  const s = await requireOperator(req, db, "view");
   if (!s.admin) throw new HttpError(403, "admin_required", "Only the admin can do this.");
+  bindSystem(); // the admin's own routes (accounts, the whole audit log) span workspaces
   return s;
 }

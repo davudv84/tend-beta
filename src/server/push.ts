@@ -8,6 +8,7 @@
 import { createCipheriv, createECDH, createPrivateKey, hkdfSync, randomBytes, sign } from "node:crypto";
 import { DICTS } from "../i18n/index.ts";
 import { config } from "./config.ts";
+import { asSystem } from "./db-context.ts";
 import type { DB } from "./db.ts";
 import { hrefOf, type Kind } from "./notifications.ts";
 
@@ -50,10 +51,14 @@ export function vapidHeader(endpoint: string, now = Date.now()) {
 }
 
 /** A fresh VAPID key pair, for setting up a server (scripts/vapid-keys.mjs prints one). */
+/** A P-256 private key as exactly 32 bytes. Node's ECDH drops leading zero bytes (about 1 key in 256 comes out shorter), and a short key is
+ *  refused by the VAPID check (config.ts), which would leave push switched off. Left-padding keeps the same number. */
+export const p256PrivateKey = (k: Buffer) => (k.length >= 32 ? k : Buffer.concat([Buffer.alloc(32 - k.length), k]));
+
 export function newVapidKeys() {
   const ecdh = createECDH("prime256v1");
   ecdh.generateKeys();
-  return { publicKey: b64(ecdh.getPublicKey()), privateKey: b64(ecdh.getPrivateKey()) };
+  return { publicKey: b64(ecdh.getPublicKey()), privateKey: b64(p256PrivateKey(ecdh.getPrivateKey())) };
 }
 
 interface Sub { id: string; endpoint: string; p256dh: string; auth: string; locale: string; failures: number }
@@ -104,6 +109,10 @@ export const PUSH_MAX_AGE = 15 * 60_000;
  * never send the same one twice. One that cannot be delivered is not retried: the app still lists it.
  */
 export async function flushPush(db: DB, now = Date.now()) {
+  // The queue spans workspaces (one job sends everyone's notifications); each notification still goes only to its own workspace's browsers.
+  return asSystem(() => flushQueued(db, now));
+}
+async function flushQueued(db: DB, now: number) {
   if (!config.vapid) {
     await db.run("UPDATE notifications SET push = 'skipped' WHERE push = 'queued'");
     return { configured: false, sent: 0, failed: 0 };

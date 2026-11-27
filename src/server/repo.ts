@@ -12,7 +12,10 @@ import type { DB, Q } from "./db.ts";
 import { HttpError, spend } from "./http.ts";
 import { notifyFor } from "./notifications.ts";
 import { parsePolicy, policyProblem } from "./policy.ts";
+import { config } from "./config.ts";
 import { DEFAULT_WORKSPACE } from "./session.ts";
+import { securityEvent } from "./security-events.ts";
+import { dbContext } from "./db-context.ts";
 
 /** Postgres BIGINT columns hold whole milliseconds. */
 const ms = (t: number) => Math.round(t);
@@ -21,7 +24,7 @@ const ms = (t: number) => Math.round(t);
 
 interface AgentRow {
   id: string; profile: string; origin: "demo" | "connected"; status: Agent["status"]; integration_enabled: number;
-  permissions: string; public: number; key_hash: string | null; key_prefix: string | null; config_version: number;
+  permissions: string; public: number; key_hash: string | null; key_prefix: string | null; key_expires_at: number | null; config_version: number;
   acked_version: number; created_at: number; last_seen_at: number | null; disconnected_at: number | null;
   /** Enforcement settings stay out of `Agent` on purpose: that type is sent to browsers, and a policy is not for visitors. */
   enforcement: "monitor" | "enforce"; policy: string;
@@ -53,28 +56,41 @@ export const allAgents = async (q: Q, workspace?: string) =>
 
 // Which key each agent object was authenticated with, kept beside the object (never in it, so it cannot end up in a response).
 const presented = new WeakMap<object, string>();
+/** The workspace an authenticated agent object belongs to (set by agentByKey; the Agent type that browsers receive does not carry it). */
+const workspaceOfAgent = new WeakMap<object, string>();
+export const workspaceOf = (agent: object) => workspaceOfAgent.get(agent);
 export async function agentByKey(q: Q, key: string) {
   const hash = hashKey(key);
   const r = await q.get<AgentRow>("SELECT * FROM agents WHERE key_hash = ?", hash);
-  if (!r) return undefined;
+  if (!r || keyExpired(r)) return undefined;
   const agent = toAgent(r);
   presented.set(agent, hash);
+  workspaceOfAgent.set(agent, r.workspace_id);
   return agent;
 }
 /**
  * Whether the key an agent was authenticated with is no longer its key. Checked again inside each authorization transaction, under the lock:
  * the key is looked up before the transaction starts, and a revocation that commits in between must win.
  */
-export const keyRevoked = (row: Pick<AgentRow, "key_hash"> | undefined, agent: object) => {
+export const keyRevoked = (row: Pick<AgentRow, "key_hash" | "key_expires_at"> | undefined, agent: object, now = Date.now()) => {
   const hash = presented.get(agent);
-  return hash !== undefined && row?.key_hash !== hash;
+  return hash !== undefined && (row?.key_hash !== hash || keyExpired(row, now));
 };
+/** A key past its expiry is as good as revoked (key_expires_at is NULL for keys that do not expire). */
+const keyExpired = (row: Pick<AgentRow, "key_expires_at">, now = Date.now()) => row.key_expires_at !== null && row.key_expires_at !== undefined && Number(row.key_expires_at) <= now;
+/** When a key issued now expires: the earlier of what the caller asked for (days) and the server's TEND_KEY_MAX_AGE_DAYS; null = never. */
+export function keyExpiry(requestedDays: unknown, now = Date.now()): number | null {
+  const asked = requestedDays === undefined || requestedDays === null ? undefined : requestedDays;
+  if (asked !== undefined && (typeof asked !== "number" || !Number.isInteger(asked) || asked < 1 || asked > 3650)) throw new HttpError(422, "invalid_key_expiry", "keyExpiresInDays must be a whole number of days from 1 to 3650.");
+  const days = Math.min(asked ?? Infinity, config.keyMaxAgeDays ?? Infinity);
+  return Number.isFinite(days) ? now + days * 86_400_000 : null;
+}
 
-export function insertAgent(q: Q, a: Agent, keyHash?: string, keyPrefix?: string, workspace = DEFAULT_WORKSPACE) {
+export function insertAgent(q: Q, a: Agent, keyHash?: string, keyPrefix?: string, workspace = DEFAULT_WORKSPACE, keyExpiresAt: number | null = null) {
   const profile: Profile = { name: a.name, model: a.model, provider: a.provider, role: a.role, description: a.description, cadenceHours: a.cadenceHours };
-  return q.run(`INSERT INTO agents (id, profile, origin, status, integration_enabled, permissions, public, key_hash, key_prefix, config_version, acked_version, created_at, workspace_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    a.id, JSON.stringify(profile), a.origin, a.status, a.integrationEnabled ? 1 : 0, JSON.stringify(a.permissions), a.public ? 1 : 0, keyHash ?? null, keyPrefix ?? null, a.configVersion, a.ackedVersion, ms(a.connectedAt), workspace);
+  return q.run(`INSERT INTO agents (id, profile, origin, status, integration_enabled, permissions, public, key_hash, key_prefix, config_version, acked_version, created_at, workspace_id, key_expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    a.id, JSON.stringify(profile), a.origin, a.status, a.integrationEnabled ? 1 : 0, JSON.stringify(a.permissions), a.public ? 1 : 0, keyHash ?? null, keyPrefix ?? null, a.configVersion, a.ackedVersion, ms(a.connectedAt), workspace, keyExpiresAt);
 }
 
 // ---- workspaces --------------------------------------------------------------------------------
@@ -101,6 +117,8 @@ interface EventRow { seq: number; id: string; agent_id: string; type: EventType;
 export const toWire = (r: EventRow): WireEvent => ({ seq: r.seq, id: r.id, agentId: r.agent_id, type: r.type, at: r.at, actor: r.actor, data: JSON.parse(r.data) });
 
 type NewEvent = { agentId: string; type: EventType; actor: Actor; data?: object; at?: number; id?: string; idempotencyKey?: string };
+/** Security-relevant configuration changes, also sent to monitoring (security-events.ts). */
+const MONITORED = new Set(["key.revoked", "key.rotated", "policy.updated", "policy.central_updated", "policy.central_assigned", "policy.central_unassigned"]);
 const eventId = () => `ev_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 
 /** Appends one event. Must run inside a transaction (it takes the event-order lock). */
@@ -111,6 +129,7 @@ export async function insertEvent(q: Q, e: NewEvent): Promise<WireEvent> {
   const r = await q.get<{ seq: number }>("INSERT INTO events (id, agent_id, type, at, actor, data, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING seq",
     id, e.agentId, e.type, at, e.actor, JSON.stringify(e.data ?? {}), e.idempotencyKey ?? null);
   const wire: WireEvent = { seq: r!.seq, id, agentId: e.agentId, type: e.type, at, actor: e.actor, data: (e.data ?? {}) as Record<string, unknown> };
+  if (MONITORED.has(e.type)) securityEvent(e.type, { agent: e.agentId, actor: e.actor, workspace: dbContext()?.workspace });
   // Every event passes here, so this is the one place notifications come from: same transaction, nothing to forget on another path.
   await notifyFor(q, wire);
   return wire;
@@ -126,14 +145,28 @@ export async function insertEvents(q: Q, list: NewEvent[]) {
   }
 }
 
-export const eventsAfter = async (q: Q, seq: number, n: number) => (await q.all<EventRow>("SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?", seq, n)).map(toWire);
+/**
+ * Events after a sequence number. With `agentIds` only those agents' rows leave the database, so another workspace's events are never read into
+ * this request, cannot crowd this viewer's batch out, and their sequence numbers (the platform's write rate) are not disclosed. Without it: every
+ * workspace, for tests and operator tooling only.
+ */
+export const eventsAfter = async (q: Q, seq: number, n: number, agentIds?: string[]) => {
+  if (agentIds && !agentIds.length) return [];
+  const only = agentIds ? ` AND agent_id IN (${agentIds.map(() => "?").join(", ")})` : "";
+  return (await q.all<EventRow>(`SELECT * FROM events WHERE seq > ?${only} ORDER BY seq LIMIT ?`, seq, ...(agentIds ?? []), n)).map(toWire);
+};
 /** The latest events, oldest first. With `agentIds`, only theirs: the limit is then per viewer, so another workspace's volume cannot crowd them out. */
 export const recentEvents = async (q: Q, since: number, n: number, agentIds?: string[]) => {
   if (agentIds && !agentIds.length) return [];
   const only = agentIds ? ` AND agent_id IN (${agentIds.map(() => "?").join(", ")})` : "";
   return (await q.all<EventRow>(`SELECT * FROM events WHERE at > ?${only} ORDER BY seq DESC LIMIT ?`, ms(since), ...(agentIds ?? []), n)).map(toWire).reverse();
 };
-export const lastSeq = async (q: Q) => (await q.get<{ seq: number }>("SELECT COALESCE(MAX(seq), 0) AS seq FROM events"))!.seq;
+/** The highest sequence number, of the given agents' events only when `agentIds` is given (a viewer's cursor must not reveal how much other workspaces write). */
+export const lastSeq = async (q: Q, agentIds?: string[]) => {
+  if (agentIds && !agentIds.length) return 0;
+  const only = agentIds ? ` WHERE agent_id IN (${agentIds.map(() => "?").join(", ")})` : "";
+  return (await q.get<{ seq: number }>(`SELECT COALESCE(MAX(seq), 0) AS seq FROM events${only}`, ...(agentIds ?? [])))!.seq;
+};
 
 // ---- agent ingestion -------------------------------------------------------------------------
 
@@ -143,10 +176,17 @@ export const lastSeq = async (q: Q) => (await q.get<{ seq: number }>("SELECT COA
  * trimmed afterwards, so the limit has to be at the door. Generous for real use: 600 events a minute is ten a second.
  * An object, not constants, so tests can lower it.
  */
-export const QUOTA = { eventsPerMinute: 600, eventsPerDay: 50_000, authorizationsPerDay: 5_000, pendingReviews: 20 };
+export const MAX_AGENTS_PER_WORKSPACE = 50;
+export const QUOTA = { eventsPerMinute: 600, eventsPerDay: 50_000, authorizationsPerDay: 5_000, pendingReviews: 20, workspaceEventsPerDay: 200_000, workspaceAuthorizationsPerDay: 20_000 };
 
 /** Takes `cost` units of an agent's allowance, or refuses with 429 and says when it frees up. Atomic: parallel callers cannot overspend it. */
-export async function agentBudget(q: Q, agentId: string, kind: "events" | "authorizations", cost = 1) {
+export async function agentBudget(q: Q, agentId: string, kind: "events" | "authorizations", cost = 1, workspace?: string) {
+  // The log cannot be trimmed, and quotas per agent multiply with the number of agents: one more ceiling for everything a workspace's agents write in a day.
+  if (workspace) {
+    const max = kind === "events" ? QUOTA.workspaceEventsPerDay : QUOTA.workspaceAuthorizationsPerDay;
+    const r = await spend(q, `quota:ws:${kind}:day:${workspace}`, max, { windowMs: 86_400_000, cost });
+    if (!r.ok) throw new HttpError(429, "workspace_quota_exceeded", `This workspace has used its allowance of ${max} ${kind} per day across all its agents. Retry later.`, { quota: `workspace_${kind}_per_day`, limit: max, retryAfter: r.retryAfter });
+  }
   const windows: [string, number, number][] = kind === "events"
     ? [["minute", 60_000, QUOTA.eventsPerMinute], ["day", 86_400_000, QUOTA.eventsPerDay]]
     : [["day", 86_400_000, QUOTA.authorizationsPerDay]];
@@ -258,7 +298,7 @@ export async function ingestEvents(db: DB, agent: Agent, inputs: unknown[], now 
   for (const p of parsed) guard(agent, p.type);
   // Before the lock is taken, so a flood is refused cheaply. Presence pings store nothing and cost nothing.
   const storable = parsed.filter((p) => p.type !== "agent.heartbeat").length;
-  if (storable) await agentBudget(db, agent.id, "events", storable);
+  if (storable) await agentBudget(db, agent.id, "events", storable, workspaceOf(agent));
   return db.tx(async (q) => {
     // Taken first, so two retries of the same request can't both pass the duplicate check.
     await q.lockEvents();
@@ -372,7 +412,7 @@ export async function ingestCheckIn(db: DB, agent: Agent, body: unknown, actor: 
   if (!parsed.ok) throw new HttpError(422, "invalid_check_in", "The check-in did not validate.", { errors: parsed.errors });
   guard(agent, "check_in");
   const v = parsed.value;
-  if (actor === "agent") await agentBudget(db, agent.id, "events"); // an operator composing for a demo agent is not an agent's key
+  if (actor === "agent") await agentBudget(db, agent.id, "events", 1, workspaceOf(agent)); // an operator composing for a demo agent is not an agent's key
   return db.tx(async (q) => {
     await q.lockEvents();
     const now = Date.now();
@@ -630,8 +670,12 @@ export async function registerAgent(db: DB, input: unknown, by?: string, workspa
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agent";
   const k = newKey();
   const now = Date.now();
+  const expires = keyExpiry(o.keyExpiresInDays, now);
   return db.tx(async (q) => {
     await q.lockEvents();
+    // Quotas are per agent, so without a cap on agents one account could multiply them without bound (the event log cannot be trimmed).
+    if (workspace !== DEFAULT_WORKSPACE && (await q.get<{ n: number }>("SELECT COUNT(*)::int AS n FROM agents WHERE workspace_id = ? AND origin = 'connected'", workspace))!.n >= MAX_AGENTS_PER_WORKSPACE)
+      throw new HttpError(429, "too_many_agents", `A workspace can have at most ${MAX_AGENTS_PER_WORKSPACE} connected agents. Remove one you no longer use.`, { limit: MAX_AGENTS_PER_WORKSPACE });
     // Ids are global. In a user's workspace a random suffix keeps them from saying whether another workspace already has the name.
     let id = workspace === DEFAULT_WORKSPACE ? base : `${base}-${randomBytes(3).toString("hex")}`;
     for (let i = 2; await agentRow(q, id); i++) id = workspace === DEFAULT_WORKSPACE ? `${base}-${i}` : `${base}-${randomBytes(3).toString("hex")}`;
@@ -639,9 +683,9 @@ export async function registerAgent(db: DB, input: unknown, by?: string, workspa
       id, name, model, provider, role: S(o.role, 60) || "Connected agent", description: S(o.description, 300), status: "active",
       integrationEnabled: true, permissions: [], cadenceHours: 0, connectedAt: now, origin: "connected", configVersion: 1, ackedVersion: 0, public: o.public === true,
     };
-    await insertAgent(q, agent, k.hash, k.prefix, workspace);
+    await insertAgent(q, agent, k.hash, k.prefix, workspace, expires);
     await insertEvent(q, { agentId: id, type: "agent.registered", actor: "human", at: now, data: { agent, ...(by && { by }) } });
-    return { agent, apiKey: k.key };
+    return { agent, apiKey: k.key, keyExpiresAt: expires };
   });
 }
 
@@ -660,16 +704,17 @@ async function endOutstanding(q: Q, agentId: string, now: number, by?: string) {
   return rows.length;
 }
 
-export async function rotateKey(db: DB, agentId: string, by?: string) {
+export async function rotateKey(db: DB, agentId: string, by?: string, keyExpiresInDays?: unknown) {
   const k = newKey();
+  const expires = keyExpiry(keyExpiresInDays);
   return db.tx(async (q) => {
     await q.lockEvents();
     const a = await mustAgent(q, agentId);
     if (a.origin !== "connected") throw new HttpError(409, "not_connected", "Demo agents don’t have API keys.");
-    await q.run("UPDATE agents SET key_hash = ?, key_prefix = ? WHERE id = ?", k.hash, k.prefix, agentId);
+    await q.run("UPDATE agents SET key_hash = ?, key_prefix = ?, key_expires_at = ? WHERE id = ?", k.hash, k.prefix, expires, agentId);
     await endOutstanding(q, agentId, Date.now(), by);
-    await insertEvent(q, { agentId, type: "key.rotated", actor: "human", data: { prefix: k.prefix, ...(by && { by }) } });
-    return { apiKey: k.key, prefix: k.prefix };
+    await insertEvent(q, { agentId, type: "key.rotated", actor: "human", data: { prefix: k.prefix, ...(expires && { expiresAt: expires }), ...(by && { by }) } });
+    return { apiKey: k.key, prefix: k.prefix, keyExpiresAt: expires };
   });
 }
 
@@ -682,7 +727,7 @@ export async function revokeKey(db: DB, agentId: string, by?: string) {
     await q.lockEvents();
     const a = await mustAgent(q, agentId);
     if (a.origin !== "connected") throw new HttpError(409, "not_connected", "Demo agents don’t have API keys.");
-    if (!(await q.run("UPDATE agents SET key_hash = NULL, key_prefix = NULL WHERE id = ? AND key_hash IS NOT NULL", agentId))) return { revoked: false as const, cancelled: 0 };
+    if (!(await q.run("UPDATE agents SET key_hash = NULL, key_prefix = NULL, key_expires_at = NULL WHERE id = ? AND key_hash IS NOT NULL", agentId))) return { revoked: false as const, cancelled: 0 };
     const now = Date.now();
     const cancelled = await endOutstanding(q, agentId, now, by);
     await insertEvent(q, { agentId, type: "key.revoked", actor: "human", at: now, data: { cancelled, ...(by && { by }) } });

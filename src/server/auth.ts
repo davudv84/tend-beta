@@ -53,6 +53,8 @@ export interface Viewer {
   /** Visitors may look around without signing in. */
   public: boolean;
   operatorAvailable: boolean;
+  /** The admin sign-in also asks for a code from an authenticator app (TEND_ADMIN_TOTP_SECRET is set). */
+  adminCode?: boolean;
   demo: boolean;
   /** The workspace this viewer sees: its own for a signed-in user, "default" for the admin and for public visitors. */
   workspace?: string;

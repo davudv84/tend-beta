@@ -19,6 +19,9 @@ import { config } from "./config.ts";
 import type { Q } from "./db.ts";
 import { cookie, type Viewer } from "./auth.ts";
 import { spend } from "./limits.ts";
+import { asSystem, bindWorkspace, dbContext } from "./db-context.ts";
+import { securityEvent } from "./security-events.ts";
+import { isRole, type Role } from "./rbac.ts";
 
 export const SESSION_TTL = 12 * 60 * 60 * 1000;
 /** A user stays signed in for a week on the browser they signed in on (the cookie survives a restart); signing out or a reset ends it. */
@@ -49,24 +52,29 @@ export const sessionCookieName = (req?: Request) => (config.secureCookies && !pl
 const sha = (s: string) => createHash("sha256").update(s).digest();
 const sameHash = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b);
 
-// Which admin token a session was issued under. A slow hash, computed once per token and kept in memory, so the value stored with
-// a session is of no use for guessing the token offline.
-let epochFor: { token: string; value: string } | undefined;
+// Which admin token (and second-factor secret) a session was issued under. A slow hash, computed once per token and kept in memory, so the value
+// stored with a session is of no use for guessing the token offline. Turning the second factor on, changing its secret or turning it off ends every
+// admin session, as changing the token does: a session that never passed the current factor does not outlive the change. Without a second factor
+// the input is the token alone, exactly as before, so servers that do not use it keep their sessions.
+let epochFor: { key: string; value: string } | undefined;
 function epoch() {
   const token = config.adminToken;
   if (!token) return undefined;
-  if (epochFor?.token !== token) epochFor = { token, value: scryptSync(token, "tend-session-epoch-v1", 16).toString("hex") };
+  const totp = process.env.TEND_ADMIN_TOTP_SECRET ?? "";
+  const key = totp ? `${token}\0totp:${totp.replace(/[\s=]/g, "").toUpperCase()}` : token;
+  if (epochFor?.key !== key) epochFor = { key, value: scryptSync(key, "tend-session-epoch-v1", 16).toString("hex") };
   return epochFor.value;
 }
 
 interface SessionRow { id: string; secret_hash: string; epoch: string; created_at: number; expires_at: number; last_seen_at: number | null; revoked_at: number | null; client: string | null; user_id: string | null }
-interface AccountRow { workspace_id: string; email: string; email_verified_at: number | null; approved_at: number | null; disabled_at: number | null; password_changed_at: number; read_only: number }
+interface AccountRow { workspace_id: string; email: string; email_verified_at: number | null; approved_at: number | null; disabled_at: number | null; password_changed_at: number; read_only: number; role: string }
 /** Who a live session acts for: `by` is recorded beside everything it does; `workspace` bounds everything it can see or change. `readOnly`: it may look, never change (the demo account). */
-export interface Session { id: string; userId: string | null; workspace: string; email?: string; admin: boolean; readOnly?: boolean }
+export interface Session { id: string; userId: string | null; workspace: string; email?: string; admin: boolean; readOnly?: boolean; role: Role }
 
 export type AuthEventType = "signin.succeeded" | "signin.failed" | "signin.blocked" | "session.signed_out" | "session.revoked_all" | "session.rejected" | "log.suppressed" | "agentkey.rejected"
-  | "account.registered" | "account.verified" | "account.approved" | "account.disabled" | "account.reset_requested" | "account.password_reset";
-const NEVER_DROPPED = new Set<AuthEventType>(["signin.succeeded", "session.signed_out", "session.revoked_all", "log.suppressed", "account.verified", "account.approved", "account.disabled", "account.password_reset"]);
+  | "account.registered" | "account.verified" | "account.approved" | "account.disabled" | "account.reset_requested" | "account.password_reset"
+  | "member.invited" | "member.role_changed" | "member.removed" | "member.joined" | "member.invite_revoked" | "mfa.enabled" | "mfa.disabled";
+const NEVER_DROPPED = new Set<AuthEventType>(["member.joined", "member.invite_revoked", "mfa.enabled", "mfa.disabled", "member.invited", "member.role_changed", "member.removed", "signin.succeeded", "session.signed_out", "session.revoked_all", "log.suppressed", "account.verified", "account.approved", "account.disabled", "account.password_reset"]);
 
 /**
  * Appends to the authentication log. Successes and sign-outs are always written. Failures, blocks and rejected sessions are the
@@ -75,6 +83,10 @@ const NEVER_DROPPED = new Set<AuthEventType>(["signin.succeeded", "session.signe
  */
 export async function audit(q: Q, type: AuthEventType, o: { sessionId?: string; client?: string; reason?: string; userId?: string; now?: number } = {}) {
   const now = o.now ?? Date.now();
+  // Monitoring sees every event, also those past the table's budget below (redacted, counted per instance: security-events.ts).
+  const fields = { account: o.userId, session: o.sessionId, client: o.client, reason: o.reason, workspace: dbContext()?.workspace };
+  securityEvent(type, fields, now);
+  if (type === "signin.failed" && o.reason === "mfa_invalid") securityEvent("mfa.failed", fields, now);
   if (!NEVER_DROPPED.has(type)) {
     // Rejected agent keys have a budget of their own: a flood of wrong keys must not crowd sign-in failures out of the log, or the reverse.
     const key = type === "agentkey.rejected" ? "authlog:noise:agentkey" : "authlog:noise";
@@ -99,6 +111,10 @@ export async function createSession(q: Q, { now = Date.now(), client = "unknown"
 
 /** The live session this request carries, or undefined. Refuses everything else, and notes a revoked or expired session being presented again. */
 export async function currentSession(q: Q, req: Request, now = Date.now()): Promise<Session | undefined> {
+  // Looking a session up by its id and secret happens before anyone is known: the one place that must read across workspaces.
+  return asSystem(() => lookupSession(q, req, now));
+}
+async function lookupSession(q: Q, req: Request, now: number): Promise<Session | undefined> {
   const e = epoch();
   const raw = cookie(req, sessionCookieName(req));
   if (!raw) return undefined;
@@ -111,7 +127,7 @@ export async function currentSession(q: Q, req: Request, now = Date.now()): Prom
     : Number(row.expires_at) <= now ? "expired"
     : row.user_id === null && row.epoch !== e ? "admin_token_changed"
     : undefined;
-  const account = !reason && row.user_id !== null ? await q.get<AccountRow>("SELECT workspace_id, email, email_verified_at, approved_at, disabled_at, password_changed_at, read_only FROM users WHERE id = ?", row.user_id) : undefined;
+  const account = !reason && row.user_id !== null ? await q.get<AccountRow>("SELECT workspace_id, email, email_verified_at, approved_at, disabled_at, password_changed_at, read_only, role FROM users WHERE id = ?", row.user_id) : undefined;
   const accountReason = reason || row.user_id === null ? undefined
     : !account ? "account_gone" : account.disabled_at !== null ? "account_disabled" : account.email_verified_at === null && config.emailVerification ? "email_unverified"
     : account.approved_at === null ? "not_approved" : Number(account.password_changed_at) > Number(row.created_at) ? "password_changed"
@@ -125,7 +141,8 @@ export async function currentSession(q: Q, req: Request, now = Date.now()): Prom
     return undefined;
   }
   if (row.last_seen_at === null || Number(row.last_seen_at) < now - TOUCH_EVERY) await q.run("UPDATE operator_sessions SET last_seen_at = ? WHERE id = ? AND revoked_at IS NULL", Math.round(now), id);
-  return account ? { id, userId: row.user_id, workspace: account.workspace_id, email: account.email, admin: false, ...(account.read_only && { readOnly: true }) } : { id, userId: null, workspace: DEFAULT_WORKSPACE, admin: true };
+  // A read-only (demo) account is a viewer whatever its row says; the platform admin owns the default workspace.
+  return account ? { id, userId: row.user_id, workspace: account.workspace_id, email: account.email, admin: false, role: account.read_only ? "viewer" : (isRole(account.role) ? account.role : "viewer"), ...(account.read_only && { readOnly: true }) } : { id, userId: null, workspace: DEFAULT_WORKSPACE, admin: true, role: "owner" };
 }
 
 /** The id of the live session this request carries, or undefined. */
@@ -134,6 +151,9 @@ export const isOperator = async (q: Q, req: Request, now = Date.now()) => (await
 
 /** Ends one session. Needs the secret too: an id on its own (it appears in the activity log) cannot sign anyone out. */
 export async function signOut(q: Q, req: Request, now = Date.now()) {
+  return asSystem(() => endSession(q, req, now));
+}
+async function endSession(q: Q, req: Request, now: number) {
   const raw = cookie(req, sessionCookieName(req));
   const [id, secret] = raw?.split(".") ?? [];
   if (!ID.test(id ?? "") || !SECRET.test(secret ?? "")) return false;
@@ -147,6 +167,11 @@ export async function signOut(q: Q, req: Request, now = Date.now()) {
 /** Ends every live session of the same kind, this one included: a user's own sessions, or (for the admin) every admin-token session. The answer to "someone else may have my cookie". */
 export async function revokeAll(q: Q, by: string | Session, now = Date.now()) {
   const s = typeof by === "string" ? { id: by, userId: null } : by;
+  // The admin's sessions belong to no workspace (user_id NULL): only reachable as system. A user's own stay within their workspace.
+  if (!s.userId) return asSystem(() => revokeAllOf(q, s, now));
+  return revokeAllOf(q, s, now);
+}
+async function revokeAllOf(q: Q, s: { id: string; userId: string | null }, now: number) {
   const n = s.userId
     ? await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE revoked_at IS NULL AND expires_at > ? AND user_id = ?", Math.round(now), Math.round(now), s.userId)
     : await q.run("UPDATE operator_sessions SET revoked_at = ? WHERE revoked_at IS NULL AND expires_at > ? AND user_id IS NULL", Math.round(now), Math.round(now));
@@ -155,7 +180,12 @@ export async function revokeAll(q: Q, by: string | Session, now = Date.now()) {
 }
 
 /** What is shown about sign-ins: a user sees only their own sessions and log; the admin sees the admin sessions and the whole log. Nothing secret exists to show. */
-export async function sessionOverview(q: Q, current: string | Session, now = Date.now()) {
+export async function sessionOverview(q: Q, current: string | Session, now = Date.now()): Promise<{ sessions: { id: string; createdAt: number; lastSeenAt: number | null; expiresAt: number; client: string | null; current: boolean }[]; recent: { at: number; type: AuthEventType; sessionId: string | null; client: string | null; reason: string | null }[] }> {
+  const s0 = typeof current === "string" ? { id: current, userId: null } : current;
+  if (!s0.userId) return asSystem(() => overviewOf(q, current, now));
+  return overviewOf(q, current, now);
+}
+async function overviewOf(q: Q, current: string | Session, now: number) {
   const s = typeof current === "string" ? { id: current, userId: null } : current;
   const mine = s.userId ? "user_id = ?" : "user_id IS NULL";
   const sessions = (await q.all<SessionRow>(`SELECT * FROM operator_sessions WHERE revoked_at IS NULL AND expires_at > ? AND ${mine} ORDER BY created_at DESC LIMIT 50`, Math.round(now), ...(s.userId ? [s.userId] : [])))
@@ -182,8 +212,9 @@ export function sessionHeader(value: string, maxAgeMs: number, req?: Request) {
 
 export async function viewerOf(q: Q, req: Request): Promise<Viewer> {
   const s = await currentSession(q, req);
+  bindWorkspace(s?.workspace ?? DEFAULT_WORKSPACE); // a visitor of a public instance sees the default workspace, filtered for visitors
   return {
-    role: s ? "operator" : "visitor", canAct: !!s, public: config.public, operatorAvailable: !!config.adminToken, demo: config.demo,
+    role: s ? "operator" : "visitor", canAct: !!s, public: config.public, operatorAvailable: !!config.adminToken, adminCode: !!config.adminTotp, demo: config.demo,
     workspace: s?.workspace ?? DEFAULT_WORKSPACE, admin: !!s?.admin, accounts: config.accounts, approval: config.approvalRequired, emailVerification: config.emailVerification, ...(s?.email && { account: { email: s.email } }),
     ...(s?.readOnly && { readOnly: true }),
   };

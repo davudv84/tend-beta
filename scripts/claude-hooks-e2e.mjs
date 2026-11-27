@@ -69,8 +69,11 @@ async function main() {
     const shellAuths = async (prefix) => (await state()).authorizations.filter((a) => a.agentId === agentId && a.tool === "shell" && (a.detail ?? "").startsWith(`Run: ${prefix}`));
 
     console.log("\n-- allowed: Claude Code runs a harmless command; TEND records the request, the run and the session");
-    const a = await claude(ask("echo tend-activity-test"));
-    check(a.code === 0 && ranFile("tend-activity-test"), `Claude Code ran it (${a.code}): ${a.result.slice(0, 120).replace(/\n/g, " ")}`);
+    // Balanced v2 allows exactly this command and asks before anything that writes (a "> file" redirect is an escape), so the allowed case runs
+    // it as is. That it really ran is shown by Claude Code itself: its PostToolUse hook only fires after the tool ran (checked below, linked to
+    // the authorization), and the command's output is in its answer. The blocked and approval cases still prove it with the file they write.
+    const a = await claude(`Use the Bash tool to run exactly this command, once, and then tell me its output: ${"echo tend-activity-test"}`);
+    check(a.code === 0 && /tend-activity-test/.test(a.result), `Claude Code ran it (${a.code}): ${a.result.slice(0, 120).replace(/\n/g, " ")}`);
     const activity = await shellAuths("echo tend-activity-test");
     check(activity.length >= 1 && activity[0].status === "consumed", `TEND authorized it under the policy (${activity.map((x) => x.status)})`);
     let s = await state();

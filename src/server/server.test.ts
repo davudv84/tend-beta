@@ -38,7 +38,7 @@ test("agent keys are hashed, and only the exact key authenticates", async () => 
   const { agent, apiKey } = await registerAgent(db, { name: "Probe", model: "claude-sonnet", provider: "Anthropic" });
   assert.match(apiKey, /^tend_sk_/);
   assert.equal((await agentByKey(db, apiKey))?.id, agent.id);
-  assert.equal(await agentByKey(db, apiKey.slice(0, -1) + "x"), undefined);
+  assert.equal(await agentByKey(db, apiKey.slice(0, -1) + (apiKey.endsWith("x") ? "y" : "x")), undefined);
   const dump = JSON.stringify(await db.all("SELECT * FROM agents"));
   assert.equal(dump.includes(apiKey), false, "raw key must never be stored");
   assert.equal(await code(() => registerAgent(db, { name: "", provider: "Nope" })), "invalid_agent");

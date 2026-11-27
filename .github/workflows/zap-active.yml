@@ -1,0 +1,64 @@
+name: zap-active
+
+# OWASP ZAP full scan (spider plus ACTIVE attacks), authenticated, against a throwaway TEND production build started inside this job on
+# localhost, never against a deployed instance. The job signs in with a throwaway admin token, registers a throwaway agent, and ZAP sends that
+# session cookie and agent key with every request, so the routes behind sign-in are attacked too. Same pinned image and rules file as the
+# baseline. It runs on pushes to security/** branches and by hand. It fails on any FAIL or WARN finding not reviewed in .zap/rules.tsv.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["security/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  full-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Start an isolated TEND (embedded database, throwaway admin token), sign in, register a throwaway agent
+        run: |
+          ADMIN="$(openssl rand -hex 32)"
+          echo "::add-mask::$ADMIN"
+          export TEND_ADMIN_TOKEN="$ADMIN" TEND_DATA_DIR="$RUNNER_TEMP/tend-data" PORT=3210
+          nohup npx next start -p 3210 > "$RUNNER_TEMP/tend.log" 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:3210/api/health > /dev/null && break; sleep 1; done
+          COOKIE="$(curl -fsS -D - -o /dev/null -H 'content-type: application/json' -d "{\"token\":\"$ADMIN\"}" http://127.0.0.1:3210/api/operator/session | sed -n 's/^set-cookie: \([^;]*\).*/\1/Ip' | head -1)"
+          echo "::add-mask::$COOKIE"
+          test -n "$COOKIE"
+          KEY="$(curl -fsS -H 'content-type: application/json' -H "cookie: $COOKIE" -d '{"name":"zap target","model":"none","provider":"Custom"}' http://127.0.0.1:3210/api/v1/agents | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).apiKey))')"
+          echo "::add-mask::$KEY"
+          test -n "$KEY"
+          { echo "ZAP_COOKIE=$COOKIE"; echo "ZAP_KEY=$KEY"; } >> "$GITHUB_ENV"
+      - name: ZAP full scan (active), authenticated
+        run: |
+          mkdir -p "$RUNNER_TEMP/zap" && cp .zap/rules.tsv "$RUNNER_TEMP/zap/" && chmod -R 777 "$RUNNER_TEMP/zap"
+          docker run --rm --network host -v "$RUNNER_TEMP/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af \
+            zap-full-scan.py -t http://127.0.0.1:3210 -c rules.tsv -r active-report.html -m 3 -z "\
+              -config scanner.maxScanDurationInMins=25 -config scanner.maxRuleDurationInMins=3 \
+              -config replacer.full_list(0).description=session -config replacer.full_list(0).enabled=true \
+              -config replacer.full_list(0).matchtype=REQ_HEADER -config replacer.full_list(0).matchstr=Cookie \
+              -config replacer.full_list(0).regex=false -config replacer.full_list(0).replacement=$ZAP_COOKIE \
+              -config replacer.full_list(1).description=agentkey -config replacer.full_list(1).enabled=true \
+              -config replacer.full_list(1).matchtype=REQ_HEADER -config replacer.full_list(1).matchstr=Authorization \
+              -config replacer.full_list(1).regex=false -config replacer.full_list(1).replacement=Bearer\ $ZAP_KEY"
+      - name: The server's own errors during the scan (500s are findings even when ZAP does not flag them)
+        if: always()
+        run: |
+          grep -c "unhandled error" "$RUNNER_TEMP/tend.log" || true
+          grep "unhandled error" "$RUNNER_TEMP/tend.log" | sed -E 's/tend_sk_[A-Za-z0-9_-]+/tend_sk_[redacted]/g' | head -40 || true
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zap-active-report
+          path: ${{ runner.temp }}/zap/active-report.html

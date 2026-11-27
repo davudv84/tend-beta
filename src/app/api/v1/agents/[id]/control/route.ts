@@ -5,7 +5,7 @@ import { agentInWorkspace, control } from "@/server/repo";
 /** Pause, resume, disable or enable an agent. Bumps its configuration version. */
 export const POST = route(async (req, { params }: { params: Promise<{ id: string }> }) => {
   const db = await getDb();
-  const { id: by, workspace } = await requireOperator(req, db);
+  const { id: by, workspace } = await requireOperator(req, db, "operate");
   const { id } = await params;
   await agentInWorkspace(db, workspace, id);
   const body = (await readJson(req)) as { action?: string; note?: string };

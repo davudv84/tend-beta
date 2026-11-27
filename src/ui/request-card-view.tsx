@@ -20,6 +20,7 @@ export function RequestCardView({
   sentence,
   meta,
   exact,
+  args,
   item,
   why,
   warning,
@@ -47,6 +48,8 @@ export function RequestCardView({
   meta: React.ReactNode;
   /** The exact content being decided; `mono` for a command, path or address as written. */
   exact?: { label: string; text: string; mono: boolean };
+  /** Every other argument the request carries, so what decided the rules is on screen too (hidden characters are already shown as <U+XXXX>). */
+  args?: { label: string; text: string };
   item?: { label: string; value: string };
   why?: { label: string; value: string };
   warning?: string;
@@ -82,6 +85,13 @@ export function RequestCardView({
         <>
           <p className="mt-6 text-caption text-faint">{exact.label}</p>
           <blockquote className={`mt-2 max-h-80 overflow-y-auto rounded-2xl bg-sunken px-5 py-4 break-words whitespace-pre-wrap ${exact.mono ? "font-mono text-[14px] [overflow-wrap:anywhere]" : "text-body"}`}>{exact.text}</blockquote>
+        </>
+      )}
+
+      {args && (
+        <>
+          <p className="mt-4 text-caption text-faint">{args.label}</p>
+          <pre className="mt-2 max-h-48 overflow-y-auto rounded-2xl bg-sunken px-5 py-3 font-mono text-[13px] break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{args.text}</pre>
         </>
       )}
 

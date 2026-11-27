@@ -16,7 +16,7 @@
 //   6. authenticates with what it saved, read back from disk, and fails if TEND refuses it.
 // It never prints a key or token.
 import "./node-check.mjs";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as nodeUtil from "node:util";
 const parseEnv = (text) => nodeUtil.parseEnv(text); // a namespace import: a named one would crash at load time on an old Node, before the version check can explain it
@@ -68,8 +68,8 @@ const files = {
   read: () => read(".env.agent"),
   write(obj) {
     const tmp = `${envFile}.${process.pid}.tmp`;
-    writeFileSync(tmp, `# Written by npm run agents:setup. Agent keys (and the TEND address that issued them) plus your provider keys. Git-ignored; never commit.\n${Object.entries(obj).map(([k, v]) => `${k}=${quote(v)}`).join("\n")}\n`, { mode: 0o600 });
-    chmodSync(tmp, 0o600);
+    // A new file only (wx: never an existing file or a link planted under this name), private from the moment it exists.
+    writeFileSync(tmp, `# Written by npm run agents:setup. Agent keys (and the TEND address that issued them) plus your provider keys. Git-ignored; never commit.\n${Object.entries(obj).map(([k, v]) => `${k}=${quote(v)}`).join("\n")}\n`, { mode: 0o600, flag: "wx" });
     renameSync(tmp, envFile);
   },
 };
@@ -129,7 +129,7 @@ files.writable();
 mkdirSync(SANDBOX, { recursive: true, mode: 0o700 });
 chmodSync(SANDBOX, 0o700);
 const hello = path.join(SANDBOX, "hello.txt");
-if (!existsSync(hello)) writeFileSync(hello, "Hello from the TEND test sandbox. This file is disposable.\n");
+try { writeFileSync(hello, "Hello from the TEND test sandbox. This file is disposable.\n", { flag: "wx" }); } catch (e) { if (e.code !== "EEXIST") throw e; } // created once, never overwritten
 
 try {
   await setupAgents({ api, files, resolve, agents: AGENTS, policy: POLICY, wanted, rotate, log: console.log });

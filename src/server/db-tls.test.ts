@@ -21,3 +21,15 @@ test("a hosted database URL is pinned to sslmode=verify-full; local and malforme
   assert.equal(tlsMode(pg("p@h/db?sslmode=require")), "verify-full");
   assert.equal(tlsMode("postgresql://u:p@localhost/db"), "none");
 });
+
+test("a remote database URL without any sslmode is not sent in clear text: it is pinned to verify-full; this machine is left alone", () => {
+  for (const host of ["db.example.com", "ep-x.eu-central-1.aws.neon.tech", "10.0.0.5", "[2001:db8::1]"]) {
+    const out = new URL(verifiedTls(pg(`p%40ss@${host}:5432/db`)));
+    assert.equal(out.searchParams.get("sslmode"), "verify-full", host);
+    assert.equal(decodeURIComponent(out.password), "p@ss", "credentials survive untouched");
+  }
+  for (const local of ["postgres://u:p@localhost:5432/db", "postgres://u:p@127.0.0.1:5432/db", "postgres://u:p@[::1]:5432/db", "postgres://u@/db?host=/var/run/postgresql"])
+    assert.equal(verifiedTls(local), local, local);
+  assert.equal(verifiedTls(pg("p@db.example.com/db?sslmode=disable")), pg("p@db.example.com/db?sslmode=disable"), "an explicit disable stays the operator's choice");
+  assert.equal(tlsMode(pg("p@db.example.com/db")), "verify-full");
+});

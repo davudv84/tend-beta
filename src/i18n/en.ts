@@ -117,6 +117,8 @@ export const en = {
     network: "Couldn’t reach the TEND server. Check your connection and try again.",
     status: (n: number) => `The server answered ${n}.`,
     codes: {
+      mfa_required: "Enter the code from your authenticator app, or a recovery code.",
+      mfa_invalid: "That code is not right. Use the current code from your authenticator app, or a recovery code.",
       onboarding_incomplete: "TEND hasn’t seen your agent’s test action decided yet. Run the test, then finish.",
       push_not_configured: "Browser notifications aren’t set up on this TEND server.",
       invalid_subscription: "This browser’s notification subscription was not accepted.",
@@ -558,6 +560,7 @@ export const en = {
   signIn: {
     notConfigured: ["Operator access isn’t configured on this server. Set", " to enable it."] as [string, string],
     title: "Operator sign-in",
+    code: "Code from your authenticator app",
     bodyPublic: "Operators review requests and can pause or connect agents.",
     bodyPrivate: "This TEND instance is private.",
     enterToken: "Enter the admin token configured on the server.",
@@ -871,7 +874,8 @@ export const en = {
         doesntItems: [
           ["Only code that asks", "TEND is a checkpoint, not a sandbox. An agent that skips the wrapper, or holds real credentials for email, a database or payments, can act without TEND, and TEND will not know. For real enforcement the credential must live behind TEND’s gateway."],
           ["Same machine, same user", "Processes running as your user can read each other’s environment and files. TEND is not an isolation boundary on your computer."],
-          ["No roles or two-factor sign-in", "Each account has one workspace and everyone in it is an operator. No SSO, no 2FA, no teams yet."],
+          ["No single sign-on yet", "Workspaces have roles (owner, admin, operator, viewer) and invitations, and each person can turn on two-step sign-in, but a workspace cannot require it yet and there is no SSO. The platform admin token is one shared secret, with an optional code."],
+          ["Older presets read the words of a command", "Balanced as saved before November 2026 asked only before commands whose text named git push, rm, curl or sudo, so a reworded command could get past it. Policies saved with it keep it until they are saved again; the current Balanced asks before every command except a few read-only ones."],
           ["The agent describes its own call", "Conditions are checked against the arguments the agent sends. A modified or malicious agent could describe one call and make another."],
           ["Long values are summarized", "Strings over 256 characters and lists over 50 items reach the rules as a hash and a length, so a condition on them does not match."],
           ["Detects tampering, doesn’t prevent it", "Someone who can write to the database can rewrite history and recompute the chain. Keep the checkpoint (first and head seq plus hashes) somewhere outside TEND and re-check against it: a rewrite, a cut prefix or an altered oldest entry no longer matches what you kept."],
@@ -1175,6 +1179,98 @@ export const en = {
     },
   },
 
+  // The 3D passage at the top of the homepage (components/marketing/home/passage.tsx).
+  land: {
+    hero: { scroll: "Scroll to see TEND in four steps" },
+    passage: {
+      label: "TEND in four steps",
+      step: (n: number, total: number) => `${n} of ${total}`,
+      stages: [
+        { title: "Connect your agents.", body: "Pick the agent you use. For Claude Code it is one command." },
+        { title: "Set the rules.", body: "Choose what it can do: allow, ask you first, or never." },
+        { title: "Approve sensitive actions.", body: "Review the exact request before it runs." },
+        { title: "See every decision.", body: "Follow every request and its outcome in Activity." },
+      ],
+      alts: {
+        connect: "TEND's Connect an agent screen: Claude Code (tested), Cursor (not yet tested with real Cursor), OpenAI Agents SDK and other integrations.",
+        rules: "An agent's rules in TEND: Allow, Ask me first or Never for each action.",
+        approvals: "TEND's approval screen for a send_email request, with Allow once and Don't allow.",
+        activity: "TEND's Activity screen: requests from several agents with their decisions and reasons.",
+      },
+      screensNote: "The screens are TEND's own app, with a sample workspace.",
+    },
+    // The sections after the passage (home/sections.tsx). Claims follow docs/security-limitations.md and docs/connect.md.
+    why: {
+      title: "An agent can do anything its tools can do.",
+      body: "TEND sits between your agents and their tools. Every action they ask for is checked against your rules first, and only then does the tool run.",
+      agent: "Your agent",
+      asks: "asks to run",
+      code: "send_email → team@example.com",
+      tend: "TEND checks your rules",
+      tools: "Your tool",
+      runs: "Runs only if TEND allows it.",
+      verdicts: { allow: "Allow", ask: "Ask you", never: "Never" },
+      diagram: "Your agent asks TEND first. TEND allows the action, asks you, or refuses it, and only then does the tool run.",
+    },
+    control: {
+      title: "What you control.",
+      items: {
+        agents: ["Who can act", "Each agent gets its own key. Revoke one and the others keep working."],
+        rules: ["What it may do", "Allow, ask first or never, per action, with conditions on the arguments."],
+        activity: ["What actually happened", "Requests, decisions and outcomes in an append-only log, each entry hash-chained to the one before."],
+      } as Record<"agents" | "rules" | "activity", [string, string]>,
+    },
+    view: {
+      title: "The request waits. You decide.",
+      body: "When a rule says ask first, the request waits with its exact text until you allow it once or decline it.",
+      link: "How approvals work",
+      alt: "TEND's Overview with one request waiting: Claude Code wants to run git push origin feature/discount-codes, with Allow once and Don't allow.",
+      callouts: { request: "The exact request, word for word.", rule: "The rule that held it.", once: "Allow once runs it one time." },
+    },
+    start: {
+      title: "Start in three steps.",
+      body: "From an empty workspace to a first approved action in a few minutes.",
+      steps: [
+        { title: "Create an account", body: "Your own workspace, for testing with fictional data.", demo: "Or look around the read-only demo first, with sample agents." },
+        { title: "Connect an agent", body: "Guided setup gives it its own key and runs one real test action." },
+        { title: "Choose its rules", body: "Everything starts blocked. Allow, ask first or never, tool by tool." },
+      ],
+      docs: "Read the setup guide",
+    },
+    works: {
+      title: "Built for the agents you already run.",
+      body: "Verified means all seven of TEND's test scenarios passed with the real product: allow, deny, approve, reject, revoke, TEND unavailable, and audit.",
+      verified: "Verified",
+      groups: { agents: "Agents and models", frameworks: "Frameworks", protocols: "Protocols" },
+      notTested: "Implemented, not yet verified",
+      planned: "Planned",
+      report: "Verification report",
+    },
+    trust: {
+      badge: "Public beta",
+      title: "Honest about the beta.",
+      body: "TEND is in beta, for testing with fictional data. Here is what it does today, and what it doesn't.",
+      doesTitle: "What it does, tested",
+      does: [
+        "Runs an allowed action once, exactly as it was approved.",
+        "Fails closed: if TEND can't be reached, the protected action doesn't run.",
+        "Gives each agent its own key, revocable on its own.",
+        "Keeps a hash-chained log you can check with audit-verify.",
+      ],
+      notTitle: "What it doesn't do",
+      not: [
+        "Control code that never asks it. Keep real credentials behind TEND's gateway.",
+        "Offer SSO, roles or two-factor sign-in yet.",
+        "Judge what a request means. It binds exactly what was asked.",
+      ],
+      links: { limits: "All limitations", threat: "Threat model", report: "Verification report" },
+    },
+    closing: {
+      body: "Put TEND in front of your first agent.",
+      bodyDemo: "Look around the read-only demo, or put TEND in front of your first agent.",
+      docs: "Read the docs",
+    },
+  },
   reviewUi: {
     proposed: (kind: string) => `Proposed change · ${kind}`,
     inert: "Proposals do nothing until a human approves them. Agents can’t apply, approve or escalate their own requests.",
@@ -1305,10 +1401,11 @@ export const en = {
     back: "Back to sign in",
     emailPlaceholder: "Enter your e-mail address",
     passwordPlaceholder: "Enter your password",
-    signIn: { title: "Sign in", welcome: "Welcome back to TEND.", read: "Read our", and: "and", submit: "Sign in", busy: "Signing in…", forgot: "Forgot password?", create: "Create an account", admin: "Admin sign-in", resend: "Send the confirmation link again", resent: "If the address has an unconfirmed account, a new link is on its way." },
+    signIn: { code: "Code from your authenticator app", codeHint: "Or one of your recovery codes.", title: "Sign in", welcome: "Welcome back to TEND.", read: "Read our", and: "and", submit: "Sign in", busy: "Signing in…", forgot: "Forgot password?", create: "Create an account", admin: "Admin sign-in", resend: "Send the confirmation link again", resent: "If the address has an unconfirmed account, a new link is on its way." },
     signUp: { title: "Create your TEND account", body: "TEND is in private beta. After you confirm your e-mail address, an admin approves your access; you’ll get an e-mail.", bodyOpen: "TEND is in private beta. Confirm your e-mail address, then sign in.", bodyInstant: "TEND is in private beta. Create your account and start right away; no confirmation e-mail.", bodyApproval: "TEND is in private beta. After you create your account, an admin approves your access; you’ll get an e-mail.", signInFailed: "The account could not be signed in. If this address already has an account, sign in with its password or reset it.", submit: "Create account", busy: "Creating…", have: "Already have an account?", verifyTitle: "Verify your email to continue", verifyBody: (email: string) => `We sent a confirmation link to ${email}. Open it on this or any other device; this page continues on its own.`, waiting: "Waiting for your confirmation…", continuing: "Confirmed. Taking you to TEND…", resend: "Resend verification email", resendIn: (s: number) => `Resend in ${s}s`, resent: "Sent again. Check your inbox, and your spam folder. The newest link replaces the earlier ones.", resendLimit: "Nothing yet? You can ask for a new link up to three times an hour.", change: "Use a different e-mail address", stopped: "This page has stopped checking. Once your address is confirmed, sign in." },
     verify: { title: "Confirm your e-mail address", password: "Password", passwordHint: "The one you chose when you signed up", submit: "Confirm", busy: "Confirming…", doneTitle: "Address confirmed", waiting: "An admin will review your access. You’ll get an e-mail when you can sign in.", ready: "Your access is ready. You can sign in now.", readyAuto: "If you signed up in another tab or on another device, it continues there on its own. You can also continue here.", continue: "Continue", missing: "This page needs the link from your e-mail. Open the link again, or ask for a new one." },
     forgot: { title: "Reset your password", body: "Enter your e-mail address and we’ll send a link to choose a new password.", submit: "Send link", busy: "Sending…", sentTitle: "Check your inbox", sent: "If the address has an account, a link is on its way. It works once, for 30 minutes." },
+    accept: { title: "Join the workspace", body: "Choose a password for your new TEND account. The workspace that invited you decides your role.", submit: "Create account", busy: "Creating…", doneTitle: "Account created", done: "Sign in with your e-mail address and the password you just chose." },
     reset: { title: "Choose a new password", body: "Every other session of your account will be signed out.", submit: "Save password", busy: "Saving…", doneTitle: "Password changed", done: "Sign in with your new password." },
     prompt: { title: "Sign in to continue", body: "Use your TEND account. New here? Create one; access is approved by an admin during the private beta.", bodyOpen: "Use your TEND account. New here? Create one and confirm your e-mail address.", bodyInstant: "Use your TEND account. New here? Create one and start right away.", signIn: "Sign in", create: "Create an account", token: "Sign in with the admin token instead" },
     admin: {
@@ -1796,7 +1893,7 @@ export const en = {
       allowed: "Allowed once. The agent can now run it, one time.",
       denied: "Not allowed. It won’t run.",
       details: "Details",
-      rows: { assistant: "Agent", action: "Action", item: "Item", detail: "Detail", id: "Request", asked: "Asked", lapses: "Expires" },
+      rows: { assistant: "Agent", action: "Action", args: "Arguments", item: "Item", detail: "Detail", id: "Request", asked: "Asked", lapses: "Expires" },
       change: "Change what needs your OK",
       technical: "Open in the technical view",
       exact: "The exact request",
@@ -2031,7 +2128,16 @@ export const en = {
     recentTitle: "Recent sign-in activity", recentSub: "Recorded by the server, newest first. It never contains the token that was typed or a session secret.", noRecent: "Nothing recorded yet.",
     authEvents: { "signin.succeeded": "Signed in", "signin.failed": "Failed sign-in", "signin.blocked": "Too many failed attempts: that address was refused for a minute", "session.signed_out": "Signed out", "session.revoked_all": "Signed out everywhere", "session.rejected": "A revoked or expired session was used again", "log.suppressed": "More failures than can be listed one by one", "agentkey.rejected": "A request used an unknown or revoked agent key" } as Record<string, string>,
     authReasons: { invalid_token: "wrong token", malformed: "no token sent", operator_disabled: "operator access not configured", too_many_failures: "too many failures", revoked: "was signed out", expired: "had expired", admin_token_changed: "admin token was changed", wrong_secret: "wrong session secret", missing_key: "no key sent", invalid_key: "unknown or revoked key" } as Record<string, string>,
-    accountSub: "Appearance, language and sign-out. There is one operator role: TEND has no user accounts or organizations yet.",
+    accountSub: "Appearance, language, two-step sign-in and sign-out. Workspace members and their roles are managed through the API (/api/v1/members).",
+    twoStep: {
+      title: "Two-step sign-in", sub: "After your password, TEND also asks for a code from an authenticator app (for example 1Password, Google Authenticator or Authy).",
+      on: "On", off: "Off", left: (n: number) => `${n} recovery codes left.`, start: "Set up", enable: "Turn on", disable: "Turn off", cancel: "Cancel",
+      step1: "Add this key to your authenticator app (or open the link on your phone):", openLink: "Open in authenticator app",
+      step2: "Then enter the 6-digit code the app shows:", code: "Code", password: "Password",
+      recovery: "Recovery codes. Each works once if you lose your phone. Store them somewhere safe; they are shown only now.",
+      disableHint: "To turn it off, enter your password and a current code (or a recovery code).",
+      adminToken: "Two-step sign-in is for accounts. The admin token cannot use it.",
+    },
   },
 
   assistant: {
@@ -2084,10 +2190,11 @@ export const en = {
     },
     presets: {
       title: "How strict should TEND be?",
-      balanced: { name: "Balanced", body: "Commands and file edits run, except ones that publish, delete, use sudo or reach the network: those wait for you. Web and MCP tools wait for you." },
-      strict: { name: "Strict", body: "Every command, file edit, web and MCP call waits for you. Reading files is allowed." },
+      balanced: { name: "Balanced", body: "File edits run. Shell commands wait for you, except plainly written read-only ones (git status, git diff, git log, git show, ls, pwd). Changes to .env and .git, and every web and MCP call, wait for you too." },
+      strict: { name: "Strict", body: "Every command, file edit, web and MCP call waits for you. Reading files is allowed, except .env files, which wait for you." },
       monitor: { name: "Monitor only", body: "Everything runs and is recorded. Nothing is blocked except TEND's own test command, so this is not protection." },
       recommended: "Recommended",
+      olderVersion: (name: string) => `This agent keeps an earlier version of ${name}, saved before the preset was tightened. Save to switch it to the current version.`,
       save: "Save",
       saving: "Saving…",
       saved: (name: string) => `Saved and enforced: ${name}.`,
@@ -2111,7 +2218,7 @@ export const en = {
       outsideSub: "TEND cannot see or stop these.",
       outsideItems: [
         "Anything that does not go through the hooks: other apps and agents, commands you type yourself, and work done before TEND was connected.",
-        "If the hooks are removed or switched off, TEND sees nothing. A repository's own .claude/settings.json can do that for itself with disableAllHooks (tested: the command ran and TEND heard nothing), so open repositories you don't trust with care. Bypass-permissions mode has not been tested with TEND.",
+        "If the hooks are removed or switched off, TEND sees nothing. A repository's own .claude/settings.json can do that for itself with disableAllHooks (tested: the command ran and TEND heard nothing), so open repositories you don't trust with care. Installing the hooks as managed settings (administrator rights, see the developer docs) closes that and was tested against real Claude Code; the --bare mode was not tested. Bypass-permissions mode does not skip the hooks (tested).",
         "Rules about command text match the text, not what it does. A script, an alias or a variable can do the same thing without matching the pattern.",
         "Once a call is allowed, what it starts (a script, an install, a build) is not checked step by step.",
         "How a monitored call ended is the agent’s own report. If the agent crashes or the report is lost, TEND only has the request.",

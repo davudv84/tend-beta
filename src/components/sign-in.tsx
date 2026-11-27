@@ -15,6 +15,7 @@ export function SignIn({ compact, token: tokenOnly }: { compact?: boolean; token
   const viewer = useStore((s) => s.viewer);
   const signIn = useStore((s) => s.signIn);
   const [token, setToken] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [withToken, setWithToken] = useState(!!tokenOnly);
@@ -43,8 +44,9 @@ export function SignIn({ compact, token: tokenOnly }: { compact?: boolean; token
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await signIn(token);
+    const r = await signIn(token, viewer?.adminCode ? code : undefined);
     setBusy(false);
+    setCode(""); // a code works once, right or wrong: never resend it
     if (!r.ok) setError(errorText(t, r));
     else setToken("");
   };
@@ -59,8 +61,11 @@ export function SignIn({ compact, token: tokenOnly }: { compact?: boolean; token
         </div>
       )}
       <Input type="password" autoComplete="current-password" className={compact ? "h-11 rounded-xl text-ui" : undefined} value={token} onChange={(e) => setToken(e.target.value)} placeholder={t.signIn.placeholder} aria-label={t.signIn.placeholder} aria-invalid={!!error} required />
+      {viewer?.adminCode && (
+        <Input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} className={compact ? "h-11 rounded-xl text-ui" : undefined} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} placeholder={t.signIn.code} aria-label={t.signIn.code} />
+      )}
       {error && <p role="alert" className="text-small text-destructive">{error}</p>}
-      <Button type="submit" disabled={busy || !token} className={compact ? "h-11 rounded-full text-ui" : undefined}>{busy ? t.signIn.signingIn : t.signIn.submit}</Button>
+      <Button type="submit" disabled={busy || !token || (!!viewer?.adminCode && code.length !== 6)} className={compact ? "h-11 rounded-full text-ui" : undefined}>{busy ? t.signIn.signingIn : t.signIn.submit}</Button>
     </form>
   );
 }

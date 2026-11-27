@@ -1,0 +1,8 @@
+{
+  "//": "Read by scripts/ci/test-gate.mjs. A skipped test fails CI unless its reason is listed here. Every entry needs a why. Raise minTests when tests are added; never lower it to make CI pass.",
+  "minTests": 658,
+  "allowedSkips": [
+    { "reason": "needs macOS sandbox-exec", "why": "Confinement uses /usr/bin/sandbox-exec, which exists only on macOS. CI runs on Linux." },
+    { "reason": "confinement needs macOS sandbox-exec", "why": "Same as above." }
+  ]
+}

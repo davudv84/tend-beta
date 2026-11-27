@@ -375,7 +375,7 @@ test("without a usable admin token nobody is an operator, however the session wa
       for (const token of [undefined, "", "short", "x".repeat(23)]) {
         await withEnv({ TEND_ADMIN_TOKEN: token }, async () => {
           assert.equal(await isOperator(db, me.request()), false, `token ${JSON.stringify(token)}`);
-          await assert.rejects(() => requireOperator(me.request(), db), (e) => e instanceof HttpError && e.status === 403);
+          await assert.rejects(() => requireOperator(me.request(), db, "view"), (e) => e instanceof HttpError && e.status === 403);
           assert.equal(checkAdminToken(""), false, "an empty guess does not match an unset token");
           assert.equal(checkAdminToken(token ?? ""), false, "nor does the unusable value itself");
         });

@@ -21,8 +21,8 @@ async function world() {
     await db.run("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, 0)", `w${n}`, `W${n}`);
     await db.run("INSERT INTO users (id, email, password_hash, workspace_id, created_at, email_verified_at, approved_at, password_changed_at) VALUES (?, ?, 'x', ?, 0, 0, 0, 0)", `u${n}`, `u${n}@example.com`, `w${n}`);
   }
-  const ana: Session = { id: "s1", userId: "u1", workspace: "w1", admin: false };
-  const ben: Session = { id: "s2", userId: "u2", workspace: "w2", admin: false };
+  const ana: Session = { id: "s1", userId: "u1", workspace: "w1", admin: false, role: "owner" as const };
+  const ben: Session = { id: "s2", userId: "u2", workspace: "w2", admin: false, role: "owner" as const };
   return { db, ana, ben };
 }
 

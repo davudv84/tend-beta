@@ -1,0 +1,51 @@
+name: codeql
+
+# Static analysis of the TypeScript/JavaScript code with GitHub's CodeQL (security-extended queries). Findings appear under Security → Code
+# scanning; make "CodeQL" a required check on protected branches (docs/ci.md).
+on:
+  workflow_dispatch: # run by hand from the Actions tab, on any branch
+  pull_request:
+  push:
+    branches: [main, "security/**"] # security branches run the full suite before any pull request
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # upload results; nothing else
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3.39.4
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3.39.4
+        with:
+          category: "/language:javascript-typescript"
+          output: ${{ runner.temp }}/codeql-sarif
+      - name: List the results in the log (rule, severity, file:line, message)
+        if: always()
+        run: |
+          for f in "$RUNNER_TEMP"/codeql-sarif/*.sarif; do
+            # rules live in tool.driver and in tool.extensions (CodeQL's query packs); a result whose rule is not found still prints
+            jq -r '.runs[] | ([.tool.driver.rules[]?, .tool.extensions[]?.rules[]?]) as $rules | .results[] | . as $r
+              | (first($rules[] | select(.id == $r.ruleId) | .properties."security-severity") // "?") as $sev
+              | "RESULT\t\($r.ruleId)\tsev=\($sev)\t\($r.locations[0].physicalLocation.artifactLocation.uri):\($r.locations[0].physicalLocation.region.startLine)\t\($r.message.text | gsub("\n"; " ") | .[0:160])"' "$f"
+            echo "$(jq '[.runs[].results[]] | length' "$f") result(s) in $f"
+          done
+      # The same results as a short-lived artifact, so they can be reviewed without the code-scanning UI (they contain code locations only).
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codeql-sarif
+          path: ${{ runner.temp }}/codeql-sarif
+          retention-days: 5

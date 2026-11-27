@@ -8,7 +8,7 @@ import { continueSample, startSample } from "@/server/sample-agent";
  */
 export const POST = route(async (req) => {
   const db = await getDb();
-  const { id: by, workspace } = await requireOperator(req, db);
+  const { id: by, workspace } = await requireOperator(req, db, "manage");
   const body = (await readJson(req)) as { step?: unknown; ids?: unknown } | null;
   if (body?.step === "start") return json({ steps: await startSample(db, by, workspace) });
   if (body?.step === "continue") return json({ steps: await continueSample(db, body.ids, true, workspace) });
